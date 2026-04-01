@@ -253,7 +253,7 @@ $state = @{
 
 # ─── Module deployment ────────────────────────────────────────────────────────
 $deploymentOrder = Get-AdeDeploymentOrder -Profile $deployProfile
-$bicepRoot       = Join-Path $scriptRoot ('..\bicep\' + ($Mode -eq 'hardened' ? 'hardened' : 'modules'))
+$bicepRoot       = Join-Path $scriptRoot ('..\bicep\' + $(if ($Mode -eq 'hardened') { 'hardened' } else { 'modules' }))
 $totalModules    = $deploymentOrder.Count
 $currentModule   = 0
 
@@ -317,9 +317,9 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                 = $Prefix
                     location               = $Location
-                    bastionSku             = $netFeatures.bastionSku ?? 'Developer'
+                    bastionSku             = if ($null -ne $netFeatures.bastionSku) { $netFeatures.bastionSku } else { 'Developer' }
                     enableAppGateway       = ($netFeatures.enableAppGateway -eq $true).ToString().ToLower()
-                    enableFirewall         = $netFeatures.enableFirewall ?? 'None'
+                    enableFirewall         = if ($null -ne $netFeatures.enableFirewall) { $netFeatures.enableFirewall } else { 'None' }
                     enableVpnGateway       = ($netFeatures.enableVpnGateway -eq $true).ToString().ToLower()
                     enableNatGateway       = ($netFeatures.enableNatGateway -eq $true).ToString().ToLower()
                     enableDdos             = ($netFeatures.enableDdos -eq $true).ToString().ToLower()
@@ -370,7 +370,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployLinuxVm       = ($compFeatures.linuxVm -eq $true).ToString().ToLower()
                     deployVmss          = ($compFeatures.vmss -eq $true).ToString().ToLower()
                     enableAutoShutdown  = ($compFeatures.enableAutoShutdown -eq $true).ToString().ToLower()
-                    vmSize              = $compFeatures.vmSku ?? 'Standard_B2s'
+                    vmSize              = if ($null -ne $compFeatures.vmSku) { $compFeatures.vmSku } else { 'Standard_B2s' }
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId']       = $state.logAnalyticsId
@@ -465,7 +465,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployEventGrid     = ($intFeatures.eventGrid -eq $true).ToString().ToLower()
                     deploySignalR       = ($intFeatures.signalR -eq $true).ToString().ToLower()
                     deployApim          = ($intFeatures.apiManagement -eq $true).ToString().ToLower()
-                    apimSku             = $intFeatures.apimSku ?? 'Developer'
+                    apimSku             = if ($null -ne $intFeatures.apimSku) { $intFeatures.apimSku } else { 'Developer' }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'integration' -BicepFile $bicep -Parameters $params
                 $state.serviceBusId   = Get-AdeDeploymentOutput $outputs 'serviceBusId'
@@ -516,7 +516,7 @@ foreach ($moduleName in $deploymentOrder) {
                     logAnalyticsId          = $state.logAnalyticsId
                     enableAutomation        = ($govFeatures.automationAccount -eq $true).ToString().ToLower()
                     enableBudget            = ($govFeatures.budget -eq $true).ToString().ToLower()
-                    budgetAmount            = $govFeatures.budgetAmount ?? 300
+                    budgetAmount            = if ($null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
                     enableResourceLocks     = ($govFeatures.resourceLocks -eq $true).ToString().ToLower()
                     enablePolicyAssignments = ($govFeatures.policyAssignments -eq $true).ToString().ToLower()
                 }
