@@ -154,9 +154,9 @@ Describe 'destroy.ps1 – source parses without errors' -Tag 'unit' {
         $null = [System.Management.Automation.Language.Parser]::ParseFile(
             $script:destroyPs, [ref]$tokens, [ref]$errors)
         # Filter out known benign parse artefacts (2>$null stderr redirect)
-        $criticalErrors = $errors | Where-Object {
+        $criticalErrors = @($errors | Where-Object {
             $_.ErrorId -notin @('MissingArrayIndexExpression','MissingArgument')
-        }
+        })
         $criticalErrors.Count | Should -Be 0
     }
 }
