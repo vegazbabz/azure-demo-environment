@@ -95,7 +95,7 @@
     No Az PowerShell module is used.
     Reference: https://github.com/your-org/azure-demo-environment
 #>
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [string]$Profile = 'full',
@@ -118,6 +118,9 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]$Force,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$WhatIf,
 
     [Parameter(Mandatory = $false)]
     [string[]]$SkipModules = @(),
@@ -280,7 +283,7 @@ function Deploy-AdeModule {
         -TemplatePath   $BicepFile `
         -DeploymentName "ade-$ModuleName-$(Get-Date -Format 'yyyyMMddHHmmss')" `
         -Parameters     $Parameters `
-        -WhatIf:($WhatIfPreference -eq 'Continue')
+        -WhatIf:$WhatIf
 
     return $outputs
 }
