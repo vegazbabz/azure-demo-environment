@@ -200,7 +200,8 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         Write-AdeLog "Key Vault: $vaultName" -Level Info
 
         # Ensure current caller has secret set permission
-        $kvTenantId = (az account show --query tenantId -o tsv 2>$null) ?? 'demo-tenant-id'
+        $kvTenantId = az account show --query tenantId -o tsv 2>$null
+        if (-not $kvTenantId) { $kvTenantId = 'demo-tenant-id' }
         $kvSecrets = @{
             'app-client-id'        = 'demo-client-id-00000000-0000-0000-0000-000000000001'
             'app-client-secret'    = 'demo-secret-value-replace-in-production'
