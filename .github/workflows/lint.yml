@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4.3.1
 
       - name: Install Bicep CLI
-        run: az bicep install --version latest
+        run: az bicep install
 
       - name: Lint all Bicep files
         id: bicep_lint
