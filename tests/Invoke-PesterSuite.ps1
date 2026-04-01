@@ -56,7 +56,7 @@ if (-not $Path) {
 }
 
 if (-not $OutputFile) {
-    $OutputFile = Join-Path $testsRoot 'results' 'pester-results.xml'
+    $OutputFile = Join-Path -Path (Join-Path -Path $testsRoot -ChildPath 'results') -ChildPath 'pester-results.xml'
 }
 
 $resultsDir = Split-Path $OutputFile -Parent
@@ -106,12 +106,12 @@ $config.Run.Exit     = $CI.IsPresent   # exit 1 on failure when running in CI
 if ($CI) {
     $config.CodeCoverage.Enabled    = $true
     $config.CodeCoverage.Path       = @(
-        (Join-Path $repoRoot 'scripts' 'helpers' 'validate.ps1'),
-        (Join-Path $repoRoot 'scripts' 'helpers' 'common.ps1'),
-        (Join-Path $repoRoot 'scripts' 'destroy.ps1'),
-        (Join-Path $repoRoot 'scripts' 'deploy.ps1')
+        (Join-Path -Path $repoRoot -ChildPath 'scripts/helpers/validate.ps1'),
+        (Join-Path -Path $repoRoot -ChildPath 'scripts/helpers/common.ps1'),
+        (Join-Path -Path $repoRoot -ChildPath 'scripts/destroy.ps1'),
+        (Join-Path -Path $repoRoot -ChildPath 'scripts/deploy.ps1')
     )
-    $config.CodeCoverage.OutputPath   = Join-Path $resultsDir 'coverage.xml'
+    $config.CodeCoverage.OutputPath   = Join-Path -Path $resultsDir -ChildPath 'coverage.xml'
     $config.CodeCoverage.OutputFormat = 'JaCoCo'
     $config.CodeCoverage.CoveragePercentTarget = 70
 }
