@@ -1,4 +1,4 @@
-
+{
   "profileName": "security-focus",
   "description": "Security-focused profile. Key Vault, Managed Identity, Defender for Cloud, Microsoft Sentinel, with compute and storage for Defender coverage. Good for security posture baseline testing.",
   "version": "2.0.0",

@@ -1,4 +1,4 @@
-
+{
   "profileName": "networking-only",
   "description": "Networking-focused profile. VNet with all subnets reserved, Application Gateway, Bastion. Good for network connectivity and topology testing.",
   "version": "2.0.0",
