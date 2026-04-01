@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v6.0.2
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -124,7 +124,7 @@ jobs:
     environment: demo
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v6.0.2
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2.3.0
