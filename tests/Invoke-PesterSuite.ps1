@@ -101,6 +101,7 @@ $config.TestResult.OutputFormat = 'JUnitXml'
 
 # Fail on first error in CI mode; show all failures locally
 $config.Run.Exit     = $CI.IsPresent   # exit 1 on failure when running in CI
+$config.Run.PassThru = $true
 
 # Code coverage (opt-in in CI)
 if ($CI) {
@@ -127,7 +128,7 @@ Write-Host "  CI     : $($CI.IsPresent)" -ForegroundColor Gray
 Write-Host '─────────────────────────────────────────────────' -ForegroundColor DarkGray
 Write-Host ''
 
-$result = Invoke-Pester -Configuration $config -PassThru
+$result = Invoke-Pester -Configuration $config
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
