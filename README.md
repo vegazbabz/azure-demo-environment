@@ -135,6 +135,101 @@ tests/              # Pester 5 unit tests (442 passing, 0 failing)
 
 ---
 
+## GitHub Actions setup
+
+The workflows use **OIDC (federated identity)** — no long-lived client secrets. Follow these steps once before the first workflow run.
+
+### 1. Create an app registration
+
+```bash
+az ad app create --display-name "ade-github-actions"
+```
+
+Note the `appId` (client ID) and `id` (object ID) from the output.
+
+### 2. Create a service principal
+
+```bash
+az ad sp create --id <appId>
+```
+
+### 3. Add a federated credential (OIDC trust)
+
+This tells Azure to trust tokens from GitHub Actions running on the `main` branch of your repo.
+
+```bash
+az ad app federated-credential create \
+  --id <objectId> \
+  --parameters '{
+    "name": "ade-github-main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:vegazbabz/azure-demo-environment:environment:demo",
+    "audiences": ["api://AzureADTokenAudience"]
+  }'
+```
+
+> The `subject` must match exactly — `environment:demo` because the deploy job uses `environment: demo` in the workflow.
+
+### 4. Assign a role
+
+```bash
+az role assignment create \
+  --assignee <appId> \
+  --role Contributor \
+  --scope /subscriptions/<subscription-id>
+```
+
+For the destroy workflow, `Contributor` is sufficient. For policy assignments (`Deploy-AdePolicies.ps1`), `Resource Policy Contributor` is also needed:
+
+```bash
+az role assignment create \
+  --assignee <appId> \
+  --role "Resource Policy Contributor" \
+  --scope /subscriptions/<subscription-id>
+```
+
+### 5. Configure the GitHub environment
+
+In **Settings → Environments → New environment**, name it `demo` and configure:
+
+- **Deployment branches**: `main` only
+- **Required reviewers**: add yourself (recommended — prevents accidental deploys)
+
+### 6. Add secrets to the `demo` environment
+
+In **Settings → Environments → demo → Add secret**:
+
+| Secret | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | `appId` from step 1 |
+| `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
+| `ADE_ADMIN_PASSWORD` | VM admin password (min 12 chars, upper+lower+digit+symbol) |
+
+Store these at **environment** scope, not repo scope — they are then only accessible to jobs that have passed the `demo` environment's protection rules.
+
+### 7. (Optional) Set Actions variables
+
+In **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Example |
+| --- | --- |
+| `ADE_DEFAULT_LOCATION` | `westeurope` |
+| `ADE_DEFAULT_PREFIX` | `ade` |
+
+These pre-fill the workflow dispatch inputs.
+
+### Verify
+
+```bash
+# Confirm the federated credential is set correctly
+az ad app federated-credential list --id <objectId> --query "[].subject"
+```
+
+Expected output: `["repo:vegazbabz/azure-demo-environment:environment:demo"]`
+
+---
+
 ## Tests
 
 ```powershell
