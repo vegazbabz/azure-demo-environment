@@ -1,0 +1,41 @@
+{
+  "name": "ade-require-resource-tags",
+  "properties": {
+    "displayName": "[ADE] Require Environment and Owner tags",
+    "description": "Audits (or denies) resources and resource groups that are missing the 'Environment' or 'Owner' tags required by ADE governance standards.",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "metadata": {
+      "category": "Tags",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "effect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Effect",
+          "description": "'Audit' logs non-compliant resources without blocking. 'Deny' blocks creation of untagged resources. 'Disabled' turns the policy off."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Audit"
+      }
+    },
+    "policyRule": {
+      "if": {
+        "anyOf": [
+          {
+            "field": "tags['Environment']",
+            "exists": "false"
+          },
+          {
+            "field": "tags['Owner']",
+            "exists": "false"
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Azure Demo Environment (ADE) — Destroy Workflow
+#
+# DANGER: Permanently deletes all ADE resource groups for the given prefix.
+# Manual trigger ONLY — never runs on push.
+# Protected by the 'demo' environment (require reviewers recommended).
+#
+# Required secrets:
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ADE — Destroy 🗑️
+
+on:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: 'Prefix of the environment to destroy (e.g. ade)'
+        required: true
+        default: 'ade'
+        type: string
+      modules:
+        description: 'Specific modules to destroy (blank = all). Comma-separated: compute,storage'
+        required: false
+        default: ''
+        type: string
+      no_wait:
+        description: 'Delete resource groups asynchronously (faster, no progress)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy:
+    name: Destroy — prefix=${{ github.event.inputs.prefix }}
+    runs-on: ubuntu-latest
+    environment: demo        # <-- add required reviewers here for extra safety
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install PowerShell 7
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq powershell
+
+      - name: List targeted resource groups (dry run)
+        run: |
+          PREFIX="${{ github.event.inputs.prefix }}"
+          echo "### Resource groups to be deleted:" >> "$GITHUB_STEP_SUMMARY"
+          az group list \
+            --query "[?tags.managedBy=='ade' && starts_with(name,'${PREFIX}-')].name" \
+            -o tsv | while read rg; do
+              echo "- \`$rg\`" >> "$GITHUB_STEP_SUMMARY"
+              echo "  → $rg"
+            done
+
+      - name: Destroy ADE environment
+        shell: pwsh
+        run: |
+          $modulesArg = @()
+          if ('${{ github.event.inputs.modules }}') {
+            $modulesArg = '${{ github.event.inputs.modules }}' -split ',' | ForEach-Object { $_.Trim() }
+          }
+
+          $noWait = '${{ github.event.inputs.no_wait }}' -eq 'true'
+
+          $splat = @{
+            Prefix         = '${{ github.event.inputs.prefix }}'
+            SubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            Force          = $true
+            NoWait         = $noWait
+          }
+          if ($modulesArg.Count -gt 0) { $splat['Modules'] = $modulesArg }
+
+          ./scripts/destroy.ps1 @splat
+
+      - name: Write job summary
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+
+          ## Destroy Result: ${{ job.status }}
+
+          | Field   | Value |
+          |---------|-------|
+          | Prefix  | \`${{ github.event.inputs.prefix }}\` |
+          | Modules | ${{ github.event.inputs.modules || 'all' }} |
+          | No-wait | ${{ github.event.inputs.no_wait }} |
+          | Run     | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+          EOF

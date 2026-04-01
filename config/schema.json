@@ -1,0 +1,264 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/nicholasmadsen/azure-demo-environment/main/config/schema.json",
+  "title": "ADE Config Profile",
+  "description": "Schema for Azure Demo Environment configuration profiles.",
+  "type": "object",
+  "required": ["profileName", "version", "modules"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "profileName": {
+      "type": "string",
+      "description": "Unique identifier for this profile."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this profile."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the profile format."
+    },
+    "modules": {
+      "type": "object",
+      "description": "Per-module enable/feature flags.",
+      "additionalProperties": false,
+      "properties": {
+        "monitoring": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "logAnalyticsWorkspace": { "type": "boolean" },
+                "applicationInsights":   { "type": "boolean" },
+                "actionGroup":           { "type": "boolean" },
+                "alertRules":            { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "networking": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "bastionSku":             { "type": "string", "enum": ["None", "Developer", "Basic", "Standard"] },
+                "enableAppGateway":       { "type": "boolean" },
+                "enableFirewall":         { "type": "string", "enum": ["None", "Standard", "Premium"] },
+                "enableVpnGateway":       { "type": "boolean" },
+                "enableDdos":             { "type": "boolean" },
+                "enableNatGateway":       { "type": "boolean" },
+                "enablePrivateDnsZones":  { "type": "boolean" },
+                "networkWatcher":         { "type": "boolean" }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "security": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "keyVault":          { "type": "boolean" },
+                "managedIdentity":   { "type": "boolean" },
+                "defenderForCloud":  { "type": "boolean" },
+                "sentinel":          { "type": "boolean" }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "compute": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "windowsVm":            { "type": "boolean" },
+                "linuxVm":              { "type": "boolean" },
+                "vmss":                 { "type": "boolean" },
+                "availabilitySet":      { "type": "boolean" },
+                "enableAutoShutdown":   { "type": "boolean" },
+                "enableBootDiagnostics":{ "type": "boolean" },
+                "vmSku":                { "type": "string" }
+              }
+            }
+          }
+        },
+        "storage": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "generalPurposeStorage": { "type": "boolean" },
+                "dataLakeGen2":          { "type": "boolean" },
+                "fileShares":            { "type": "boolean" },
+                "enableSoftDelete":      { "type": "boolean" },
+                "enableVersioning":      { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "databases": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sqlDatabase":        { "type": "boolean" },
+                "cosmosDb":           { "type": "boolean" },
+                "postgresql":         { "type": "boolean" },
+                "mysql":              { "type": "boolean" },
+                "redis":              { "type": "boolean" },
+                "sqlManagedInstance": { "type": "boolean" }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "appservices": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "windowsWebApp": { "type": "boolean" },
+                "linuxWebApp":   { "type": "boolean" },
+                "functionApp":   { "type": "boolean" },
+                "staticWebApp":  { "type": "boolean" },
+                "logicApp":      { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "containers": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "containerRegistry":  { "type": "boolean" },
+                "kubernetesService":  { "type": "boolean" },
+                "containerApps":      { "type": "boolean" },
+                "containerInstances": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "integration": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "serviceBus":    { "type": "boolean" },
+                "eventHub":      { "type": "boolean" },
+                "eventGrid":     { "type": "boolean" },
+                "signalR":       { "type": "boolean" },
+                "apiManagement": { "type": "boolean" },
+                "apimSku":       { "type": "string", "enum": ["Developer", "Basic", "Standard", "Premium"] }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "ai": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "aiServices":       { "type": "boolean" },
+                "openAi":           { "type": "boolean" },
+                "cognitiveSearch":  { "type": "boolean" },
+                "machineLearning":  { "type": "boolean" }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "data": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "dataFactory":  { "type": "boolean" },
+                "synapse":      { "type": "boolean" },
+                "databricks":   { "type": "boolean" },
+                "purview":      { "type": "boolean" }
+              }
+            },
+            "costWarnings": { "$ref": "#/definitions/costWarnings" }
+          }
+        },
+        "governance": {
+          "$ref": "#/definitions/moduleWithFeatures",
+          "properties": {
+            "features": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "automationAccount": { "type": "boolean" },
+                "budget":            { "type": "boolean" },
+                "budgetAmount":      { "type": "number", "minimum": 1 },
+                "resourceLocks":     { "type": "boolean" },
+                "policyAssignments": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "seedDummyData": {
+      "type": "boolean",
+      "description": "Whether to seed dummy data after deployment."
+    },
+    "globalSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultLocation": { "type": "string" },
+        "defaultPrefix":   { "type": "string" },
+        "tags": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "moduleWithFeatures": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled":     { "type": "boolean" },
+        "description": { "type": "string" },
+        "features":    { "type": "object" },
+        "costWarnings":{ "$ref": "#/definitions/costWarnings" }
+      }
+    },
+    "costWarnings": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

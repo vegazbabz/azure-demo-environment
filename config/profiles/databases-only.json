@@ -1,0 +1,35 @@
+﻿{
+  "profileName": "databases-only",
+  "description": "Database-focused profile. Azure SQL, Cosmos DB, PostgreSQL with supporting networking, security, and monitoring. Good for database benchmark testing.",
+  "version": "2.0.0",
+  "modules": {
+    "monitoring": {
+      "enabled": true,
+      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false }
+    },
+    "networking": {
+      "enabled": true,
+      "features": { "bastionSku": "Developer", "enableAppGateway": false, "enableFirewall": "None", "enableVpnGateway": false, "enableDdos": false, "enableNatGateway": false, "enablePrivateDnsZones": false }
+    },
+    "security": {
+      "enabled": true,
+      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": false, "sentinel": false }
+    },
+    "compute": { "enabled": false },
+    "storage": { "enabled": false },
+    "databases": {
+      "enabled": true,
+      "features": { "sqlDatabase": true, "cosmosDb": true, "postgresql": true, "mysql": true, "redis": false }
+    },
+    "appservices": { "enabled": false },
+    "containers": { "enabled": false },
+    "integration": { "enabled": false },
+    "ai": { "enabled": false },
+    "data": { "enabled": false },
+    "governance": {
+      "enabled": true,
+      "features": { "automationAccount": false, "budget": true, "budgetAmount": 100, "resourceLocks": false, "policyAssignments": false }
+    }
+  },
+  "seedDummyData": true
+}

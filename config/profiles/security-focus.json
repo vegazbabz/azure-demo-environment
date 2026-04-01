@@ -1,0 +1,41 @@
+﻿{
+  "profileName": "security-focus",
+  "description": "Security-focused profile. Key Vault, Managed Identity, Defender for Cloud, Microsoft Sentinel, with compute and storage for Defender coverage. Good for security posture baseline testing.",
+  "version": "2.0.0",
+  "modules": {
+    "monitoring": {
+      "enabled": true,
+      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false }
+    },
+    "networking": {
+      "enabled": true,
+      "features": { "bastionSku": "Developer", "enableAppGateway": false, "enableFirewall": "None", "enableVpnGateway": false, "enableDdos": false, "enableNatGateway": false, "enablePrivateDnsZones": false }
+    },
+    "security": {
+      "enabled": true,
+      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": true, "sentinel": true }
+    },
+    "compute": {
+      "enabled": true,
+      "features": { "windowsVm": true, "linuxVm": true, "vmss": false, "enableAutoShutdown": false, "vmSku": "Standard_B2s" }
+    },
+    "storage": {
+      "enabled": true,
+      "features": { "generalPurposeStorage": true, "dataLakeGen2": false, "fileShares": false, "enableSoftDelete": false, "enableVersioning": false }
+    },
+    "databases": {
+      "enabled": true,
+      "features": { "sqlDatabase": true, "cosmosDb": false, "postgresql": false, "mysql": false, "redis": false }
+    },
+    "appservices": { "enabled": false },
+    "containers": { "enabled": false },
+    "integration": { "enabled": false },
+    "ai": { "enabled": false },
+    "data": { "enabled": false },
+    "governance": {
+      "enabled": true,
+      "features": { "automationAccount": true, "budget": true, "budgetAmount": 200, "resourceLocks": true, "policyAssignments": false }
+    }
+  },
+  "seedDummyData": false
+}
