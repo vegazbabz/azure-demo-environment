@@ -1,4 +1,4 @@
-﻿{
+
   "profileName": "minimal",
   "description": "Minimal Azure demo environment. Monitoring, networking, security, and one Windows VM. Low cost, good for initial orientation.",
   "version": "2.0.0",
