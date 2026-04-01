@@ -200,7 +200,7 @@ Describe 'Deploy-AdePolicies.ps1' {
         }
 
         It 'Calls az account set' {
-            ($global:AzCalls | Where-Object { $_ -match 'account set' }).Count | Should -BeGreaterThan 0
+            (@($global:AzCalls | Where-Object { $_ -match 'account set' })).Count | Should -BeGreaterThan 0
         }
 
         It 'Calls az policy definition create for each definition file' {
@@ -210,12 +210,12 @@ Describe 'Deploy-AdePolicies.ps1' {
         }
 
         It 'Calls az policy set-definition create for the initiative' {
-            $setCalls = $global:AzCalls | Where-Object { $_ -match 'policy set-definition create' }
+            $setCalls = @($global:AzCalls | Where-Object { $_ -match 'policy set-definition create' })
             $setCalls.Count | Should -Be 1
         }
 
         It 'Does NOT call az policy assignment create when -Assign is not passed' {
-            $assignCalls = $global:AzCalls | Where-Object { $_ -match 'policy assignment create' }
+            $assignCalls = @($global:AzCalls | Where-Object { $_ -match 'policy assignment create' })
             $assignCalls.Count | Should -Be 0
         }
     }
@@ -239,7 +239,7 @@ Describe 'Deploy-AdePolicies.ps1' {
         }
 
         It 'Calls az policy assignment create exactly once' {
-            $assignCalls = $global:AzCalls | Where-Object { $_ -match 'policy assignment create' }
+            $assignCalls = @($global:AzCalls | Where-Object { $_ -match 'policy assignment create' })
             $assignCalls.Count | Should -Be 1
         }
     }
