@@ -169,21 +169,21 @@ function Confirm-AdeDeployment {
         Where-Object { $_.Value.enabled -eq $true }).Name
 
     # Governance features (v2 schema)
-    $govFeatures   = $Profile.modules.governance.features
-    $budgetAmount  = if ($govFeatures) { $govFeatures.budgetAmount ?? 300 } else { 300 }
+    $govFeatures   = if ($Profile.modules.governance.PSObject.Properties['features']) { $Profile.modules.governance.features } else { $null }
+    $budgetAmount  = if ($govFeatures -and $null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
     $autoShutdown  = if ($govFeatures -and $govFeatures.automationAccount -eq $true) { '19:00 UTC (weekdays)' } else { 'disabled' }
     $expensiveOn   = @()
-    $netFeatures   = $Profile.modules.networking.features
+    $netFeatures   = if ($Profile.modules.networking.PSObject.Properties['features']) { $Profile.modules.networking.features } else { $null }
     if ($netFeatures) {
         if ($netFeatures.enableFirewall -and $netFeatures.enableFirewall -ne 'None') { $expensiveOn += "Firewall ($($netFeatures.enableFirewall))" }
         if ($netFeatures.enableAppGateway -eq $true) { $expensiveOn += 'AppGateway' }
         if ($netFeatures.enableVpnGateway -eq $true) { $expensiveOn += 'VpnGateway' }
         if ($netFeatures.enableDdos -eq $true)        { $expensiveOn += 'DDoS ⚠️' }
     }
-    $secFeatures = $Profile.modules.security.features
+    $secFeatures = if ($Profile.modules.security.PSObject.Properties['features']) { $Profile.modules.security.features } else { $null }
     if ($secFeatures -and $secFeatures.defenderForCloud -eq $true) { $expensiveOn += 'Defender' }
     if ($secFeatures -and $secFeatures.sentinel -eq $true)          { $expensiveOn += 'Sentinel ⚠️' }
-    $intFeatures = $Profile.modules.integration.features
+    $intFeatures = if ($Profile.modules.integration.PSObject.Properties['features']) { $Profile.modules.integration.features } else { $null }
     if ($intFeatures -and $intFeatures.apiManagement -eq $true)     { $expensiveOn += 'APIM' }
 
     Write-AdeSection "Deployment Summary"
