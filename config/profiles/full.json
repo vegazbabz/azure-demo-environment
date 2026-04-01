@@ -1,4 +1,4 @@
-
+{
   "profileName": "full",
   "description": "Full Azure demo environment deploying all supported resource types with DEFAULT (out-of-the-box) Azure settings. No hardening. Designed as a baseline for benchmark testing (CIS, MCSB, Defender CSPM, etc.).",
   "version": "2.0.0",
