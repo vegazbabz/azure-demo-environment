@@ -1,4 +1,4 @@
-﻿{
+
   "profileName": "compute-only",
   "description": "Compute-focused profile. Windows + Linux VMs with supporting networking, security, and monitoring. Good for VM benchmark testing.",
   "version": "2.0.0",
