@@ -1,4 +1,4 @@
-
+{
   "profileName": "hardened",
   "description": "Hardened Azure demo environment deploying all resource types with CIS/MCSB-aligned security controls. HTTPS-only, TLS 1.2, no public IPs on VMs, Defender for Cloud + Sentinel enabled, RBAC-based auth, private networking, policy enforcement mode Default. Use to test the effectiveness of security controls and benchmark improvements over the default (unhardened) profile.",
   "version": "2.0.0",
