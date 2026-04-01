@@ -48,7 +48,7 @@ $ErrorActionPreference = 'Stop'
 
 # ─── Resolve paths ────────────────────────────────────────────────────────────
 
-$repoRoot  = Split-Path $PSScriptRoot -Parent
+$repoRoot  = Split-Path -Path $PSScriptRoot -Parent
 $testsRoot = $PSScriptRoot
 
 if (-not $Path) {
@@ -60,7 +60,7 @@ if (-not $OutputFile) {
     $OutputFile  = Join-Path -Path $resultsPath -ChildPath 'pester-results.xml'
 }
 
-$resultsDir = Split-Path $OutputFile -Parent
+$resultsDir = Split-Path -Path $OutputFile -Parent
 if (-not (Test-Path $resultsDir)) {
     $null = New-Item -ItemType Directory -Path $resultsDir -Force
 }
@@ -69,7 +69,7 @@ if (-not (Test-Path $resultsDir)) {
 
 $pesterModule = Get-Module -ListAvailable -Name Pester |
     Where-Object { $_.Version -ge [version]'5.0.0' } |
-    Sort-Object Version -Descending |
+    Sort-Object -Property Version -Descending |
     Select-Object -First 1
 
 if (-not $pesterModule) {
@@ -77,7 +77,7 @@ if (-not $pesterModule) {
     Install-Module -Name Pester -MinimumVersion 5.0.0 -Force -Scope CurrentUser -Repository PSGallery
 }
 
-Import-Module Pester -MinimumVersion 5.0.0 -Force
+Import-Module -Name Pester -MinimumVersion 5.0.0 -Force
 
 # ─── Build Pester configuration ───────────────────────────────────────────────
 
