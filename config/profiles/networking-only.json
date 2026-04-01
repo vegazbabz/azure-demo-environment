@@ -1,0 +1,29 @@
+﻿{
+  "profileName": "networking-only",
+  "description": "Networking-focused profile. VNet with all subnets reserved, Application Gateway, Bastion. Good for network connectivity and topology testing.",
+  "version": "2.0.0",
+  "modules": {
+    "monitoring": {
+      "enabled": true,
+      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false }
+    },
+    "networking": {
+      "enabled": true,
+      "features": { "bastionSku": "Developer", "enableAppGateway": true, "enableFirewall": "None", "enableVpnGateway": false, "enableDdos": false, "enableNatGateway": false, "enablePrivateDnsZones": false }
+    },
+    "security": { "enabled": false },
+    "compute": { "enabled": false },
+    "storage": { "enabled": false },
+    "databases": { "enabled": false },
+    "appservices": { "enabled": false },
+    "containers": { "enabled": false },
+    "integration": { "enabled": false },
+    "ai": { "enabled": false },
+    "data": { "enabled": false },
+    "governance": {
+      "enabled": true,
+      "features": { "automationAccount": false, "budget": true, "budgetAmount": 100, "resourceLocks": false, "policyAssignments": false }
+    }
+  },
+  "seedDummyData": false
+}

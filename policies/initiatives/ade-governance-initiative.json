@@ -1,0 +1,100 @@
+{
+  "name": "ade-governance-initiative",
+  "properties": {
+    "displayName": "[ADE] Governance Baseline Initiative",
+    "description": "Custom initiative bundling ADE-specific governance controls: tag enforcement, network hardening, approved VM SKUs, and storage public access auditing. Complements the built-in CIS and MCSB assignments in policy-assignments.bicep.",
+    "policyType": "Custom",
+    "metadata": {
+      "category": "Governance",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "tagEffect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Tag enforcement effect",
+          "description": "Effect for the 'Require Environment and Owner tags' policy."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Audit"
+      },
+      "nicPublicIpEffect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "NIC public IP effect",
+          "description": "Effect for the 'Deny NICs with public IPs' policy."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Deny"
+      },
+      "vmSkuEffect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "VM SKU restriction effect",
+          "description": "Effect for the 'Restrict VM SKUs' policy."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Deny"
+      },
+      "allowedVmSkus": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Allowed VM SKUs",
+          "description": "Override the approved VM SKU list."
+        },
+        "defaultValue": [
+          "Standard_B1s",
+          "Standard_B2s",
+          "Standard_B2ms",
+          "Standard_B4ms",
+          "Standard_D2s_v5",
+          "Standard_D4s_v5",
+          "Standard_E2s_v5",
+          "Standard_F2s_v2",
+          "Standard_DS1_v2",
+          "Standard_DS2_v2"
+        ]
+      },
+      "storagePublicAccessEffect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Storage public access effect",
+          "description": "Effect for the 'Audit storage accounts with public blob access' policy."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Audit"
+      }
+    },
+    "policyDefinitions": [
+      {
+        "policyDefinitionId": "/subscriptions/{SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/ade-require-resource-tags",
+        "policyDefinitionReferenceId": "adeRequireResourceTags",
+        "parameters": {
+          "effect": { "value": "[parameters('tagEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionId": "/subscriptions/{SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/ade-deny-public-ip-on-nic",
+        "policyDefinitionReferenceId": "adeDenyPublicIpOnNic",
+        "parameters": {
+          "effect": { "value": "[parameters('nicPublicIpEffect')]" }
+        }
+      },
+      {
+        "policyDefinitionId": "/subscriptions/{SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/ade-restrict-vm-skus",
+        "policyDefinitionReferenceId": "adeRestrictVmSkus",
+        "parameters": {
+          "effect": { "value": "[parameters('vmSkuEffect')]" },
+          "allowedSkus": { "value": "[parameters('allowedVmSkus')]" }
+        }
+      },
+      {
+        "policyDefinitionId": "/subscriptions/{SUBSCRIPTION_ID}/providers/Microsoft.Authorization/policyDefinitions/ade-audit-storage-public-access",
+        "policyDefinitionReferenceId": "adeAuditStoragePublicAccess",
+        "parameters": {
+          "effect": { "value": "[parameters('storagePublicAccessEffect')]" }
+        }
+      }
+    ]
+  }
+}

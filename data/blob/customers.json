@@ -1,0 +1,7 @@
+[
+  { "id": 1, "name": "Contoso Ltd",        "email": "billing@contoso.example",    "tier": "gold",   "country": "US", "joinedDate": "2022-03-15", "annualSpend": 84500.00 },
+  { "id": 2, "name": "Fabrikam Inc",       "email": "accounts@fabrikam.example",  "tier": "silver", "country": "UK", "joinedDate": "2023-01-08", "annualSpend": 31200.00 },
+  { "id": 3, "name": "Northwind Traders",  "email": "finance@northwind.example",  "tier": "gold",   "country": "DE", "joinedDate": "2021-11-22", "annualSpend": 127000.00 },
+  { "id": 4, "name": "Adventure Works",    "email": "ops@adventureworks.example", "tier": "bronze", "country": "AU", "joinedDate": "2024-06-01", "annualSpend": 8750.00 },
+  { "id": 5, "name": "Tailspin Toys",      "email": "info@tailspin.example",      "tier": "silver", "country": "CA", "joinedDate": "2023-09-14", "annualSpend": 22400.00 }
+]

@@ -1,0 +1,126 @@
+﻿{
+  "profileName": "full",
+  "description": "Full Azure demo environment deploying all supported resource types with DEFAULT (out-of-the-box) Azure settings. No hardening. Designed as a baseline for benchmark testing (CIS, MCSB, Defender CSPM, etc.).",
+  "version": "2.0.0",
+  "modules": {
+    "monitoring": {
+      "enabled": true,
+      "features": {
+        "logAnalyticsWorkspace": true,
+        "applicationInsights": true,
+        "actionGroup": true,
+        "alertRules": false
+      }
+    },
+    "networking": {
+      "enabled": true,
+      "features": {
+        "bastionSku": "Developer",
+        "enableAppGateway": false,
+        "enableFirewall": "None",
+        "enableVpnGateway": false,
+        "enableDdos": false,
+        "enableNatGateway": false,
+        "enablePrivateDnsZones": false
+      }
+    },
+    "security": {
+      "enabled": true,
+      "features": {
+        "keyVault": true,
+        "managedIdentity": true,
+        "defenderForCloud": false,
+        "sentinel": false
+      }
+    },
+    "compute": {
+      "enabled": true,
+      "features": {
+        "windowsVm": true,
+        "linuxVm": true,
+        "vmss": false,
+        "enableAutoShutdown": false,
+        "vmSku": "Standard_B2s"
+      }
+    },
+    "storage": {
+      "enabled": true,
+      "features": {
+        "generalPurposeStorage": true,
+        "dataLakeGen2": true,
+        "fileShares": true,
+        "enableSoftDelete": false,
+        "enableVersioning": false
+      }
+    },
+    "databases": {
+      "enabled": true,
+      "features": {
+        "sqlDatabase": true,
+        "cosmosDb": true,
+        "postgresql": true,
+        "mysql": false,
+        "redis": false
+      }
+    },
+    "appservices": {
+      "enabled": true,
+      "features": {
+        "windowsWebApp": true,
+        "linuxWebApp": true,
+        "functionApp": true,
+        "staticWebApp": true,
+        "logicApp": true
+      }
+    },
+    "containers": {
+      "enabled": true,
+      "features": {
+        "containerRegistry": true,
+        "kubernetesService": true,
+        "containerApps": true,
+        "containerInstances": true
+      }
+    },
+    "integration": {
+      "enabled": true,
+      "features": {
+        "serviceBus": true,
+        "eventHub": true,
+        "eventGrid": true,
+        "signalR": true,
+        "apiManagement": false,
+        "apimSku": "Developer"
+      }
+    },
+    "ai": {
+      "enabled": false,
+      "features": {
+        "aiServices": false,
+        "openAi": false,
+        "cognitiveSearch": false,
+        "machineLearning": false
+      }
+    },
+    "data": {
+      "enabled": false,
+      "features": {
+        "dataFactory": false,
+        "synapse": false,
+        "databricks": false,
+        "purview": false
+      }
+    },
+    "governance": {
+      "enabled": true,
+      "features": {
+        "automationAccount": true,
+        "budget": true,
+        "budgetAmount": 300,
+        "resourceLocks": false,
+        "policyAssignments": false
+      }
+    }
+  },
+  "seedDummyData": true
+}

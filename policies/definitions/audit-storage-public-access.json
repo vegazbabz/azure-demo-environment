@@ -1,0 +1,41 @@
+{
+  "name": "ade-audit-storage-public-access",
+  "properties": {
+    "displayName": "[ADE] Audit storage accounts with public blob access enabled",
+    "description": "Audits storage accounts where allowBlobPublicAccess is true. Public blob access exposes storage content to anonymous internet requests and should be disabled in hardened environments.",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "metadata": {
+      "category": "Storage",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "effect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Effect",
+          "description": "'Audit' logs non-compliant storage accounts. 'Deny' prevents enabling public blob access. 'Disabled' turns the policy off."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Audit"
+      }
+    },
+    "policyRule": {
+      "if": {
+        "allOf": [
+          {
+            "field": "type",
+            "equals": "Microsoft.Storage/storageAccounts"
+          },
+          {
+            "field": "Microsoft.Storage/storageAccounts/allowBlobPublicAccess",
+            "equals": "true"
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}

@@ -1,0 +1,291 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Azure Demo Environment (ADE) — Deploy Workflow
+#
+# Triggers:
+#   - Manual (workflow_dispatch): choose profile, region, prefix
+#   - Push to main: validates templates only (no deploy)
+#
+# Required secrets:
+#   AZURE_CLIENT_ID        — Service principal / managed identity client ID
+#   AZURE_TENANT_ID        — Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID  — Target subscription
+#   ADE_ADMIN_PASSWORD     — VM / DB admin password (min 12 chars, complexity)
+#
+# Required variables (Actions → Variables):
+#   ADE_DEFAULT_LOCATION   — e.g. westeurope  (optional, falls back to input)
+#   ADE_DEFAULT_PREFIX     — e.g. ade         (optional, falls back to input)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ADE — Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Deployment profile'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - minimal
+          - compute-only
+          - databases-only
+          - networking-only
+          - security-focus
+          - hardened
+      mode:
+        description: 'Deployment mode (default = standard modules, hardened = CIS/MCSB-aligned)'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - hardened
+      location:
+        description: 'Azure region (e.g. westeurope, eastus)'
+        required: true
+        default: 'westeurope'
+        type: string
+      prefix:
+        description: 'Resource prefix — 2-8 lowercase alphanumeric (e.g. ade)'
+        required: true
+        default: 'ade'
+        type: string
+      skip_modules:
+        description: 'Comma-separated modules to skip (e.g. containers,ai)'
+        required: false
+        default: ''
+        type: string
+      seed_data:
+        description: 'Seed dummy data after deployment'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+  push:
+    branches:
+      - main
+    paths:
+      - 'bicep/**'
+      - 'config/**'
+      - 'scripts/**'
+
+permissions:
+  id-token: write   # OIDC federated credential
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  INPUT_PREFIX:    ${{ github.event.inputs.prefix   || vars.ADE_DEFAULT_PREFIX   || 'ade' }}
+  INPUT_LOCATION:  ${{ github.event.inputs.location || vars.ADE_DEFAULT_LOCATION || 'westeurope' }}
+
+# ─── Job 1: Lint + what-if (always runs) ─────────────────────────────────────
+jobs:
+  validate:
+    name: Validate Bicep Templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Lint — all Bicep files
+        run: |
+          FAILED=0
+          while IFS= read -r f; do
+            echo "→ Linting: $f"
+            az bicep lint --file "$f" || FAILED=1
+          done < <(find bicep -name '*.bicep')
+          exit $FAILED
+
+      - name: Validate profile + mode consistency
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          PROFILE="${{ github.event.inputs.profile }}"
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "$PROFILE" = "hardened" ] && [ "$MODE" != "hardened" ]; then
+            echo "::error::Profile 'hardened' must be deployed with mode 'hardened'. Set mode=hardened or choose a different profile."
+            exit 1
+          fi
+          if [ "$MODE" = "hardened" ] && [ "$PROFILE" != "hardened" ]; then
+            echo "::warning::Mode 'hardened' is selected with profile '$PROFILE'. The hardened Bicep modules will be used with non-hardened profile settings."
+          fi
+
+      - name: What-if — monitoring module (default)
+        if: ${{ github.event.inputs.mode != 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-monitoring-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/modules/monitoring/monitoring.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+            --output table || true
+
+      - name: What-if — networking module (default)
+        if: ${{ github.event.inputs.mode != 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-networking-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/modules/networking/networking.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+            --output table || true
+
+      - name: What-if — security module (default)
+        if: ${{ github.event.inputs.mode != 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-security-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/modules/security/security.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+                         logAnalyticsId="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${PREFIX}-monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/${PREFIX}-law" \
+            --output table || true
+
+      - name: What-if — monitoring module (hardened)
+        if: ${{ github.event.inputs.mode == 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-monitoring-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/hardened/monitoring/monitoring.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+            --output table || true
+
+      - name: What-if — networking module (hardened)
+        if: ${{ github.event.inputs.mode == 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-networking-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/hardened/networking/networking.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+            --output table || true
+
+      - name: What-if — security module (hardened)
+        if: ${{ github.event.inputs.mode == 'hardened' }}
+        run: |
+          PREFIX="${{ env.INPUT_PREFIX }}"
+          LOCATION="${{ env.INPUT_LOCATION }}"
+          RG="${PREFIX}-security-rg"
+          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file  bicep/hardened/security/security.bicep \
+            --parameters prefix="$PREFIX" \
+                         location="$LOCATION" \
+                         logAnalyticsId="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${PREFIX}-monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/${PREFIX}-law" \
+            --output table || true
+
+# ─── Job 2: Deploy (manual trigger only) ─────────────────────────────────────
+  deploy:
+    name: Deploy — ${{ github.event.inputs.profile }} @ ${{ github.event.inputs.location }}
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    environment: demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Install PowerShell 7
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq powershell
+
+      - name: Deploy ADE
+        id: deploy
+        shell: pwsh
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADE_ADMIN_PASSWORD }}
+        run: |
+          $skipModules = @()
+          if ('${{ github.event.inputs.skip_modules }}') {
+            $skipModules = '${{ github.event.inputs.skip_modules }}' -split ',' | ForEach-Object { $_.Trim() }
+          }
+
+          ./scripts/deploy.ps1 `
+            -Profile       '${{ github.event.inputs.profile }}' `
+            -Mode          '${{ github.event.inputs.mode || 'default' }}' `
+            -Location      '${{ env.INPUT_LOCATION }}' `
+            -Prefix        '${{ env.INPUT_PREFIX }}' `
+            -SubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -AdminPassword (ConvertTo-SecureString $env:ADMIN_PASSWORD -AsPlainText -Force) `
+            -SkipModules   $skipModules `
+            -Force
+
+      - name: Seed dummy data
+        if: ${{ github.event.inputs.seed_data == 'true' && steps.deploy.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          ./scripts/seed-data.ps1 `
+            -Prefix        '${{ env.INPUT_PREFIX }}' `
+            -SubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -Force
+
+      - name: Write job summary
+        if: always()
+        run: |
+          STATUS="${{ steps.deploy.outcome }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ${ICON} ADE Deployment — ${{ github.event.inputs.profile }}
+
+          | Field        | Value |
+          |--------------|-------|
+          | Profile      | \`${{ github.event.inputs.profile }}\` |
+          | Mode         | \`${{ github.event.inputs.mode || 'default' }}\` |
+          | Location     | \`${{ env.INPUT_LOCATION }}\` |
+          | Prefix       | \`${{ env.INPUT_PREFIX }}\` |
+          | Status       | ${STATUS} |
+          | Seed data    | ${{ github.event.inputs.seed_data }} |
+          | Run          | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+          ### Resource Groups
+          $(for mod in monitoring networking security compute storage databases appservices containers integration ai data governance; do
+            echo "- \`${{ env.INPUT_PREFIX }}-${mod}-rg\`"
+          done)
+          EOF

@@ -1,0 +1,11 @@
+id,name,category,price,stock,sku,supplier
+1,Widget A — Standard,hardware,19.99,240,WGT-A-STD,Contoso Ltd
+2,Widget B — Pro,hardware,49.99,85,WGT-B-PRO,Contoso Ltd
+3,Service Pack — Basic,software,99.00,999,SVC-BASIC,Fabrikam Inc
+4,Service Pack — Enterprise,software,299.00,999,SVC-ENT,Fabrikam Inc
+5,Sensor Module v2,iot,34.50,512,SENS-V2,Northwind Traders
+6,Sensor Module v3,iot,54.50,312,SENS-V3,Northwind Traders
+7,Cloud Connector Kit,networking,149.00,64,CCK-001,Adventure Works
+8,Demo License — 30 Day,licensing,0.00,9999,LIC-DEMO-30,Tailspin Toys
+9,Premium Support — Annual,support,1200.00,999,SUP-PREM-Y,Fabrikam Inc
+10,Training Bundle,education,450.00,999,TRN-BUNDLE,Contoso Ltd

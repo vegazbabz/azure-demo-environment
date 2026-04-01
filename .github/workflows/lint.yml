@@ -1,0 +1,252 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Azure Demo Environment (ADE) — Lint Workflow
+#
+# Runs on every PR and every push. No Azure credentials required.
+#
+# Checks:
+#   1. Bicep lint        — all *.bicep files (az bicep lint)
+#   2. PSScriptAnalyzer  — all *.ps1 files (errors fail CI, warnings reported)
+#   3. JSON validation   — all *.json files under config/ and data/
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ADE — Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'bicep/**'
+      - 'scripts/**'
+      - 'config/**'
+      - 'data/**'
+
+permissions:
+  contents: read
+  pull-requests: write   # for posting lint summary as PR comment
+
+jobs:
+  bicep-lint:
+    name: Bicep Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: az bicep install --version latest
+
+      - name: Lint all Bicep files
+        id: bicep_lint
+        run: |
+          FAILED=0
+          RESULTS=""
+          while IFS= read -r f; do
+            echo "→ Linting: $f"
+            # az bicep lint exits 0 even on errors in some versions — capture stderr too
+            OUTPUT=$(az bicep lint --file "$f" --no-restore 2>&1)
+            CODE=$?
+            # Also treat non-empty stderr output containing 'Error' as a failure
+            if [ $CODE -ne 0 ] || echo "$OUTPUT" | grep -qi '^.*Error'; then
+              echo "  ✗ FAILED"
+              echo "$OUTPUT"
+              # Escape backticks so output cannot break the markdown code fence
+              SAFE_OUTPUT=$(echo "$OUTPUT" | sed 's/`/\\`/g')
+              RESULTS="${RESULTS}\n❌ \`$f\`\n\`\`\`\n${SAFE_OUTPUT}\n\`\`\`\n"
+              FAILED=1
+            else
+              echo "  ✓ OK"
+            fi
+          done < <(find bicep -name '*.bicep' | sort)
+
+          if [ $FAILED -ne 0 ]; then
+            echo "LINT_RESULTS<<EOF" >> "$GITHUB_OUTPUT"
+            printf "%b" "$RESULTS" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+          exit $FAILED
+
+      - name: Post lint failures to PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          LINT_RESULTS: ${{ steps.bicep_lint.outputs.LINT_RESULTS }}
+        with:
+          script: |
+            // Read from env to avoid JS injection via direct expression interpolation
+            const results = process.env.LINT_RESULTS || '(no details captured)';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ❌ Bicep Lint Failures\n\n${results}`
+            });
+
+  ps-lint:
+    name: PowerShell Lint (PSScriptAnalyzer)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -RequiredVersion 1.23.0 -Force -Scope CurrentUser -Repository PSGallery
+
+      - name: Analyse all PowerShell files
+        id: ps_lint
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path scripts,policies -Recurse -Filter '*.ps1' | Select-Object -ExpandProperty FullName
+          $errors   = [System.Collections.Generic.List[string]]::new()
+          $warnings = [System.Collections.Generic.List[string]]::new()
+          $failed   = $false
+
+          foreach ($file in $files) {
+            $sep = [System.IO.Path]::DirectorySeparatorChar
+            $rel = $file.Replace($PWD.Path + $sep, '')
+            Write-Host "→ Analysing: $rel"
+            $results = Invoke-ScriptAnalyzer -Path $file -Severity Error,Warning -Settings (Join-Path $PWD 'PSScriptAnalyzerSettings.psd1')
+            foreach ($r in $results) {
+              $msg = "  [$($r.Severity)] $rel`:$($r.Line) — $($r.RuleName): $($r.Message)"
+              if ($r.Severity -eq 'Error') {
+                Write-Host $msg -ForegroundColor Red
+                $errors.Add($msg)
+                $failed = $true
+              } else {
+                Write-Host $msg -ForegroundColor Yellow
+                $warnings.Add($msg)
+              }
+            }
+          }
+
+          if ($warnings.Count -gt 0) {
+            Write-Host "`n$($warnings.Count) warning(s) found (not blocking CI)." -ForegroundColor Yellow
+          }
+
+          if ($failed) {
+            Write-Host "`n$($errors.Count) error(s) found — failing CI." -ForegroundColor Red
+            # Write to GITHUB_OUTPUT using the safe multiline delimiter syntax
+            $errText = $errors -join "`n"
+            $outFile = $env:GITHUB_OUTPUT
+            "PS_ERRORS<<PSEOF" | Out-File -FilePath $outFile -Append
+            $errText  | Out-File -FilePath $outFile -Append
+            "PSEOF"           | Out-File -FilePath $outFile -Append
+            exit 1
+          }
+
+          Write-Host "`nAll PS files passed PSScriptAnalyzer." -ForegroundColor Green
+
+      - name: Post PS errors to PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PS_ERRORS: ${{ steps.ps_lint.outputs.PS_ERRORS }}
+        with:
+          script: |
+            const results = process.env.PS_ERRORS || '(no details captured)';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## ❌ PSScriptAnalyzer Errors\n\n\`\`\`\n${results}\n\`\`\``
+            });
+
+  json-validate:
+    name: JSON Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate all JSON files
+        run: |
+          FAILED=0
+          # data/ may not exist in all checkout states
+          SEARCH_DIRS="config"
+          [ -d data ] && SEARCH_DIRS="$SEARCH_DIRS data"
+          while IFS= read -r f; do
+            echo "→ Validating: $f"
+            if python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+              echo "  ✓ OK"
+            else
+              echo "  ✗ Invalid JSON: $f"
+              python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$f" || true
+              FAILED=1
+            fi
+          done < <(find $SEARCH_DIRS -name '*.json' | sort)
+          exit $FAILED
+
+  pester-tests:
+    name: Pester Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -MinimumVersion 5.6.0 -Force -Scope CurrentUser -Repository PSGallery
+
+      - name: Run Pester suite
+        id: pester
+        shell: pwsh
+        run: |
+          ./tests/Invoke-PesterSuite.ps1 -CI
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-results
+          path: tests/results/
+          retention-days: 14
+
+      - name: Post test failures to PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '## ❌ Pester Tests Failed\n\nOne or more unit tests failed. Download the `pester-results` artifact from this run for the full JUnit XML report.'
+            });
+
+  summary:
+    name: Lint Summary
+    runs-on: ubuntu-latest
+    needs: [bicep-lint, ps-lint, json-validate, pester-tests]
+    if: always()
+    steps:
+      - name: Report overall result
+        run: |
+          BICEP="${{ needs.bicep-lint.result }}"
+          PS="${{ needs.ps-lint.result }}"
+          JSON="${{ needs.json-validate.result }}"
+          PESTER="${{ needs.pester-tests.result }}"
+
+          bicep_ok()  { [ "$BICEP"   = "success" ] || [ "$BICEP"   = "skipped" ]; }
+          ps_ok()     { [ "$PS"      = "success" ] || [ "$PS"      = "skipped" ]; }
+          json_ok()   { [ "$JSON"    = "success" ] || [ "$JSON"    = "skipped" ]; }
+          pester_ok() { [ "$PESTER"  = "success" ] || [ "$PESTER"  = "skipped" ]; }
+
+          echo "| Check        | Result |"                                              >> "$GITHUB_STEP_SUMMARY"
+          echo "| ------------ | ------ |"                                             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Bicep lint   | $( bicep_ok  && echo '✅' || echo '❌' ) $BICEP   |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| PS lint      | $( ps_ok     && echo '✅' || echo '❌' ) $PS      |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| JSON valid   | $( json_ok   && echo '✅' || echo '❌' ) $JSON    |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Pester tests | $( pester_ok && echo '✅' || echo '❌' ) $PESTER  |" >> "$GITHUB_STEP_SUMMARY"
+
+          if ! bicep_ok || ! ps_ok || ! json_ok || ! pester_ok; then
+            echo "> [!CAUTION]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> One or more checks failed. Fix the errors above before merging." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

@@ -1,0 +1,43 @@
+{
+  "name": "ade-deny-public-ip-on-nic",
+  "properties": {
+    "displayName": "[ADE] Deny NICs with public IP addresses",
+    "description": "Denies (or audits) network interfaces that have a public IP address associated directly. In hardened environments all external ingress must flow through a load balancer, Application Gateway, or Firewall.",
+    "policyType": "Custom",
+    "mode": "All",
+    "metadata": {
+      "category": "Network",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "effect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Effect",
+          "description": "'Audit' flags non-compliant NICs. 'Deny' blocks creation of NICs that carry a public IP. 'Disabled' turns the policy off."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Deny"
+      }
+    },
+    "policyRule": {
+      "if": {
+        "allOf": [
+          {
+            "field": "type",
+            "equals": "Microsoft.Network/networkInterfaces"
+          },
+          {
+            "count": {
+              "field": "Microsoft.Network/networkInterfaces/ipConfigurations[*].publicIPAddress.id"
+            },
+            "greater": 0
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}
