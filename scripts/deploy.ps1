@@ -120,9 +120,6 @@ param(
     [switch]$Force,
 
     [Parameter(Mandatory = $false)]
-    [switch]$WhatIf,
-
-    [Parameter(Mandatory = $false)]
     [string[]]$SkipModules = @(),
 
     [Parameter(Mandatory = $false)]
@@ -283,7 +280,7 @@ function Deploy-AdeModule {
         -TemplatePath   $BicepFile `
         -DeploymentName "ade-$ModuleName-$(Get-Date -Format 'yyyyMMddHHmmss')" `
         -Parameters     $Parameters `
-        -WhatIf:$WhatIf
+        -WhatIf:($WhatIfPreference -eq 'Continue')
 
     return $outputs
 }
