@@ -79,7 +79,6 @@ permissions:
   contents: read
 
 env:
-  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   INPUT_PREFIX:    ${{ github.event.inputs.prefix   || vars.ADE_DEFAULT_PREFIX   || 'ade' }}
   INPUT_LOCATION:  ${{ github.event.inputs.location || vars.ADE_DEFAULT_LOCATION || 'westeurope' }}
 
@@ -90,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4.3.1
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -125,7 +124,7 @@ jobs:
     environment: demo
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4.3.1
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2.3.0
