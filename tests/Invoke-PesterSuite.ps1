@@ -56,7 +56,8 @@ if (-not $Path) {
 }
 
 if (-not $OutputFile) {
-    $OutputFile = Join-Path -Path (Join-Path -Path $testsRoot -ChildPath 'results') -ChildPath 'pester-results.xml'
+    $resultsPath = Join-Path -Path $testsRoot -ChildPath 'results'
+    $OutputFile  = Join-Path -Path $resultsPath -ChildPath 'pester-results.xml'
 }
 
 $resultsDir = Split-Path $OutputFile -Parent
