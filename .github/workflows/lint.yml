@@ -25,6 +25,9 @@ on:
       - 'scripts/**'
       - 'config/**'
       - 'data/**'
+      - 'tests/**'
+      - 'policies/**'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
