@@ -83,21 +83,14 @@ env:
   INPUT_PREFIX:    ${{ github.event.inputs.prefix   || vars.ADE_DEFAULT_PREFIX   || 'ade' }}
   INPUT_LOCATION:  ${{ github.event.inputs.location || vars.ADE_DEFAULT_LOCATION || 'westeurope' }}
 
-# ─── Job 1: Lint + what-if (always runs) ─────────────────────────────────────
+# ─── Job 1: Lint (always runs — no Azure credentials needed) ─────────────────
 jobs:
   validate:
     name: Validate Bicep Templates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        uses: actions/checkout@v4.2.2
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -112,7 +105,6 @@ jobs:
           exit $FAILED
 
       - name: Validate profile + mode consistency
-        if: github.event_name == 'workflow_dispatch'
         run: |
           PROFILE="${{ github.event.inputs.profile }}"
           MODE="${{ github.event.inputs.mode }}"
@@ -123,6 +115,27 @@ jobs:
           if [ "$MODE" = "hardened" ] && [ "$PROFILE" != "hardened" ]; then
             echo "::warning::Mode 'hardened' is selected with profile '$PROFILE'. The hardened Bicep modules will be used with non-hardened profile settings."
           fi
+
+# ─── Job 2: Deploy (manual trigger only) ─────────────────────────────────────
+  deploy:
+    name: Deploy — ${{ github.event.inputs.profile }} @ ${{ github.event.inputs.location }}
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    environment: demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2.3.0
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Bicep CLI
+        run: az bicep install
 
       - name: What-if — monitoring module (default)
         if: ${{ github.event.inputs.mode != 'hardened' }}
@@ -209,27 +222,6 @@ jobs:
                          location="$LOCATION" \
                          logAnalyticsId="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${PREFIX}-monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/${PREFIX}-law" \
             --output table || true
-
-# ─── Job 2: Deploy (manual trigger only) ─────────────────────────────────────
-  deploy:
-    name: Deploy — ${{ github.event.inputs.profile }} @ ${{ github.event.inputs.location }}
-    runs-on: ubuntu-latest
-    needs: validate
-    if: github.event_name == 'workflow_dispatch'
-    environment: demo
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Install Bicep CLI
-        run: az bicep install
 
       - name: Install PowerShell 7
         run: |
