@@ -72,9 +72,9 @@ Describe 'Start-AdeResources.ps1 – source analysis' -Tag 'unit' {
         $tokens = $null; $errors = $null
         $null = [System.Management.Automation.Language.Parser]::ParseFile(
             $script:startPs, [ref]$tokens, [ref]$errors)
-        $critical = $errors | Where-Object {
+        $critical = @($errors | Where-Object {
             $_.ErrorId -notin @('MissingArrayIndexExpression','MissingArgument')
-        }
+        })
         $critical.Count | Should -Be 0
     }
 }
@@ -142,9 +142,9 @@ Describe 'Stop-AdeResources.ps1 – source analysis' -Tag 'unit' {
         $tokens = $null; $errors = $null
         $null = [System.Management.Automation.Language.Parser]::ParseFile(
             $script:stopPs, [ref]$tokens, [ref]$errors)
-        $critical = $errors | Where-Object {
+        $critical = @($errors | Where-Object {
             $_.ErrorId -notin @('MissingArrayIndexExpression','MissingArgument')
-        }
+        })
         $critical.Count | Should -Be 0
     }
 }

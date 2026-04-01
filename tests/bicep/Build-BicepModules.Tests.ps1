@@ -17,6 +17,14 @@ BeforeDiscovery {
             RelativePath = $_.FullName.Substring($repoRoot.Length + 1)
         }
     }
+    # Initialise bicepReady here so -Skip:(-not $script:bicepReady) can be
+    # evaluated during Pester's discovery phase (BeforeAll has not run yet).
+    $script:bicepReady = $false
+    $azDiscoveryCmd = Get-Command az -ErrorAction SilentlyContinue
+    if ($azDiscoveryCmd) {
+        & $azDiscoveryCmd.Source bicep version 2>&1 | Out-Null
+        $script:bicepReady = ($LASTEXITCODE -eq 0)
+    }
 }
 
 BeforeAll {
