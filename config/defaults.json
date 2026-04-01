@@ -1,0 +1,184 @@
+{
+  "$schema": "./schema.json",
+  "profileName": "defaults",
+  "description": "Master default flag values. All profiles inherit from this and override specific values. Deploys Azure resources with OUT-OF-THE-BOX default settings — no hardening, no forced diagnostics, no encryption configuration. Designed as a baseline for security benchmark testing (CIS, MCSB, etc.).",
+  "version": "2.0.0",
+  "modules": {
+    "monitoring": {
+      "enabled": true,
+      "description": "Log Analytics Workspace, Application Insights, Action Group. Minimal config — no diagnostic settings forced on other resources.",
+      "features": {
+        "logAnalyticsWorkspace": true,
+        "applicationInsights": true,
+        "actionGroup": true,
+        "alertRules": false
+      }
+    },
+    "networking": {
+      "enabled": true,
+      "description": "VNet with all subnets pre-reserved. NSGs with no rules (Azure defaults). Optional: Bastion (Developer SKU by default), AppGW, Azure Firewall, VPN Gateway.",
+      "features": {
+        "bastionSku": "Developer",
+        "enableAppGateway": false,
+        "enableFirewall": "None",
+        "enableVpnGateway": false,
+        "enableDdos": false,
+        "enableNatGateway": false,
+        "enablePrivateDnsZones": false,
+        "networkWatcher": true
+      },
+      "costWarnings": {
+        "enableAppGateway": "Application Gateway WAF v2 ~$200-300/month",
+        "enableFirewall_Standard": "Azure Firewall Standard ~$900/month",
+        "enableFirewall_Premium": "Azure Firewall Premium ~$1,500/month",
+        "enableVpnGateway": "VPN Gateway VpnGw1 ~$140/month",
+        "bastionSku_Basic": "Bastion Basic ~$140/month",
+        "bastionSku_Standard": "Bastion Standard ~$200/month",
+        "enableDdos": "DDoS Network Protection ~$2,944/month — VERY EXPENSIVE"
+      }
+    },
+    "security": {
+      "enabled": true,
+      "description": "Key Vault (Standard SKU, default settings), User-Assigned Managed Identity. Defender for Cloud Free tier only. No Sentinel by default.",
+      "features": {
+        "keyVault": true,
+        "managedIdentity": true,
+        "defenderForCloud": false,
+        "sentinel": false
+      },
+      "costWarnings": {
+        "defenderForCloud": "Defender for Cloud P2 ~$15/server/month per resource type",
+        "sentinel": "Microsoft Sentinel pay-per-GB ingestion — major cost driver"
+      }
+    },
+    "compute": {
+      "enabled": true,
+      "description": "Windows Server 2022 VM and Ubuntu 22.04 LTS VM with default settings. No disk encryption, no agents, no auto-shutdown by default.",
+      "features": {
+        "windowsVm": true,
+        "linuxVm": true,
+        "vmss": false,
+        "availabilitySet": true,
+        "enableAutoShutdown": false,
+        "enableBootDiagnostics": true,
+        "vmSku": "Standard_B2s"
+      }
+    },
+    "storage": {
+      "enabled": true,
+      "description": "General-purpose v2 Storage Account with default Azure settings. No forced HTTPS-only, no TLS minimum, public blob access as Azure defaults.",
+      "features": {
+        "generalPurposeStorage": true,
+        "dataLakeGen2": true,
+        "fileShares": true,
+        "enableSoftDelete": false,
+        "enableVersioning": false
+      }
+    },
+    "databases": {
+      "enabled": true,
+      "description": "Azure SQL (Serverless, auto-pause), Cosmos DB (serverless), PostgreSQL Flexible Server. All with default settings — no forced TLS, public network access enabled.",
+      "features": {
+        "sqlDatabase": true,
+        "cosmosDb": true,
+        "postgresql": true,
+        "mysql": false,
+        "redis": false,
+        "sqlManagedInstance": false
+      },
+      "costWarnings": {
+        "sqlManagedInstance": "Azure SQL Managed Instance ~$1,000+/month — VERY EXPENSIVE",
+        "redis": "Redis Cache Basic C0 ~$16/month"
+      }
+    },
+    "appservices": {
+      "enabled": true,
+      "description": "App Service Plan (B1), Windows Web App, Linux Web App, Function App (Consumption), Static Web App, Logic App. Default settings — no forced HTTPS, no TLS minimum.",
+      "features": {
+        "windowsWebApp": true,
+        "linuxWebApp": true,
+        "functionApp": true,
+        "staticWebApp": true,
+        "logicApp": true
+      }
+    },
+    "containers": {
+      "enabled": true,
+      "description": "Azure Container Registry (Basic), AKS (1-node free tier), Container Apps (consumption), Container Instances. Default settings.",
+      "features": {
+        "containerRegistry": true,
+        "kubernetesService": true,
+        "containerApps": true,
+        "containerInstances": true
+      }
+    },
+    "integration": {
+      "enabled": true,
+      "description": "Service Bus (Standard), Event Hub (Basic), Event Grid, SignalR (Free). API Management off by default (cost). Default settings on all.",
+      "features": {
+        "serviceBus": true,
+        "eventHub": true,
+        "eventGrid": true,
+        "signalR": true,
+        "apiManagement": false,
+        "apimSku": "Developer"
+      },
+      "costWarnings": {
+        "apiManagement_Developer": "API Management Developer tier ~$50/month",
+        "apiManagement_Standard": "API Management Standard ~$750/month — VERY EXPENSIVE"
+      }
+    },
+    "ai": {
+      "enabled": false,
+      "description": "Azure AI Services, Azure OpenAI, Cognitive Search. All off by default — require quota approval and have unpredictable costs.",
+      "features": {
+        "aiServices": false,
+        "openAi": false,
+        "cognitiveSearch": false,
+        "machineLearning": false
+      },
+      "costWarnings": {
+        "openAi": "Azure OpenAI pay-per-token — costs vary widely by usage",
+        "cognitiveSearch_Basic": "Cognitive Search Basic ~$75/month",
+        "machineLearning": "Azure ML compute cluster costs vary by usage"
+      }
+    },
+    "data": {
+      "enabled": false,
+      "description": "Azure Data Factory, Synapse Analytics, Databricks, Microsoft Purview. Off by default due to complexity and cost.",
+      "features": {
+        "dataFactory": false,
+        "synapse": false,
+        "databricks": false,
+        "purview": false
+      },
+      "costWarnings": {
+        "synapse": "Azure Synapse Analytics costs vary widely",
+        "databricks": "Azure Databricks costs vary widely by cluster usage",
+        "purview": "Microsoft Purview ~$50+/month base"
+      }
+    },
+    "governance": {
+      "enabled": true,
+      "description": "Automation Account (start/stop runbooks), Budget alerts, Resource locks (optional). No Azure Policy assignments by default.",
+      "features": {
+        "automationAccount": true,
+        "budget": true,
+        "budgetAmount": 300,
+        "resourceLocks": false,
+        "policyAssignments": false
+      }
+    }
+  },
+  "seedDummyData": true,
+  "globalSettings": {
+    "defaultLocation": "westeurope",
+    "defaultPrefix": "ade",
+    "tags": {
+      "environment": "demo",
+      "project": "azure-demo-environment",
+      "managedBy": "ade",
+      "purpose": "benchmark-baseline"
+    }
+  }
+}

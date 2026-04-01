@@ -1,0 +1,8 @@
+[
+  { "ts": "2026-03-31T00:00:00Z", "deviceId": "dev-001", "location": "building-a", "temperature": 21.4, "humidity": 62, "pressure": 1013.2, "batteryPct": 98 },
+  { "ts": "2026-03-31T00:05:00Z", "deviceId": "dev-001", "location": "building-a", "temperature": 21.6, "humidity": 61, "pressure": 1013.1, "batteryPct": 98 },
+  { "ts": "2026-03-31T00:10:00Z", "deviceId": "dev-002", "location": "building-b", "temperature": 19.8, "humidity": 68, "pressure": 1012.9, "batteryPct": 74 },
+  { "ts": "2026-03-31T00:15:00Z", "deviceId": "dev-002", "location": "building-b", "temperature": 20.1, "humidity": 67, "pressure": 1012.8, "batteryPct": 73 },
+  { "ts": "2026-03-31T00:20:00Z", "deviceId": "dev-003", "location": "server-room", "temperature": 18.2, "humidity": 45, "pressure": 1013.0, "batteryPct": 100 },
+  { "ts": "2026-03-31T00:25:00Z", "deviceId": "dev-003", "location": "server-room", "temperature": 18.5, "humidity": 44, "pressure": 1013.0, "batteryPct": 100 }
+]

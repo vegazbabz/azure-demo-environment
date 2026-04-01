@@ -1,0 +1,70 @@
+[
+  {
+    "id": "order-001",
+    "customerId": 1,
+    "customerName": "Contoso Ltd",
+    "status": "completed",
+    "createdAt": "2026-03-01T09:14:22Z",
+    "completedAt": "2026-03-03T14:30:00Z",
+    "currency": "USD",
+    "subtotal": 149.98,
+    "tax": 12.00,
+    "total": 161.98,
+    "items": [
+      { "sku": "WGT-A-STD", "name": "Widget A — Standard", "qty": 5, "unitPrice": 19.99, "lineTotal": 99.95 },
+      { "sku": "WGT-B-PRO", "name": "Widget B — Pro",      "qty": 1, "unitPrice": 49.99, "lineTotal": 49.99 }
+    ],
+    "shippingAddress": { "line1": "1 Microsoft Way", "city": "Redmond", "country": "US", "zip": "98052" }
+  },
+  {
+    "id": "order-002",
+    "customerId": 3,
+    "customerName": "Northwind Traders",
+    "status": "pending",
+    "createdAt": "2026-03-28T16:45:10Z",
+    "completedAt": null,
+    "currency": "EUR",
+    "subtotal": 297.00,
+    "tax": 56.43,
+    "total": 353.43,
+    "items": [
+      { "sku": "SVC-ENT", "name": "Service Pack — Enterprise", "qty": 1, "unitPrice": 299.00, "lineTotal": 299.00 }
+    ],
+    "shippingAddress": { "line1": "Unter den Linden 1", "city": "Berlin", "country": "DE", "zip": "10117" }
+  },
+  {
+    "id": "order-003",
+    "customerId": 2,
+    "customerName": "Fabrikam Inc",
+    "status": "shipped",
+    "createdAt": "2026-03-25T11:02:55Z",
+    "completedAt": null,
+    "currency": "GBP",
+    "subtotal": 109.00,
+    "tax": 21.80,
+    "total": 130.80,
+    "items": [
+      { "sku": "SENS-V2", "name": "Sensor Module v2", "qty": 2, "unitPrice": 34.50, "lineTotal": 69.00 },
+      { "sku": "LIC-DEMO-30", "name": "Demo License — 30 Day", "qty": 2, "unitPrice": 0.00, "lineTotal": 0.00 },
+      { "sku": "CCK-001", "name": "Cloud Connector Kit",   "qty": 1, "unitPrice": 149.00, "lineTotal": 149.00 }
+    ],
+    "shippingAddress": { "line1": "300 Fabrikam Road", "city": "London", "country": "UK", "zip": "EC1A 1BB" }
+  },
+  {
+    "id": "order-004",
+    "customerId": 5,
+    "customerName": "Tailspin Toys",
+    "status": "cancelled",
+    "createdAt": "2026-03-10T08:30:00Z",
+    "completedAt": null,
+    "cancelledAt": "2026-03-11T09:00:00Z",
+    "currency": "CAD",
+    "subtotal": 450.00,
+    "tax": 58.50,
+    "total": 508.50,
+    "items": [
+      { "sku": "TRN-BUNDLE", "name": "Training Bundle", "qty": 1, "unitPrice": 450.00, "lineTotal": 450.00 }
+    ],
+    "shippingAddress": { "line1": "500 King Street W", "city": "Toronto", "country": "CA", "zip": "M5V 1M9" }
+  }
+]

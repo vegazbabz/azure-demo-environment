@@ -1,0 +1,62 @@
+{
+  "name": "ade-restrict-vm-skus",
+  "properties": {
+    "displayName": "[ADE] Restrict virtual machine SKUs to approved list",
+    "description": "Denies (or audits) virtual machine deployments whose SKU is not in the approved list. Keeps demo environments from accidentally deploying expensive SKUs.",
+    "policyType": "Custom",
+    "mode": "All",
+    "metadata": {
+      "category": "Compute",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "allowedSkus": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Allowed VM SKUs",
+          "description": "List of VM size names (e.g. Standard_B2s) that are permitted."
+        },
+        "defaultValue": [
+          "Standard_B1s",
+          "Standard_B2s",
+          "Standard_B2ms",
+          "Standard_B4ms",
+          "Standard_D2s_v5",
+          "Standard_D4s_v5",
+          "Standard_E2s_v5",
+          "Standard_F2s_v2",
+          "Standard_DS1_v2",
+          "Standard_DS2_v2"
+        ]
+      },
+      "effect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Effect",
+          "description": "'Audit' logs non-compliant VMs without blocking. 'Deny' prevents creation of VMs with unapproved SKUs. 'Disabled' turns the policy off."
+        },
+        "allowedValues": ["Audit", "Deny", "Disabled"],
+        "defaultValue": "Deny"
+      }
+    },
+    "policyRule": {
+      "if": {
+        "allOf": [
+          {
+            "field": "type",
+            "equals": "Microsoft.Compute/virtualMachines"
+          },
+          {
+            "not": {
+              "field": "Microsoft.Compute/virtualMachines/hardwareProfile.vmSize",
+              "in": "[parameters('allowedSkus')]"
+            }
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}
