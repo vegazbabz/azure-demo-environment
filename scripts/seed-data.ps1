@@ -290,3 +290,4 @@ if ($seedAll -or $Modules -contains 'eventhub') {
 Write-AdeSection "Data Seeding Complete"
 Write-AdeLog "Dummy data has been seeded into deployed ADE resources." -Level Success
 Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
+exit 0
