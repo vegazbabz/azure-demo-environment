@@ -26,8 +26,8 @@ param adminPassword string
 @description('Deploy Windows Server 2022 VM.')
 param deployWindowsVm bool = true
 
-@description('Deploy Ubuntu 22.04 LTS VM.')
-param deployLinuxVm bool = true
+@description('Deploy Ubuntu 22.04 LTS VM. Off by default \u2014 opt-in only.')
+param deployLinuxVm bool = false
 
 @description('Deploy VM Scale Set (Windows).')
 param deployVmss bool = false

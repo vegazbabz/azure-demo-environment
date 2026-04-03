@@ -1,10 +1,9 @@
 ﻿// ─── databases.bicep ─────────────────────────────────────────────────────────
-// Deploys: Azure SQL Server + Serverless DB, Cosmos DB (serverless),
-//          PostgreSQL Flexible Server, MySQL Flexible Server (optional),
-//          Redis Cache (optional).
+// Deploys: Azure SQL (PaaS) by default.
+//          Optional: SQL Server on VM (IaaS), Cosmos DB, PostgreSQL, MySQL, Redis.
 //
-// DEFAULT MODE: Public network access enabled, no forced TLS minimum,
-//               no auditing, no threat detection, no CMK. Out-of-the-box settings.
+// DEFAULT MODE: SQL PaaS only. All other engines are opt-in via feature flags.
+//               Public network access enabled, no forced TLS minimum.
 //               SQL uses AdventureWorksLT sample for dummy data.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -31,11 +30,17 @@ param pgAdminPassword string
 @description('Deploy Azure SQL Database.')
 param deploySql bool = true
 
-@description('Deploy Cosmos DB (serverless).')
-param deployCosmos bool = true
+@description('Deploy SQL Server on a Windows VM (IaaS). Requires sqlVmSubnetId or subnetId.')
+param deploySqlVm bool = false
 
-@description('Deploy PostgreSQL Flexible Server.')
-param deployPostgresql bool = true
+@description('Subnet resource ID for the SQL Server VM. Falls back to subnetId if empty.')
+param sqlVmSubnetId string = ''
+
+@description('Deploy Cosmos DB (serverless). Off by default — opt-in only.')
+param deployCosmos bool = false
+
+@description('Deploy PostgreSQL Flexible Server. Off by default — opt-in only.')
+param deployPostgresql bool = false
 
 @description('Deploy MySQL Flexible Server.')
 param deployMysql bool = false
@@ -250,12 +255,90 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = if (deployRedis) {
   }
 }
 
+// ─── SQL Server on VM (IaaS) ──────────────────────────────────────────────────
+
+var sqlVmEffectiveSubnetId = empty(sqlVmSubnetId) ? subnetId : sqlVmSubnetId
+
+resource sqlVmPublicIp 'Microsoft.Network/publicIPAddresses@2023-09-01' = if (deploySqlVm) {
+  name: '${prefix}-sqlvm-pip'
+  location: location
+  tags: tags
+  sku: { name: 'Standard', tier: 'Regional' }
+  properties: { publicIPAllocationMethod: 'Static' }
+}
+
+resource sqlVmNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (deploySqlVm) {
+  name: '${prefix}-sqlvm-nic'
+  location: location
+  tags: tags
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfig1'
+        properties: {
+          subnet: { id: sqlVmEffectiveSubnetId }
+          privateIPAllocationMethod: 'Dynamic'
+          publicIPAddress: { id: sqlVmPublicIp.id }
+        }
+      }
+    ]
+  }
+}
+
+resource sqlVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deploySqlVm) {
+  name: '${prefix}-sqlvm'
+  location: location
+  tags: tags
+  properties: {
+    hardwareProfile: { vmSize: 'Standard_D2s_v3' }
+    osProfile: {
+      computerName: '${prefix}sqlvm'
+      adminUsername: sqlAdminLogin
+      adminPassword: sqlAdminPassword
+      windowsConfiguration: {
+        enableAutomaticUpdates: true
+        provisionVMAgent: true
+      }
+    }
+    storageProfile: {
+      imageReference: {
+        publisher: 'MicrosoftSQLServer'
+        offer: 'sql2022-ws2022'
+        sku: 'standard-gen2'
+        version: 'latest'
+      }
+      osDisk: {
+        createOption: 'FromImage'
+        managedDisk: { storageAccountType: 'Premium_LRS' }
+      }
+    }
+    networkProfile: {
+      networkInterfaces: [ { id: sqlVmNic.id } ]
+    }
+  }
+}
+
+// SQL IaaS Agent — enables SQL Server management in the Azure portal
+resource sqlVmIaasExtension 'Microsoft.SqlVirtualMachine/sqlVirtualMachines@2022-07-01-preview' = if (deploySqlVm) {
+  name: '${prefix}-sqlvm'
+  location: location
+  tags: tags
+  properties: {
+    virtualMachineResourceId: sqlVm.id
+    sqlServerLicenseType: 'PAYG'
+    sqlManagement: 'Full'
+    sqlImageSku: 'Standard'
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 output sqlServerId string = deploySql ? sqlServer.id : ''
 output sqlServerFqdn string = deploySql ? sqlServer!.properties.fullyQualifiedDomainName : ''
 output sqlDatabaseId string = deploySql ? sqlDatabase.id : ''
 output sqlDatabaseName string = deploySql ? sqlDatabase.name : ''
+output sqlVmId string = deploySqlVm ? sqlVm.id : ''
+output sqlVmName string = deploySqlVm ? sqlVm.name : ''
 output cosmosAccountId string = deployCosmos ? cosmosAccount.id : ''
 output cosmosAccountEndpoint string = deployCosmos ? cosmosAccount!.properties.documentEndpoint : ''
 output postgresServerId string = deployPostgresql ? postgresServer.id : ''

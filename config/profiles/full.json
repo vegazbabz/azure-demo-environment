@@ -57,6 +57,7 @@
       "enabled": true,
       "features": {
         "sqlDatabase": true,
+        "sqlVm": false,
         "cosmosDb": true,
         "postgresql": true,
         "mysql": false,
