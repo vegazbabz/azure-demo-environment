@@ -33,6 +33,9 @@ param deployLogicApp bool = true
 @description('App Service Plan SKU.')
 param appServicePlanSku string = 'B1'
 
+@description('VNet integration subnet resource ID (appservices subnet, delegated to Microsoft.Web/serverFarms). When set, all apps route outbound traffic through the VNet to reach private endpoints.')
+param subnetId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -89,8 +92,12 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
     // Hardened: client cert in Optional mode — enables mutual TLS where clients supply certs (CIS 9.4)
     clientCertEnabled: true
     clientCertMode: 'Optional'
+    // Hardened: VNet integration — outbound traffic to private endpoints in the VNet
+    virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
       netFrameworkVersion: 'v8.0'
+      // Route all outbound traffic through the VNet (reaches private endpoints)
+      vnetRouteAllEnabled: !empty(subnetId)
     })
   }
 }
@@ -125,8 +132,10 @@ resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
     publicNetworkAccess: 'Disabled'
     clientCertEnabled: true
     clientCertMode: 'Optional'
+    virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
       linuxFxVersion: 'NODE|20-lts'
+      vnetRouteAllEnabled: !empty(subnetId)
     })
   }
 }
@@ -178,7 +187,11 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = if (deployFunctionApp) {
     serverFarmId: functionPlan.id
     httpsOnly: true
     publicNetworkAccess: 'Disabled'
+    // NOTE: Consumption (Y1) plan supports outbound VNet integration since 2023
+    // Required for the function to reach private endpoints (databases, Key Vault, Service Bus)
+    virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
+      vnetRouteAllEnabled: !empty(subnetId)
       appSettings: [
         {
           name: 'AzureWebJobsStorage'
@@ -252,7 +265,9 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
     serverFarmId: logicAppPlan.id
     httpsOnly: true
     publicNetworkAccess: 'Disabled'
+    virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
+      vnetRouteAllEnabled: !empty(subnetId)
       appSettings: [
         {
           name: 'AzureWebJobsStorage'

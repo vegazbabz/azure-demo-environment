@@ -45,12 +45,31 @@ param deployMysql bool = false
 @description('Deploy Redis Cache.')
 param deployRedis bool = false
 
-@description('Database subnet resource ID.')
-#disable-next-line no-unused-params
+@description('Database subnet resource ID (PostgreSQL VNet injection — requires Microsoft.DBforPostgreSQL/flexibleServers delegation).')
 param subnetId string = ''
 
-@description('Log Analytics workspace resource ID for SQL audit logs.')
-#disable-next-line no-unused-params
+@description('MySQL subnet resource ID for VNet injection (requires Microsoft.DBforMySQL/flexibleServers delegation).')
+param mysqlSubnetId string = ''
+
+@description('Private DNS zone resource ID for PostgreSQL VNet injection.')
+param postgresDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for MySQL VNet injection.')
+param mysqlDnsZoneId string = ''
+
+@description('Private endpoint subnet resource ID for SQL, Cosmos, and Redis private endpoints.')
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for Azure SQL (privatelink.database.windows.net).')
+param sqlDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Cosmos DB (privatelink.documents.azure.com).')
+param cosmosDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Redis (privatelink.redis.cache.windows.net).')
+param redisDnsZoneId string = ''
+
+@description('Log Analytics workspace resource ID for SQL audit diagnostic settings.')
 param logAnalyticsId string = ''
 
 @description('Resource tags.')
@@ -148,6 +167,57 @@ resource sqlVulnerabilityAssessment 'Microsoft.Sql/servers/vulnerabilityAssessme
   }
 }
 
+// Hardened: diagnostic settings route SQL audit events to Log Analytics (CIS 4.1.3)
+resource sqlAuditDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deploySql && !empty(logAnalyticsId)) {
+  name: '${prefix}-sql-diag'
+  scope: sqlServer
+  properties: {
+    workspaceId: logAnalyticsId
+    logs: [
+      {
+        category: 'SQLSecurityAuditEvents'
+        enabled: true
+      }
+      {
+        category: 'DevOpsOperationsAudit'
+        enabled: true
+      }
+    ]
+  }
+}
+
+// Hardened: private endpoint for SQL Server
+resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deploySql && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-sql-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-sql-plsc'
+        properties: {
+          privateLinkServiceId: sqlServer.id
+          groupIds: ['sqlServer']
+        }
+      }
+    ]
+  }
+}
+
+resource sqlPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deploySql && !empty(privateEndpointSubnetId) && !empty(sqlDnsZoneId)) {
+  parent: sqlPrivateEndpoint
+  name: 'sql-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-database-windows-net'
+        properties: { privateDnsZoneId: sqlDnsZoneId }
+      }
+    ]
+  }
+}
+
 // ─── Cosmos DB ────────────────────────────────────────────────────────────────
 // Hardened: local auth disabled (Entra ID RBAC only), no public network access,
 //           IP firewall deny all (MCSB IM-3, NS-1).
@@ -208,6 +278,38 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
+// Hardened: private endpoint for Cosmos DB
+resource cosmosPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deployCosmos && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-cosmos-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-cosmos-plsc'
+        properties: {
+          privateLinkServiceId: cosmosAccount.id
+          groupIds: ['Sql']
+        }
+      }
+    ]
+  }
+}
+
+resource cosmosPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deployCosmos && !empty(privateEndpointSubnetId) && !empty(cosmosDnsZoneId)) {
+  parent: cosmosPrivateEndpoint
+  name: 'cosmos-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-documents-azure-com'
+        properties: { privateDnsZoneId: cosmosDnsZoneId }
+      }
+    ]
+  }
+}
+
 // ─── PostgreSQL Flexible Server ───────────────────────────────────────────────
 // Hardened: Entra ID auth enabled, TLS 1.2, no public access (VNet integration).
 
@@ -228,8 +330,12 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
       backupRetentionDays: 30    // Hardened: 30 days
       geoRedundantBackup: 'Disabled'
     }
-    // Hardened: public access disabled — requires VNet integration or private DNS
-    network: {
+    // Hardened: public access disabled — requires VNet injection (VNet + private DNS zone)
+    network: (!empty(subnetId) && !empty(postgresDnsZoneId)) ? {
+      publicNetworkAccess: 'Disabled'
+      delegatedSubnetResourceId: subnetId
+      privateDnsZoneArmResourceId: postgresDnsZoneId
+    } : {
       publicNetworkAccess: 'Disabled'
     }
     highAvailability: { mode: 'Disabled' }
@@ -271,8 +377,10 @@ resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = if (dep
       geoRedundantBackup: 'Disabled'
     }
     network: {
-      // Hardened: no public access
+      // Hardened: no public access; VNet injection wired when mysqlSubnetId + mysqlDnsZoneId are provided
       publicNetworkAccess: 'Disabled'
+      delegatedSubnetResourceId: !empty(mysqlSubnetId) ? mysqlSubnetId : null
+      privateDnsZoneResourceId: !empty(mysqlDnsZoneId) ? mysqlDnsZoneId : null
     }
     highAvailability: { mode: 'Disabled' }
   }
@@ -305,6 +413,38 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = if (deployRedis) {
     // Hardened: TLS 1.2 minimum
     minimumTlsVersion: '1.2'
     publicNetworkAccess: 'Disabled'
+  }
+}
+
+// Hardened: private endpoint for Redis
+resource redisPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deployRedis && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-redis-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-redis-plsc'
+        properties: {
+          privateLinkServiceId: redisCache.id
+          groupIds: ['redisCache']
+        }
+      }
+    ]
+  }
+}
+
+resource redisPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deployRedis && !empty(privateEndpointSubnetId) && !empty(redisDnsZoneId)) {
+  parent: redisPrivateEndpoint
+  name: 'redis-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-redis-cache-windows-net'
+        properties: { privateDnsZoneId: redisDnsZoneId }
+      }
+    ]
   }
 }
 

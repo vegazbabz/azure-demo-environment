@@ -40,6 +40,15 @@ param apimPublisherEmail string = 'admin@example.com'
 @description('API Management publisher name.')
 param apimPublisherName string = 'ADE Demo'
 
+@description('Private endpoint subnet resource ID for Service Bus and Event Hub private endpoints.')
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for Service Bus (privatelink.servicebus.windows.net).')
+param serviceBusDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Event Hub (privatelink.eventhub.windows.net).')
+param eventHubDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -247,3 +256,69 @@ output eventGridTopicEndpoint string = deployEventGrid ? eventGridTopic!.propert
 output signalRId string = deploySignalR ? signalR.id : ''
 output apimId string = deployApim ? apim.id : ''
 output apimGatewayUrl string = deployApim ? apim!.properties.gatewayUrl : ''
+
+// ─── Private Endpoints ────────────────────────────────────────────────────────
+// Service Bus and Event Hub have publicNetworkAccess: 'Disabled'.
+// Private endpoints allow callers inside the VNet to reach these namespaces.
+
+resource sbPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deployServiceBus && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-sb-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-sb-plsc'
+        properties: {
+          privateLinkServiceId: serviceBusNamespace.id
+          groupIds: ['namespace']
+        }
+      }
+    ]
+  }
+}
+
+resource sbPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deployServiceBus && !empty(privateEndpointSubnetId) && !empty(serviceBusDnsZoneId)) {
+  parent: sbPrivateEndpoint
+  name: 'sb-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-servicebus-windows-net'
+        properties: { privateDnsZoneId: serviceBusDnsZoneId }
+      }
+    ]
+  }
+}
+
+resource ehPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deployEventHub && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-eh-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-eh-plsc'
+        properties: {
+          privateLinkServiceId: eventHubNamespace.id
+          groupIds: ['namespace']
+        }
+      }
+    ]
+  }
+}
+
+resource ehPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deployEventHub && !empty(privateEndpointSubnetId) && !empty(eventHubDnsZoneId)) {
+  parent: ehPrivateEndpoint
+  name: 'eh-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-eventhub-windows-net'
+        properties: { privateDnsZoneId: eventHubDnsZoneId }
+      }
+    ]
+  }
+}
