@@ -255,6 +255,7 @@ $state = @{
     serviceBusId            = ''
     eventHubId              = ''
     dataFactoryId           = ''
+    dcSubnetId              = ''
 
     # Private DNS zone IDs (populated from networking outputs when enablePrivateDnsZones = true)
     blobDnsZoneId           = ''
@@ -339,6 +340,7 @@ foreach ($moduleName in $deploymentOrder) {
                     enableNatGateway       = ($netFeatures.enableNatGateway -eq $true).ToString().ToLower()
                     enableDdos             = ($netFeatures.enableDdos -eq $true).ToString().ToLower()
                     enablePrivateDnsZones  = ($netFeatures.enablePrivateDnsZones -eq $true).ToString().ToLower()
+                    deployDomainController = ($deployProfile.modules.compute.features.domainController -eq $true).ToString().ToLower()
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'
@@ -362,6 +364,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $state.serviceBusDnsZoneId     = Get-AdeDeploymentOutput $outputs 'serviceBusDnsZoneId'
                 $state.eventHubDnsZoneId       = Get-AdeDeploymentOutput $outputs 'eventHubDnsZoneId'
                 $state.redisDnsZoneId          = Get-AdeDeploymentOutput $outputs 'redisDnsZoneId'
+                $state.dcSubnetId              = Get-AdeDeploymentOutput $outputs 'dcSubnetId'
             }
 
             # ── SECURITY ────────────────────────────────────────────────────
@@ -406,6 +409,9 @@ foreach ($moduleName in $deploymentOrder) {
                     deployVmss          = ($compFeatures.vmss -eq $true).ToString().ToLower()
                     enableAutoShutdown  = ($compFeatures.enableAutoShutdown -eq $true).ToString().ToLower()
                     vmSize              = if ($null -ne $compFeatures.vmSku) { $compFeatures.vmSku } else { 'Standard_B2s' }
+                    deployDomainController = ($compFeatures.domainController -eq $true).ToString().ToLower()
+                    dcSubnetId          = if ($state.dcSubnetId) { $state.dcSubnetId } else { '' }
+                    domainName          = if ($compFeatures.domainName) { $compFeatures.domainName } else { "${Prefix}.local" }
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId']       = $state.logAnalyticsId

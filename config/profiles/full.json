@@ -40,7 +40,9 @@
         "linuxVm": true,
         "vmss": false,
         "enableAutoShutdown": false,
-        "vmSku": "Standard_B2s"
+        "vmSku": "Standard_B2s",
+        "domainController": false,
+        "domainName": ""
       }
     },
     "storage": {

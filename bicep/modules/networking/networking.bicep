@@ -45,6 +45,9 @@ param enableDdos bool = false
 @description('Deploy Private DNS Zones for private endpoint name resolution.')
 param enablePrivateDnsZones bool = false
 
+@description('Deploy a Domain Controller VM. Sets VNet DNS to 10.0.15.4 so domain-joined resources can resolve AD DNS.')
+param deployDomainController bool = false
+
 // ─── Address space ────────────────────────────────────────────────────────────
 // All subnets always reserved. Resources inside them are conditional on flags.
 
@@ -63,6 +66,7 @@ var bastionSubnetPrefix         = '10.0.11.0/26'   // AzureBastionSubnet: /26 mi
 var gatewaySubnetPrefix         = '10.0.12.0/27'   // GatewaySubnet: /27 minimum
 var privateEndpointSubnetPrefix = '10.0.13.0/24'
 var mysqlSubnetPrefix           = '10.0.14.0/24'  // MySQL Flexible Server VNet injection
+var dcSubnetPrefix              = '10.0.15.0/24'  // Domain Controller (static IP: 10.0.15.4)
 
 var firewallEnabled    = enableFirewall != 'None'
 var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
@@ -153,6 +157,13 @@ resource privateEndpointNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01'
   properties: { securityRules: [] }
 }
 
+resource dcNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
+  name: '${prefix}-dc-nsg'
+  location: location
+  tags: tags
+  properties: { securityRules: [] }
+}
+
 // ─── Route Table (UDR) — Only when Azure Firewall is enabled ──────────────────
 // When AzFW is on, all workload subnet egress routes through the firewall.
 // When AzFW is off, no route tables are deployed (subnets use Azure default routing).
@@ -212,6 +223,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
     }
     ddosProtectionPlan: enableDdos ? { id: ddosProtectionPlan.id } : null
     enableDdosProtection: enableDdos
+    dhcpOptions: deployDomainController ? {
+      // Point VNet DNS to the DC so domain-joined resources resolve AD DNS.
+      // 168.63.129.16 = Azure DNS (fallback for Azure-public FQDNs).
+      dnsServers: ['10.0.15.4', '168.63.129.16']
+    } : null
     subnets: concat(
       [
         {
@@ -311,6 +327,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
                 properties: { serviceName: 'Microsoft.DBforMySQL/flexibleServers' }
               }
             ]
+          }
+        }
+        // DC subnet — always provisioned; DC VM is deployed conditionally via deployDomainController flag
+        {
+          name: 'dc'
+          properties: {
+            addressPrefix: dcSubnetPrefix
+            networkSecurityGroup: { id: dcNsg.id }
+            routeTable: firewallEnabled ? { id: firewallRouteTable.id } : null
           }
         }
         // Reserved subnets — always provisioned, resources are conditional
@@ -636,6 +661,7 @@ output dataSubnetId string = '${vnet.id}/subnets/data'
 output managementSubnetId string = '${vnet.id}/subnets/management'
 output privateEndpointSubnetId string = '${vnet.id}/subnets/privateendpoints'
 output mysqlSubnetId string = '${vnet.id}/subnets/mysql'
+output dcSubnetId string = '${vnet.id}/subnets/dc'
 // Private DNS zone IDs for Flexible Server VNet injection (non-empty only when enablePrivateDnsZones = true)
 #disable-next-line no-hardcoded-env-urls
 output postgresDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.postgres.database.azure.com') : ''

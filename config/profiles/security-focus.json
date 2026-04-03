@@ -17,7 +17,7 @@
     },
     "compute": {
       "enabled": true,
-      "features": { "windowsVm": true, "linuxVm": true, "vmss": false, "enableAutoShutdown": false, "vmSku": "Standard_B2s" }
+      "features": { "windowsVm": true, "linuxVm": true, "vmss": false, "enableAutoShutdown": false, "vmSku": "Standard_B2s", "domainController": false, "domainName": "" }
     },
     "storage": {
       "enabled": true,
