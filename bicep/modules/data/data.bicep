@@ -27,6 +27,7 @@ param deployDatabricks bool = false
 param deployPurview bool = false
 
 @description('Data subnet resource ID for future VNet-integration of data services.')
+#disable-next-line no-unused-params
 param subnetId string = ''
 
 @description('Resource tags.')

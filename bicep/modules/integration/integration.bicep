@@ -39,6 +39,7 @@ param apimPublisherEmail string = 'admin@example.com'
 param apimPublisherName string = 'ADE Demo'
 
 @description('Integration subnet resource ID for future VNet-integration of PaaS messaging services.')
+#disable-next-line no-unused-params
 param subnetId string = ''
 
 @description('Resource tags.')
