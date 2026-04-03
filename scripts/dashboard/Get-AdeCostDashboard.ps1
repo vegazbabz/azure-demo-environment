@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Azure Demo Environment (ADE) — Cost & Status Dashboard
 
@@ -85,9 +85,9 @@ function Show-AdeDashboard {
     Write-Host "  COSTS — Current Month ($($now.ToString('MMMM yyyy')))" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
-    $rgs = az group list `
-        --query "[?tags.managedBy=='ade' && starts_with(name, '$Prefix-')].name" `
-        -o tsv 2>$null
+    $rgsRaw = az group list -o json 2>$null | ConvertFrom-Json
+    $rgs = $rgsRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.name -like "$Prefix-*" } |
+        Select-Object -ExpandProperty name
 
     if (-not $rgs) {
         Write-Host "  No ADE resource groups found for prefix '$Prefix'." -ForegroundColor Gray
@@ -100,13 +100,14 @@ function Show-AdeDashboard {
             # az costmanagement query is the modern replacement for the deprecated consumption API
             $fromDate = "$year-$($month.ToString('D2'))-01"
             $toDate   = $now.ToString('yyyy-MM-dd')
+            $datasetFilter = '{"dimensions":{"name":"ResourceGroupName","operator":"In","values":["' + $rg + '"]}}'
             $costJson = az costmanagement query `
                 --type  Usage `
                 --scope "subscriptions/$SubscriptionId" `
                 --timeframe Custom `
                 --time-period "from=$fromDate" "to=$toDate" `
                 --dataset-aggregation '{"totalCost":{"name":"PreTaxCost","function":"Sum"}}' `
-                --dataset-filter "{\"dimensions\":{\"name\":\"ResourceGroupName\",\"operator\":\"In\",\"values\":[\"$rg\"]}}" `
+                --dataset-filter $datasetFilter `
                 --dataset-granularity None `
                 -o json 2>$null
 
@@ -122,15 +123,19 @@ function Show-AdeDashboard {
             $totalActual    += $actual
             $totalProjected += $projected
 
-            $moduleName = $rg -replace "^$Prefix-" -replace '-rg$'
-            $bar        = '█' * [Math]::Min([int]$projected, 40)
-            $costColor  = if ($projected -gt 100) { 'Red' } elseif ($projected -gt 50) { 'Yellow' } else { 'Green' }
+            $moduleName   = $rg -replace "^$Prefix-" -replace '-rg$'
+            $bar          = '█' * [Math]::Min([int]$projected, 40)
+            $costColor    = if ($projected -gt 100) { 'Red' } elseif ($projected -gt 50) { 'Yellow' } else { 'Green' }
+            $actualFmt    = $actual.ToString('C2').PadLeft(8)
+            $projectedFmt = $projected.ToString('C2').PadLeft(8)
 
-            Write-Host ("  {0,-20} Actual: {1,8:C2}  Projected: {2,8:C2}  {3}" -f $moduleName, $actual, $projected, $bar) -ForegroundColor $costColor
+            Write-Host ("  {0,-20} Actual: {1}  Projected: {2}  {3}" -f $moduleName, $actualFmt, $projectedFmt, $bar) -ForegroundColor $costColor
         }
 
         Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
-        Write-Host ("  {0,-20} Actual: {1,8:C2}  Projected: {2,8:C2}" -f 'TOTAL', $totalActual, $totalProjected) -ForegroundColor White
+        $tActualFmt = $totalActual.ToString('C2').PadLeft(8)
+        $tProjFmt   = $totalProjected.ToString('C2').PadLeft(8)
+        Write-Host ("  {0,-20} Actual: {1}  Projected: {2}" -f 'TOTAL', $tActualFmt, $tProjFmt) -ForegroundColor White
     }
 
     Write-Host ""
@@ -139,16 +144,17 @@ function Show-AdeDashboard {
     Write-Host "  VIRTUAL MACHINES" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
-    $vms = az vm list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup,size:hardwareProfile.vmSize}" `
-        -o json 2>$null | ConvertFrom-Json
+    $vmsRaw = az vm list -o json 2>$null | ConvertFrom-Json
+    $vms = $vmsRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}, @{n='size';e={$_.hardwareProfile.vmSize}}
 
     if ($vms) {
         foreach ($vm in $vms) {
+            $pvQuery    = 'instanceView.statuses[?starts_with(code,''PowerState/'')].displayStatus'
             $powerState = az vm get-instance-view `
                 --resource-group $vm.rg `
                 --name $vm.name `
-                --query "instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus" `
+                --query $pvQuery `
                 -o tsv 2>$null
 
             $stateColor = switch -Wildcard ($powerState) {
@@ -177,9 +183,9 @@ function Show-AdeDashboard {
     Write-Host "  AKS CLUSTERS" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
-    $clusters = az aks list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup,powerState:powerState.code,version:kubernetesVersion,nodeCount:agentPoolProfiles[0].count}" `
-        -o json 2>$null | ConvertFrom-Json
+    $clustersRaw = az aks list -o json 2>$null | ConvertFrom-Json
+    $clusters = $clustersRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}, @{n='powerState';e={$_.powerState.code}}, @{n='version';e={$_.kubernetesVersion}}, @{n='nodeCount';e={$_.agentPoolProfiles[0].count}}
 
     if ($clusters) {
         foreach ($c in $clusters) {
@@ -193,22 +199,21 @@ function Show-AdeDashboard {
     Write-Host ""
 
     # ── Integration resources ─────────────────────────────────────────────────
-    $sbNamespaces = az servicebus namespace list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,sku:sku.name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $sbRaw        = az servicebus namespace list -o json 2>$null | ConvertFrom-Json
+    $sbNamespaces = $sbRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='sku';e={$_.sku.name}}, @{n='rg';e={$_.resourceGroup}}
 
-    $ehNamespaces = az eventhubs namespace list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,sku:sku.name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $ehRaw        = az eventhubs namespace list -o json 2>$null | ConvertFrom-Json
+    $ehNamespaces = $ehRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='sku';e={$_.sku.name}}, @{n='rg';e={$_.resourceGroup}}
 
-    $caEnvs = az containerapp env list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $caRaw  = az containerapp env list -o json 2>$null | ConvertFrom-Json
+    $caEnvs = $caRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
-    $adfs = az resource list `
-        --resource-type 'Microsoft.DataFactory/factories' `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $adfRaw = az resource list --resource-type 'Microsoft.DataFactory/factories' -o json 2>$null | ConvertFrom-Json
+    $adfs   = $adfRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     if ($sbNamespaces -or $ehNamespaces -or $caEnvs -or $adfs) {
         Write-Host "  INTEGRATION & DATA" -ForegroundColor Yellow
@@ -233,9 +238,10 @@ function Show-AdeDashboard {
     Write-Host "  BUDGET ALERTS" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
+    $budgetQuery = '[?contains(name,''ade'')].{name:name,amount:amount,currentSpend:currentSpend.amount,timeGrain:timeGrain}'
     $budgets = az consumption budget list `
         --scope "subscriptions/$SubscriptionId" `
-        --query "[?contains(name,'ade')].{name:name,amount:amount,currentSpend:currentSpend.amount,timeGrain:timeGrain}" `
+        --query $budgetQuery `
         -o json 2>$null | ConvertFrom-Json
 
     if ($budgets) {
@@ -245,7 +251,11 @@ function Show-AdeDashboard {
             $barEmpty  = '░' * (50 - $barFilled.Length)
             $color     = if ($pct -ge 100) { 'Red' } elseif ($pct -ge 80) { 'Yellow' } else { 'Green' }
 
-            Write-Host ("  {0,-25} [{1}{2}] {3,3}%  ${4:N0} / ${5:N0}" -f $b.name, $barFilled, $barEmpty, $pct, $b.currentSpend, $b.amount) -ForegroundColor $color
+            $spendFmt  = $b.currentSpend.ToString('N0').PadLeft(8)
+            $amountFmt = $b.amount.ToString('N0').PadLeft(8)
+            $pctFmt    = ([string]$pct).PadLeft(3)
+            $budgetLine = ("  {0,-25} [{1}{2}] {3}%" -f $b.name, $barFilled, $barEmpty, $pctFmt) + "  `$$spendFmt / `$$amountFmt"
+            Write-Host $budgetLine -ForegroundColor $color
         }
     } else {
         Write-Host "  No budgets found. Deploy governance module to enable budget alerts." -ForegroundColor Gray
@@ -263,13 +273,13 @@ function Show-AdeDashboard {
 if ($StopAll) {
     Write-AdeSection "Stopping All VMs"
 
-    $vmIds = az vm list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].id" `
-        -o tsv 2>$null
+    $vmIds = az vm list -o json 2>$null | ConvertFrom-Json |
+        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object -ExpandProperty id
 
-    $vmssIds = az vmss list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].id" `
-        -o tsv 2>$null
+    $vmssIds = az vmss list -o json 2>$null | ConvertFrom-Json |
+        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object -ExpandProperty id
 
     if ($vmIds) {
         Write-AdeLog "Deallocating VMs..." -Level Warning
@@ -284,9 +294,9 @@ if ($StopAll) {
     }
 
     # Stop AKS clusters
-    $aksNames = az aks list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $aksRaw   = az aks list -o json 2>$null | ConvertFrom-Json
+    $aksNames = $aksRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     foreach ($aks in $aksNames) {
         Write-AdeLog "Stopping AKS cluster: $($aks.name)" -Level Warning
@@ -297,13 +307,13 @@ if ($StopAll) {
 if ($StartAll) {
     Write-AdeSection "Starting All VMs"
 
-    $vmIds = az vm list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].id" `
-        -o tsv 2>$null
+    $vmIds = az vm list -o json 2>$null | ConvertFrom-Json |
+        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object -ExpandProperty id
 
-    $vmssIds = az vmss list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].id" `
-        -o tsv 2>$null
+    $vmssIds = az vmss list -o json 2>$null | ConvertFrom-Json |
+        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object -ExpandProperty id
 
     if ($vmIds) {
         Write-AdeLog "Starting VMs..." -Level Info
@@ -317,9 +327,9 @@ if ($StartAll) {
         Write-AdeLog "VMSS start commands sent." -Level Success
     }
 
-    $aksNames = az aks list `
-        --query "[?tags.managedBy=='ade' && starts_with(resourceGroup, '$Prefix-')].{name:name,rg:resourceGroup}" `
-        -o json 2>$null | ConvertFrom-Json
+    $aksRaw   = az aks list -o json 2>$null | ConvertFrom-Json
+    $aksNames = $aksRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     foreach ($aks in $aksNames) {
         Write-AdeLog "Starting AKS cluster: $($aks.name)" -Level Info

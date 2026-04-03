@@ -1,5 +1,4 @@
-#Requires -Version 7.0
-<#
+﻿<#
 .SYNOPSIS
     Shared utility functions for the Azure Demo Environment (ADE) project.
     Sourced by deploy.ps1, destroy.ps1, and runbooks.
