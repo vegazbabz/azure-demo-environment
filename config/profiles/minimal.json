@@ -31,7 +31,8 @@
     "data": { "enabled": false },
     "governance": {
       "enabled": true,
-      "features": { "automationAccount": true, "budget": true, "budgetAmount": 50, "resourceLocks": false, "policyAssignments": false }
+      "features": { "automationAccount": true, "budget": true, "budgetAmount": 50, "resourceLocks": false, "policyAssignments": false,
+        "budgetAlertEmail": "" }
     }
   },
   "seedDummyData": false

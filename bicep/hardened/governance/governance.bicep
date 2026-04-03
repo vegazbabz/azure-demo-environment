@@ -52,6 +52,12 @@ param autoShutdownTimezone string = 'UTC'
 @description('Enable daily auto-start at 08:00 UTC on weekdays.')
 param autoStartEnabled bool = false
 
+@description('Name of the compute resource group. Automation Account MI gets VM Contributor on this RG.')
+param computeResourceGroupName string = '${prefix}-compute-rg'
+
+@description('Base URL for raw runbook content (e.g. https://raw.githubusercontent.com/org/repo/main). Leave empty to skip publishContentLink.')
+param runbooksBaseUrl string = ''
+
 // ─── Automation Account ───────────────────────────────────────────────────────
 // Hardened: local auth disabled, no public network access, system-assigned identity.
 
@@ -76,13 +82,14 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   }
 }
 
-resource automationContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAutomation) {
-  name: guid(subscription().subscriptionId, automationAccount.id, 'contributor')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
-    principalId: automationAccount!.identity.principalId
-    principalType: 'ServicePrincipal'
+// Hardened: VM Contributor on compute RG only (least-privilege for start/stop runbooks).
+// Cross-RG scope requires a separate module deployment.
+module automationVmContributorRole 'automation-vm-role.bicep' = if (enableAutomation) {
+  name: 'automation-vm-contributor-role'
+  scope: resourceGroup(computeResourceGroupName)
+  params: {
+    automationPrincipalId: automationAccount!.identity.principalId
+    automationAccountId: automationAccount!.id
   }
 }
 
@@ -118,12 +125,16 @@ resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-0
   name: 'Stop-AdeResources'
   location: location
   tags: tags
-  properties: {
+  properties: union({
     runbookType: 'PowerShell72'
     description: 'Deallocates all ADE VMs, VMSS, and AKS clusters to minimize costs outside working hours.'
     logProgress: true
     logVerbose: false
-  }
+  }, empty(runbooksBaseUrl) ? {} : {
+    publishContentLink: {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Stop-AdeResources.ps1'
+    }
+  })
 }
 
 // ─── Start Runbook ────────────────────────────────────────────────────────────
@@ -133,12 +144,16 @@ resource startRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-
   name: 'Start-AdeResources'
   location: location
   tags: tags
-  properties: {
+  properties: union({
     runbookType: 'PowerShell72'
     description: 'Starts all ADE VMs, VMSS, and AKS clusters at the start of the working day.'
     logProgress: true
     logVerbose: false
-  }
+  }, empty(runbooksBaseUrl) ? {} : {
+    publishContentLink: {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Start-AdeResources.ps1'
+    }
+  })
 }
 
 // ─── Schedules ────────────────────────────────────────────────────────────────
@@ -190,8 +205,10 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
 resource governanceLock 'Microsoft.Authorization/locks@2020-05-01' = if (enableResourceLocks) {
   name: '${prefix}-governance-lock'
   properties: {
-    level: 'ReadOnly'
-    notes: 'ADE hardened mode: governance resource group locked read-only to prevent accidental changes.'
+    // CanNotDelete (not ReadOnly) so that az lock delete can remove this lock during destroy.
+    // ReadOnly would block the lock deletion API itself, causing a deadlock in destroy.ps1.
+    level: 'CanNotDelete'
+    notes: 'ADE hardened mode: governance resource group protected from accidental deletion.'
   }
 }
 
