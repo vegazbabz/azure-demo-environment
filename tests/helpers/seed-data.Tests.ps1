@@ -184,8 +184,8 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules keyvault -Force
-            # 1 (resource list) + 1 (account show) + 6 (secret sets)
-            Should -Invoke az -Times 8 -Exactly
+            # 1 (resource list) + 1 (account show) + 1 (sql server list) + 7 (secret sets)
+            Should -Invoke az -Times 10 -Exactly
         }
     }
 }
