@@ -27,6 +27,7 @@ param deployCognitiveSearch bool = false
 param deployMachineLearning bool = false
 
 @description('AI subnet resource ID for future VNet-integration of AI/ML services.')
+#disable-next-line no-unused-params
 param subnetId string = ''
 
 @description('Resource tags.')
