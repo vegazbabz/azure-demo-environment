@@ -38,7 +38,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 12 independent Bicep modules are available. Each module deploys into its own dedicated resource group (e.g. `ade-compute-rg`). Modules are **independently toggleable** — you only pay for what you enable.
 
 | Module | Default resources | Notable opt-in features |
-|---|---|---|
+| --- | --- | --- |
 | `monitoring` | Log Analytics Workspace, Action Group | Application Insights, alert rules |
 | `networking` | VNet (10.0.0.0/16), all subnets, NSGs, Bastion (Developer SKU — free) | Application Gateway, Azure Firewall, VPN Gateway, NAT Gateway, DDoS Protection, Private DNS Zones |
 | `security` | Key Vault (RBAC model), User-Assigned Managed Identity | Defender for Cloud (all plans), Microsoft Sentinel |
@@ -58,7 +58,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 
 ## How it works
 
-```
+```text
 deploy.ps1  ──reads──>  profile JSON  ──decides which──>  Bicep modules to deploy
                                                                       │
                                               each module ──deploys──> its own resource group
@@ -79,7 +79,7 @@ The orchestration is **pure PowerShell 7 + Azure CLI**. No Azure PowerShell modu
 ### Required software
 
 | Tool | Minimum version | Install |
-|---|---|---|
+| --- | --- | --- |
 | PowerShell | 7.4 | [github.com/PowerShell/PowerShell](https://github.com/PowerShell/PowerShell/releases) |
 | Azure CLI | 2.60 | [learn.microsoft.com/cli/azure/install-azure-cli](https://learn.microsoft.com/cli/azure/install-azure-cli) |
 | Bicep CLI | latest | `az bicep install` (run once after installing Azure CLI) |
@@ -133,6 +133,7 @@ The `minimal` profile is the lowest-cost starting point. It deploys: monitoring,
 You will be prompted for a VM admin password if you do not provide one. The password must be at least 12 characters with uppercase, lowercase, a digit, and a symbol.
 
 The script will:
+
 1. Print a summary of what will be deployed and the estimated cost.
 2. Ask for confirmation (press **Y** to proceed, **N** to abort).
 3. Deploy each module in order, printing live progress.
@@ -155,7 +156,7 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 ### Built-in profiles
 
 | Profile | Modules enabled | Estimated cost | Best for |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `minimal` | monitoring, networking, security, compute (Windows VM), storage, governance | ~$15–30/month | First run, orientation, low-cost baseline |
 | `compute-only` | monitoring, networking, security, compute (Windows + Linux + VMSS), governance | ~$60–100/month | CIS Compute sections, VM hardening testing |
 | `networking-only` | monitoring, networking (+ App Gateway), governance | ~$200–300/month | Network topology and connectivity testing |
@@ -176,16 +177,18 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 Every profile JSON controls exactly which sub-features are deployed within each module. These are the available flags:
 
 ### `monitoring`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `logAnalyticsWorkspace` | `true` | Log Analytics Workspace (required by most other modules) |
 | `applicationInsights` | varies | Application Insights |
 | `actionGroup` | `true` | Action Group for alert notifications |
 | `alertRules` | `false` | Pre-built alert rules (high CPU, disk, etc.) |
 
 ### `networking`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `bastionSku` | `"Developer"` | `Developer` = free (shared, no dedicated subnet). `Basic`/`Standard` = dedicated subnet + hourly cost |
 | `enableAppGateway` | `false` | Application Gateway WAF v2 (~$200–300/month) |
 | `enableFirewall` | `"None"` | `Standard` (~$900/month) or `Premium` (~$1,500/month) |
@@ -197,16 +200,18 @@ Every profile JSON controls exactly which sub-features are deployed within each 
 All subnets (compute, databases, containers, app services, management, App Gateway, Firewall, etc.) are **always provisioned** regardless of which resources are enabled. This prevents address-space redesign when toggling optional features later.
 
 ### `security`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `keyVault` | `true` | Key Vault (RBAC authorization model) |
 | `managedIdentity` | `true` | User-assigned Managed Identity used by other modules |
 | `defenderForCloud` | varies | All Defender plans (Servers, Databases, Storage, AppServices, Containers, KeyVault, DNS) |
 | `sentinel` | varies | Microsoft Sentinel (requires Log Analytics Workspace) |
 
 ### `compute`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `windowsVm` | `true` | Windows Server 2022 VM |
 | `linuxVm` | `false` | Ubuntu 22.04 LTS VM — opt-in only |
 | `vmss` | `false` | VM Scale Set |
@@ -214,8 +219,9 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
 
 ### `storage`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `generalPurposeStorage` | `true` | Standard LRS general-purpose v2 storage account |
 | `dataLakeGen2` | varies | Hierarchical namespace storage account |
 | `fileShares` | varies | Azure File Shares |
@@ -223,8 +229,9 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `enableVersioning` | `false` | Blob versioning |
 
 ### `databases`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `sqlDatabase` | `true` | Azure SQL Server + Serverless Database (AdventureWorksLT) |
 | `sqlVm` | `false` | SQL Server 2022 on a Windows VM (IaaS) — opt-in only |
 | `cosmosDb` | `false` | Cosmos DB (NoSQL, serverless) — opt-in only |
@@ -233,8 +240,9 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `redis` | `false` | Redis Cache — opt-in only |
 
 ### `appservices`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
 | `linuxWebApp` | `true` | Linux Web App |
 | `functionApp` | `true` | Function App (Consumption plan) |
@@ -242,16 +250,18 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `logicApp` | `true` | Logic App (Standard) |
 
 ### `containers`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `containerRegistry` | `true` | Azure Container Registry (Basic SKU) |
 | `kubernetesService` | `true` | AKS (1-node, free tier control plane, `Standard_B2s`) |
 | `containerApps` | `true` | Container Apps Environment + sample Container App |
 | `containerInstances` | `true` | Container Instances |
 
 ### `governance`
+
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `automationAccount` | varies | Automation Account with auto-stop/start runbooks and daily schedules |
 | `budget` | `true` | Monthly budget with email alerts at 80% and 100% spend |
 | `budgetAmount` | varies | Monthly budget limit in USD |
@@ -263,7 +273,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 ## Deployment modes
 
 | Mode | Bicep path | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `default` (default) | `bicep/modules/` | Out-of-the-box Azure settings — no hardening, no enforced TLS, public network access at defaults. Use this to establish a pre-hardening **benchmark baseline**. |
 | `hardened` | `bicep/hardened/` | CIS/MCSB-aligned: TLS 1.2 minimum, public network access disabled, purge protection on Key Vault, all Defender plans enabled, Sentinel, resource locks, policy assignments in Enforce mode. |
 
@@ -291,7 +301,7 @@ You can also deploy both side-by-side using different prefixes:
 ```
 
 | Parameter | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `-Profile` | string | `full` | Built-in profile name or path to a custom JSON file |
 | `-Location` | string | `westeurope` | Azure region. Use `az account list-locations --query "[].name" -o tsv` to list all. |
 | `-Prefix` | string | `ade` | 2–8 lowercase alphanumeric characters. Becomes part of every resource group name and most resource names. |
@@ -343,6 +353,7 @@ You can also deploy both side-by-side using different prefixes:
 ```
 
 The destroy script:
+
 1. Removes any resource locks on matching resource groups first.
 2. Deletes each matching resource group.
 3. By default waits for each deletion to complete before continuing (so errors are visible).
@@ -436,7 +447,7 @@ To enable Cosmos DB and PostgreSQL in your custom profile's databases module:
 ## Scripts reference
 
 | Script | Purpose |
-|---|---|
+| --- | --- |
 | `scripts/deploy.ps1` | Main deployment orchestrator. See [All deploy.ps1 parameters](#all-deployps1-parameters). |
 | `scripts/destroy.ps1` | Deletes all ADE resource groups for a given prefix. |
 | `scripts/seed-data.ps1` | Seeds SQL, Cosmos DB, Blob storage, and Key Vault secrets after deployment. Called automatically by `deploy.ps1` when `seedDummyData: true` in the profile. |
@@ -453,7 +464,7 @@ To enable Cosmos DB and PostgreSQL in your custom profile's databases module:
 Most modules are inexpensive at rest. The following resources carry meaningful ongoing cost:
 
 | Resource | Approximate monthly cost |
-|---|---|
+| --- | --- |
 | Azure Firewall Standard | ~$900 |
 | Azure Firewall Premium | ~$1,500 |
 | DDoS Network Protection | ~$2,944 — **enable only when you explicitly need it** |
@@ -483,7 +494,7 @@ When `seedDummyData: true` is set in a profile (or when the `seed_data` input is
 What gets seeded:
 
 | Target | Data |
-|---|---|
+| --- | --- |
 | Azure Blob Storage | Sample text and JSON files (`data/blob/`) |
 | Cosmos DB | Sample JSON documents (`data/cosmos/`) |
 | Azure SQL | AdventureWorksLT sample database (built into the SQL resource itself — no script required) |
@@ -531,6 +542,7 @@ A terminal-based live dashboard shows real-time resource status and current-mont
 ```
 
 The dashboard shows:
+
 - Current month cost per resource group and estimated month-end projection
 - VM running/deallocated/stopped status
 - Database and AKS cluster status
@@ -556,6 +568,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 Current state: **442 passing, 0 failing, 28 skipped**.
 
 Test coverage includes:
+
 - Profile JSON schema validation
 - `deploy.ps1` and `destroy.ps1` parameter validation
 - Module deployment orchestration logic (module ordering, feature flag propagation)
@@ -569,7 +582,7 @@ Test coverage includes:
 Three workflows are included:
 
 | Workflow | File | Trigger | What it does |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | ADE — Lint | `lint.yml` | Every push and PR | Bicep lint, PSScriptAnalyzer, JSON validation, Pester tests |
 | ADE — Deploy | `deploy.yml` | Manual (`workflow_dispatch`) | Deploys a chosen profile to Azure |
 | ADE — Destroy | `destroy.yml` | Manual (`workflow_dispatch`) | Destroys all resource groups for a given prefix |
@@ -636,7 +649,7 @@ In your repo: **Settings → Environments → New environment**
 In **Settings → Environments → demo → Environment secrets → Add secret**:
 
 | Secret name | Value |
-|---|---|
+| --- | --- |
 | `AZURE_CLIENT_ID` | The `appId` from Step 1 |
 | `AZURE_TENANT_ID` | Run: `az account show --query tenantId -o tsv` |
 | `AZURE_SUBSCRIPTION_ID` | Run: `az account show --query id -o tsv` |
@@ -649,7 +662,7 @@ Store these at **environment** scope, not repository scope. Environment-scoped s
 In **Settings → Secrets and variables → Actions → Variables → New repository variable**:
 
 | Variable name | Example value |
-|---|---|
+| --- | --- |
 | `ADE_DEFAULT_LOCATION` | `westeurope` |
 | `ADE_DEFAULT_PREFIX` | `ade` |
 
@@ -663,7 +676,7 @@ az ad app federated-credential list --id <objectId> --query "[].subject" -o tsv
 
 Expected output:
 
-```
+```text
 repo:<your-github-org>/<your-repo-name>:environment:demo
 ```
 
@@ -678,7 +691,7 @@ repo:<your-github-org>/<your-repo-name>:environment:demo
 
 ## Repository structure
 
-```
+```text
 azure-demo-environment/
 ├── bicep/
 │   ├── modules/                  Default (out-of-box) Bicep modules — one folder per module
@@ -747,7 +760,7 @@ ADE is designed for **paired benchmark comparisons**:
 ### CIS Azure Foundations Benchmark v2.0 — control coverage
 
 | CIS Section | Topic | ADE module | Hardened control |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1.x | Identity and access management | `security`, `governance` | Key Vault RBAC, managed identity |
 | 2.1 | Microsoft Defender for Cloud | `security` | All Defender plans enabled |
 | 2.2 | Defender recommendations | `governance` | Policy assignments in Enforce mode |
@@ -763,13 +776,13 @@ ADE is designed for **paired benchmark comparisons**:
 
 ### Running a compliance scan
 
-**Option 1 — Defender for Cloud (Azure portal)**
+#### Option 1 — Defender for Cloud (Azure portal)
 
 1. Open **Microsoft Defender for Cloud → Regulatory compliance**
 2. Select **CIS Azure Foundations Benchmark v2.0** or **Microsoft Cloud Security Benchmark**
 3. Expand controls to see compliant vs. non-compliant resources
 
-**Option 2 — Azure Policy via CLI**
+#### Option 2 — Azure Policy via CLI
 
 ```bash
 # Overall compliance summary for the subscription
@@ -792,7 +805,6 @@ az policy state list \
 
 MIT
 
-
 | Module | Resources |
 | --- | --- |
 | `monitoring` | Log Analytics Workspace, Application Insights, Action Group |
@@ -812,7 +824,7 @@ MIT
 
 ## Quick start
 
-### Prerequisites
+### Requirements
 
 - [PowerShell 7.4+](https://github.com/PowerShell/PowerShell/releases)
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) with `az bicep install`
@@ -847,7 +859,7 @@ az account set --subscription <subscription-id>
 
 ---
 
-## Deployment modes
+## Mode selection
 
 | Mode | Bicep source | Purpose |
 | --- | --- | --- |
@@ -894,9 +906,9 @@ Profiles live in `config/profiles/` and control which modules and features are e
 
 ---
 
-## Repository structure
+## Project layout
 
-```
+```text
 bicep/
   modules/          # Default (out-of-the-box) Bicep modules
   hardened/         # CIS/MCSB-hardened Bicep modules
@@ -920,7 +932,7 @@ tests/              # Pester 5 unit tests (442 passing, 0 failing)
 
 ---
 
-## GitHub Actions setup
+## CI/CD setup
 
 The workflows use **OIDC (federated identity)** — no long-lived client secrets. Follow these steps once before the first workflow run.
 
@@ -1027,7 +1039,7 @@ All Azure CLI calls are mocked — no subscription required to run tests.
 
 ---
 
-## Cost guidance
+## Cost reference
 
 Most modules are low-cost at rest. Notable exceptions:
 
@@ -1041,9 +1053,3 @@ Most modules are low-cost at rest. Notable exceptions:
 | Bastion Basic/Standard | ~$140–200/month |
 
 Cost warnings are embedded in `config/defaults.json` and surfaced during deployment confirmation.
-
----
-
-## License
-
-MIT
