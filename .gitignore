@@ -1,0 +1,30 @@
+# ── PDFs (e.g. CIS Benchmark — redistribute separately) ──────────────────────
+*.pdf
+
+# ── Test output ───────────────────────────────────────────────────────────────
+tests/results/
+
+# ── Local environment / secrets ───────────────────────────────────────────────
+.env
+.env.*
+*.local.json
+local.*.json
+
+# ── Certificates and keys ─────────────────────────────────────────────────────
+*.pfx
+*.pem
+*.key
+*.p12
+*.cer
+
+# ── Azure CLI token cache ─────────────────────────────────────────────────────
+.azure/
+
+# ── PowerShell temp / log files ───────────────────────────────────────────────
+*.log
+*.tmp
+
+# ── OS and editor artefacts ───────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+desktop.ini
