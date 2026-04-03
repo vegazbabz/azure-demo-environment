@@ -125,8 +125,16 @@ resource mlStorage 'Microsoft.Storage/storageAccounts@2023-04-01' = if (deployMa
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    // Shared key retained for ML workspace internal operations
+    // Shared key retained for ML workspace internal operations (workspace SDK requires it)
     allowSharedKeyAccess: true
+    // Hardened: disable public network access (MCSB NS-1)
+    publicNetworkAccess: 'Disabled'
+    networkAcls: {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices'
+      ipRules: []
+      virtualNetworkRules: []
+    }
   }
 }
 

@@ -51,6 +51,8 @@ var hardenedSiteConfig = {
   httpLoggingEnabled: true
   // Hardened: HTTP/2 enabled
   http20Enabled: true
+  // Hardened: health check endpoint (MCSB — availability monitoring)
+  healthCheckPath: '/health'
 }
 
 // ─── App Service Plan (Windows) ───────────────────────────────────────────────
@@ -82,6 +84,11 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
     serverFarmId: appServicePlan.id
     // Hardened: HTTPS-only (CIS 9.2)
     httpsOnly: true
+    // Hardened: disable public network access (MCSB NS-1)
+    publicNetworkAccess: 'Disabled'
+    // Hardened: client cert in Optional mode — enables mutual TLS where clients supply certs (CIS 9.4)
+    clientCertEnabled: true
+    clientCertMode: 'Optional'
     siteConfig: union(hardenedSiteConfig, {
       netFrameworkVersion: 'v8.0'
     })
@@ -115,6 +122,9 @@ resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
   properties: {
     serverFarmId: linuxAppServicePlan.id
     httpsOnly: true
+    publicNetworkAccess: 'Disabled'
+    clientCertEnabled: true
+    clientCertMode: 'Optional'
     siteConfig: union(hardenedSiteConfig, {
       linuxFxVersion: 'NODE|20-lts'
     })
@@ -167,6 +177,7 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = if (deployFunctionApp) {
   properties: {
     serverFarmId: functionPlan.id
     httpsOnly: true
+    publicNetworkAccess: 'Disabled'
     siteConfig: union(hardenedSiteConfig, {
       appSettings: [
         {
@@ -240,6 +251,7 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
   properties: {
     serverFarmId: logicAppPlan.id
     httpsOnly: true
+    publicNetworkAccess: 'Disabled'
     siteConfig: union(hardenedSiteConfig, {
       appSettings: [
         {

@@ -51,6 +51,8 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
     // Hardened: disable shared key — use RBAC (Entra ID) only (MCSB IM-3)
     // NOTE: If any workloads use connection strings, grant Storage Blob/Queue Data roles instead.
     allowSharedKeyAccess: false
+    // Hardened: disable public network access entirely (CIS 3.7, MCSB NS-1)
+    publicNetworkAccess: 'Disabled'
     // Hardened: network ACLs — deny all by default; accept only from VNet/private endpoints
     networkAcls: {
       defaultAction: 'Deny'
@@ -200,6 +202,8 @@ resource dataLakeAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = if (en
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
+    // Hardened: disable public network access entirely
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'

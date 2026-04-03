@@ -177,6 +177,8 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = if (
     // Hardened: disable public access
     publicNetworkAccess: 'Disabled'
     enableFreeTier: false
+    // Hardened: restrict management plane writes via data plane keys (CIS 4.5.2)
+    disableKeyBasedMetadataWriteAccess: true
     // Hardened: restrict network access
     networkAclBypassResourceIds: []
     ipRules: []
