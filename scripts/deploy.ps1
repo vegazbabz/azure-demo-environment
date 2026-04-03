@@ -386,6 +386,12 @@ foreach ($moduleName in $deploymentOrder) {
                     keyVaultDnsZoneId       = $state.keyVaultDnsZoneId
                 }
                 if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
+                # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
+                # (e.g. deployer workstation or CI runner). Passed as a JSON array.
+                $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
+                if ($kvCidrs -and $kvCidrs.Count -gt 0) {
+                    $params['allowedCidrRanges'] = $kvCidrs
+                }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
                 $state.keyVaultId              = Get-AdeDeploymentOutput $outputs 'keyVaultId'
                 $state.keyVaultName            = Get-AdeDeploymentOutput $outputs 'keyVaultName'
@@ -433,6 +439,11 @@ foreach ($moduleName in $deploymentOrder) {
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
+                    # allowedCidrRanges: public IPs (CIDR) permitted through Storage network ACLs
+                    $stCidrs = $deployProfile.modules.storage.features.allowedCidrRanges
+                    if ($stCidrs -and $stCidrs.Count -gt 0) {
+                        $params['allowedCidrRanges'] = $stCidrs
+                    }
                 }
                 $null = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
             }

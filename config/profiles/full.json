@@ -30,7 +30,8 @@
         "keyVault": true,
         "managedIdentity": true,
         "defenderForCloud": false,
-        "sentinel": false
+        "sentinel": false,
+        "allowedCidrRanges": []
       }
     },
     "compute": {
@@ -52,7 +53,8 @@
         "dataLakeGen2": true,
         "fileShares": true,
         "enableSoftDelete": false,
-        "enableVersioning": false
+        "enableVersioning": false,
+        "allowedCidrRanges": []
       }
     },
     "databases": {

@@ -32,6 +32,9 @@ param privateEndpointSubnetId string = ''
 @description('Private DNS zone resource ID for blob storage (privatelink.blob.core.windows.net).')
 param blobDnsZoneId string = ''
 
+@description('Public IP address ranges (CIDR notation) to allow through Storage network ACLs. Use this to permit deployer workstation or CI runner IPs. RFC1918 private ranges are not supported here — VNet access uses private endpoints. Example: ["203.0.113.0/24"]')
+param allowedCidrRanges array = []
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -58,12 +61,14 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
     // NOTE: If any workloads use connection strings, grant Storage Blob/Queue Data roles instead.
     allowSharedKeyAccess: false
     // Hardened: disable public network access entirely (CIS 3.7, MCSB NS-1)
-    publicNetworkAccess: 'Disabled'
+    // Exception: allowedCidrRanges permits deployer/CI runner public IPs without full public access.
+    publicNetworkAccess: empty(allowedCidrRanges) ? 'Disabled' : 'Enabled'
     // Hardened: network ACLs — deny all by default; accept only from VNet/private endpoints
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
-      ipRules: []
+      // RFC1918 private ranges are NOT supported in ipRules; use private endpoints for VNet access.
+      ipRules: [for cidr in allowedCidrRanges: { value: cidr, action: 'Allow' }]
       virtualNetworkRules: []
     }
   }
@@ -209,11 +214,12 @@ resource dataLakeAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = if (en
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     // Hardened: disable public network access entirely
-    publicNetworkAccess: 'Disabled'
+    // Exception: allowedCidrRanges permits deployer/CI runner public IPs.
+    publicNetworkAccess: empty(allowedCidrRanges) ? 'Disabled' : 'Enabled'
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
-      ipRules: []
+      ipRules: [for cidr in allowedCidrRanges: { value: cidr, action: 'Allow' }]
       virtualNetworkRules: []
     }
   }
