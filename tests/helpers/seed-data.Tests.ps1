@@ -119,6 +119,38 @@ Describe 'seed-data.ps1 — skip when no resources found' -Tag 'unit' {
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules eventhub -Force
         } | Should -Not -Throw
     }
+
+    It 'Does not throw when SQL Server is missing' {
+        {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force
+        } | Should -Not -Throw
+    }
+
+    It 'Does not throw when PostgreSQL server is missing' {
+        {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force
+        } | Should -Not -Throw
+    }
+
+    It 'Does not throw when MySQL server is missing' {
+        {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force
+        } | Should -Not -Throw
+    }
+
+    It 'Does not throw when Redis Cache is missing' {
+        {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules redis -Force
+        } | Should -Not -Throw
+    }
 }
 
 Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit' {
@@ -188,6 +220,96 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             Should -Invoke az -Times 10 -Exactly
         }
     }
+
+    Context 'SQL seeding' {
+
+        BeforeAll {
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-sqlserver' }   # Get-AdeResource
+                # az sql db query succeeds silently
+            }
+        }
+
+        It 'Calls az sql db query when SQL Server is found and password is provided' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force -DatabaseAdminPassword $secPwd
+            # 1 (resource list) + 1 (az sql db query)
+            Should -Invoke az -Times 2 -Exactly
+        }
+    }
+
+    Context 'PostgreSQL seeding' {
+
+        BeforeAll {
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-postgres' }   # Get-AdeResource
+                # az postgres flexible-server execute succeeds silently
+            }
+        }
+
+        It 'Calls az postgres flexible-server execute when server is found and password is provided' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd
+            # 1 (resource list) + 1 (az postgres flexible-server execute)
+            Should -Invoke az -Times 2 -Exactly
+        }
+    }
+
+    Context 'MySQL seeding' {
+
+        BeforeAll {
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-mysql' }   # Get-AdeResource
+                # az mysql flexible-server execute succeeds silently
+            }
+        }
+
+        It 'Calls az mysql flexible-server execute when server is found and password is provided' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd
+            # 1 (resource list) + 1 (az mysql flexible-server execute)
+            Should -Invoke az -Times 2 -Exactly
+        }
+    }
+
+    Context 'Redis seeding' {
+
+        BeforeAll {
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'demo-redis' }   # Get-AdeResource
+                elseif ($script:azCallCount -eq 2) {
+                    '{"primaryKey":"test-primary-key","secondaryKey":"test-secondary-key"}'
+                }
+                # TCP/TLS RESP is not an az call; connection will fail gracefully in tests
+            }
+        }
+
+        It 'Calls az redis list-keys when cache is found' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules redis -Force
+            # 1 (resource list) + 1 (az redis list-keys); TLS RESP is not an az call
+            Should -Invoke az -Times 2 -Exactly
+        }
+    }
 }
 
 Describe 'seed-data.ps1 — module filter' -Tag 'unit' {
@@ -208,8 +330,8 @@ Describe 'seed-data.ps1 — module filter' -Tag 'unit' {
         function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
         function Write-AdeSection { param([string]$Title) }
         . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules all -Force
-        # 5 resource-list calls (one per block) — all return empty so no further calls
-        Should -Invoke az -Times 5 -Exactly
+        # 9 resource-list calls (one per block: storage, cosmosdb, sql, postgresql, mysql, redis, keyvault, servicebus, eventhub)
+        Should -Invoke az -Times 9 -Exactly
     }
 }
 
