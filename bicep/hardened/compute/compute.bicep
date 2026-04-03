@@ -44,6 +44,15 @@ param enableAutoShutdown bool = true    // Hardened: on
 @description('VM size. Standard_B2s is cost-optimised for demo.')
 param vmSize string = 'Standard_B2s'
 
+@description('Deploy a Domain Controller VM. Requires dcSubnetId. Hardened: no public IP, AMA extension, encryption at host.')
+param deployDomainController bool = false
+
+@description('Domain Controller subnet resource ID.')
+param dcSubnetId string = ''
+
+@description('Active Directory domain FQDN. Example: ade.local')
+param domainName string = ''
+
 @description('Log Analytics workspace resource ID for Azure Monitor Agent.')
 #disable-next-line no-unused-params
 param logAnalyticsId string = ''
@@ -53,6 +62,10 @@ param dataCollectionRuleId string = ''
 
 @description('Resource tags.')
 param tags object = {}
+
+var dcDomainName  = !empty(domainName) ? domainName : '${prefix}.local'
+var dcNetbiosName = toUpper(take(prefix, 15))
+var dcStaticIp    = '10.0.15.4'
 
 // ─── Availability Set ─────────────────────────────────────────────────────────
 
@@ -423,6 +436,124 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = if (deplo
   }
 }
 
+// ─── Domain Controller VM ─────────────────────────────────────────────────────
+// Hardened: no public IP (Bastion only), encryption at host, trusted launch,
+//           AMA extension for log collection. AAD login extension NOT applied
+//           (a DC cannot be Entra-joined). Static IP 10.0.15.4.
+// CSE promotes the VM to DC on first boot. VNet DNS must point to 10.0.15.4 —
+// set deployDomainController=true in the networking module.
+
+resource dcNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (deployDomainController) {
+  name: '${prefix}-dc-nic'
+  location: location
+  tags: tags
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfig1'
+        properties: {
+          subnet: { id: dcSubnetId }
+          privateIPAllocationMethod: 'Static'
+          privateIPAddress: dcStaticIp
+          // Hardened: no public IP — admin access via Bastion only
+        }
+      }
+    ]
+  }
+}
+
+resource dcVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deployDomainController) {
+  name: '${prefix}-dc-vm'
+  location: location
+  tags: tags
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    hardwareProfile: { vmSize: vmSize }
+    securityProfile: {
+      encryptionAtHost: true
+      securityType: 'TrustedLaunch'
+      uefiSettings: { secureBootEnabled: true, vTpmEnabled: true }
+    }
+    osProfile: {
+      computerName: '${take(prefix, 14)}dc'
+      adminUsername: adminUsername
+      adminPassword: adminPassword
+      windowsConfiguration: {
+        enableAutomaticUpdates: true
+        patchSettings: {
+          patchMode: 'AutomaticByPlatform'
+          assessmentMode: 'AutomaticByPlatform'
+        }
+        provisionVMAgent: true
+      }
+    }
+    storageProfile: {
+      imageReference: {
+        publisher: 'MicrosoftWindowsServer'
+        offer: 'WindowsServer'
+        sku: '2022-datacenter-azure-edition'
+        version: 'latest'
+      }
+      osDisk: {
+        createOption: 'FromImage'
+        managedDisk: { storageAccountType: 'Premium_LRS' }
+        deleteOption: 'Delete'
+      }
+    }
+    networkProfile: {
+      networkInterfaces: [
+        { id: dcNic.id, properties: { primary: true, deleteOption: 'Delete' } }
+      ]
+    }
+    diagnosticsProfile: { bootDiagnostics: { enabled: true } }
+  }
+}
+
+// Hardened: AMA for centralized log collection from DC
+resource dcAmaExtension 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (deployDomainController) {
+  parent: dcVm
+  name: 'AzureMonitorWindowsAgent'
+  location: location
+  properties: {
+    publisher: 'Microsoft.Azure.Monitor'
+    type: 'AzureMonitorWindowsAgent'
+    typeHandlerVersion: '1.0'
+    autoUpgradeMinorVersion: true
+    enableAutomaticUpgrade: true
+  }
+}
+
+// Promotes the VM to a Domain Controller (runs after AMA installs).
+// protectedSettings encrypts the command (incl. password) in ARM state.
+resource dcCse 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (deployDomainController) {
+  parent: dcVm
+  name: 'InstallADDS'
+  location: location
+  dependsOn: [dcAmaExtension]
+  properties: {
+    publisher: 'Microsoft.Compute'
+    type: 'CustomScriptExtension'
+    typeHandlerVersion: '1.10'
+    autoUpgradeMinorVersion: true
+    protectedSettings: {
+      commandToExecute: 'powershell.exe -NonInteractive -Command "Install-WindowsFeature AD-Domain-Services -IncludeManagementTools; Import-Module ADDSDeployment; $pwd = ConvertTo-SecureString \'${adminPassword}\' -AsPlainText -Force; Install-ADDSForest -DomainName \'${dcDomainName}\' -DomainNetbiosName \'${dcNetbiosName}\' -SafeModeAdministratorPassword $pwd -InstallDns:$true -Force:$true -NoRebootOnCompletion:$false"'
+    }
+  }
+}
+
+resource dcAutoShutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = if (deployDomainController && enableAutoShutdown) {
+  name: 'shutdown-computevm-${prefix}-dc-vm'
+  location: location
+  tags: tags
+  properties: {
+    status: 'Enabled'
+    taskType: 'ComputeVmShutdownTask'
+    dailyRecurrence: { time: '1900' }
+    timeZoneId: 'UTC'
+    targetResourceId: dcVm.id
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 output windowsVmId string = deployWindowsVm ? windowsVm.id : ''
@@ -431,3 +562,6 @@ output linuxVmId string = deployLinuxVm ? linuxVm.id : ''
 output linuxVmName string = deployLinuxVm ? linuxVm.name : ''
 output vmssId string = deployVmss ? vmss.id : ''
 output availabilitySetId string = availabilitySet.id
+output dcVmName string = deployDomainController ? dcVm.name : ''
+output dcPrivateIp string = deployDomainController ? dcStaticIp : ''
+output domainName string = deployDomainController ? dcDomainName : ''
