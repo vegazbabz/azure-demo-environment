@@ -11,6 +11,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 ## Table of contents
 
 - [What gets deployed](#what-gets-deployed)
+- [Network topology](#network-topology)
 - [How it works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Your first deployment](#your-first-deployment)
@@ -53,6 +54,24 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 | `governance` | Automation Account (auto-stop/start), Budget alerts | Resource locks, Azure Policy initiative assignments |
 
 > `ai` and `data` are disabled in all built-in profiles by default due to cost and quota requirements. Enable them in a custom profile when needed.
+
+---
+
+## Network topology
+
+![Network topology diagram](docs/network-topology.png)
+
+The diagram above shows the full VNet layout (`10.0.0.0/16`) with all subnets always provisioned.
+Dashed borders indicate opt-in resources; solid borders are always deployed.
+
+Key design points:
+
+- **All subnets are provisioned regardless of which resources are enabled.** Address space never needs redesigning when you toggle optional features later.
+- **NSGs are empty by default** (Azure defaults: allow intra-VNet, deny internet inbound). Rules are added in `hardened` mode.
+- **Azure Firewall** (opt-in) applies a UDR (`0.0.0.0/0 → 10.0.10.4`) to *all* workload subnets — compute, appservices, databases, containers, integration, ai, data, and management.
+- **Azure Bastion Developer SKU** is deployed by default (free, no dedicated subnet). Basic/Standard SKU requires `AzureBastionSubnet` (`10.0.11.0/26`) and has an hourly cost.
+- **Private DNS Zones** (opt-in, 15 zones) cover all private-endpoint-capable services: Storage (blob/file/queue/table), SQL, Cosmos DB, PostgreSQL, MySQL, Key Vault, ACR, Service Bus, Event Hub, Cognitive Services, OpenAI, and Cognitive Search.
+- **PostgreSQL** is injected into the `databases` subnet (delegation: `Microsoft.DBforPostgreSQL/flexibleServers`). **MySQL** uses its own dedicated subnet (`10.0.14.0/24`, delegation: `Microsoft.DBforMySQL/flexibleServers`) to avoid delegation conflicts.
 
 ---
 
