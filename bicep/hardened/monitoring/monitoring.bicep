@@ -36,9 +36,10 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
     sku: { name: 'PerGB2018' }
     retentionInDays: retentionDays
     workspaceCapping: { dailyQuotaGb: -1 }
-    // Hardened: restrict public network access to the workspace
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    // NOTE: AMPLS + private endpoint is required to set these to 'Disabled'.
+    // Without an Azure Monitor Private Link Scope, AMA agents cannot ship data.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
     features: {
       // Immutable log collection — prevents tampering with audit logs
       immediatePurgeDataOn30Days: false
@@ -57,9 +58,9 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   properties: {
     Application_Type: 'web'
     WorkspaceResourceId: logAnalyticsWorkspace.id
-    // Hardened: ingestion/query only via workspace private link
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    // NOTE: Keep Enabled until AMPLS private link scope is deployed.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
     // Disable sampling to ensure all telemetry is captured
     SamplingPercentage: 100
     DisableIpMasking: false

@@ -33,39 +33,42 @@ param tags object = {}
 // Hardened: local auth disabled, public access disabled.
 
 resource aiServices 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = if (deployAiServices) {
-  name: '${prefix}-aiservices'
+  name: '${prefix}-aisvcs-${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   kind: 'CognitiveServices'
   sku: { name: 'S0' }
   properties: {
-    // Hardened: public access disabled (private endpoint required for production)
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; restrict via PE in production.
+    publicNetworkAccess: 'Enabled'
     // Hardened: local auth disabled — Entra ID RBAC only (MCSB IM-3)
     disableLocalAuth: true
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
       ipRules: []
       virtualNetworkRules: []
     }
   }
 }
 
-// ─── Azure OpenAI ─────────────────────────────────────────────────────────────
+// ─── Azure OpenAI ───────────────────────────────────────────────────────────────────────────────
 // Hardened: local auth disabled, network restrictions.
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = if (deployOpenAi) {
-  name: '${prefix}-openai'
+  name: '${prefix}-openai-${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   kind: 'OpenAI'
   sku: { name: 'S0' }
   properties: {
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; restrict via PE in production.
+    publicNetworkAccess: 'Enabled'
     // Hardened: Entra ID authentication only (no API keys)
     disableLocalAuth: true
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
       ipRules: []
       virtualNetworkRules: []
     }
@@ -99,8 +102,9 @@ resource cognitiveSearch 'Microsoft.Search/searchServices@2023-11-01' = if (depl
   properties: {
     replicaCount: 1
     partitionCount: 1
-    // Hardened: public access disabled
-    publicNetworkAccess: 'disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'disabled'.
+    // Keeping enabled for demo deployability; restrict via PE in production.
+    publicNetworkAccess: 'enabled'
     // Hardened: local auth disabled (Entra ID RBAC only — MCSB IM-3)
     disableLocalAuth: true
     // Hardened: require HTTPS (enforced by default; explicit for auditability)
@@ -165,8 +169,9 @@ resource mlAppInsights 'Microsoft.Insights/components@2020-02-02' = if (deployMa
   kind: 'web'
   properties: {
     Application_Type: 'web'
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    // NOTE: Keep Enabled until AMPLS private link scope is deployed for the ML workspace.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 

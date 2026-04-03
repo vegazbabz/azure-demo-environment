@@ -445,7 +445,8 @@ foreach ($moduleName in $deploymentOrder) {
                         $params['allowedCidrRanges'] = $stCidrs
                     }
                 }
-                $null = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
+                $outputs = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
+                $state.storageAccountName = Get-AdeDeploymentOutput $outputs 'storageAccountName'
             }
 
             # ── DATABASES ───────────────────────────────────────────────────
@@ -544,6 +545,8 @@ foreach ($moduleName in $deploymentOrder) {
             'ai' {
                 $bicep = Join-Path $bicepRoot 'ai\ai.bicep'
                 $aiFeatures = $deployProfile.modules.ai.features
+                # Guard: profile may have ai.enabled=true but no features object
+                if ($null -eq $aiFeatures) { $aiFeatures = [pscustomobject]@{} }
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
@@ -568,6 +571,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deploySynapse       = ($dataFeatures.synapse -eq $true).ToString().ToLower()
                     deployDatabricks    = ($dataFeatures.databricks -eq $true).ToString().ToLower()
                     deployPurview       = ($dataFeatures.purview -eq $true).ToString().ToLower()
+                    storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
                 }
                 if ($Mode -eq 'hardened') {
                     $params['synapseAdminPassword'] = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
@@ -589,6 +593,11 @@ foreach ($moduleName in $deploymentOrder) {
                     budgetAmount            = if ($null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
                     enableResourceLocks     = ($govFeatures.resourceLocks -eq $true).ToString().ToLower()
                     enablePolicyAssignments = ($govFeatures.policyAssignments -eq $true).ToString().ToLower()
+                    computeResourceGroupName = "$Prefix-compute-rg"
+                    runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
+                }
+                if (-not [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
+                    $params['budgetAlertEmail'] = $govFeatures.budgetAlertEmail
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
                 $state.automationAccountId   = Get-AdeDeploymentOutput $outputs 'automationAccountId'

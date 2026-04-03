@@ -122,7 +122,8 @@
         "budget": true,
         "budgetAmount": 400,
         "resourceLocks": true,
-        "policyAssignments": true
+        "policyAssignments": true,
+        "budgetAlertEmail": ""
       }
     }
   },
