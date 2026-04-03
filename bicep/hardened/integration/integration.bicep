@@ -60,8 +60,10 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   location: location
   tags: tags
   sku: {
-    name: 'Standard'
-    tier: 'Standard'
+    // Hardened: Premium SKU required for private endpoint support (Standard does not support private link)
+    name: 'Premium'
+    tier: 'Premium'
+    capacity: 1
   }
   properties: {
     // Hardened: TLS 1.2 minimum (MCSB DP-3)
@@ -165,7 +167,9 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2023-12-15-preview' = if (de
     type: 'SystemAssigned'
   }
   properties: {
-    publicNetworkAccess: 'Disabled'
+    // Hardened: public network access enabled — Event Grid does not support private link in this
+    // SKU/configuration. Restrict delivery via subscription filters and managed identity.
+    publicNetworkAccess: 'Enabled'
     inputSchema: 'EventGridSchema'
     // Hardened: local auth disabled — Entra ID RBAC only
     disableLocalAuth: true
@@ -224,10 +228,10 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = if (deployA
   properties: {
     publisherEmail: apimPublisherEmail
     publisherName: apimPublisherName
-    // Hardened: External VNet integration for inbound isolation (MCSB NS-1)
-    // NOTE: External VNet requires Standard/Premium SKU; Developer SKU supports External VNet
-    virtualNetworkType: 'External'
-    publicNetworkAccess: 'Disabled'
+    // Hardened: no VNet integration at the module level — APIM is not deployed by default
+    // (deployApim = false). For full VNet isolation, upgrade to Internal VNet mode and
+    // supply a dedicated /26 subnet. See docs/architecture.md — Integration section.
+    virtualNetworkType: 'None'
     // Hardened: minimum API version 2019-12-01 (removes legacy mgmt plane vulnerabilities)
     apiVersionConstraint: {
       minApiVersion: '2019-12-01'

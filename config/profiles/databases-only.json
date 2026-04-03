@@ -13,7 +13,7 @@
     },
     "security": {
       "enabled": true,
-      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": false, "sentinel": false }
+      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": false, "sentinel": false, "allowedCidrRanges": [] }
     },
     "compute": { "enabled": false },
     "storage": { "enabled": false },
