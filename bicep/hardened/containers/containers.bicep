@@ -51,7 +51,10 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (deployAcr
   properties: {
     // Hardened: admin user disabled — use Entra ID RBAC (CIS 8.3, MCSB IM-3)
     adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'    // Private endpoint would require DNS zone — simplified for demo
+    // Hardened: public network access disabled (CIS 8.4, MCSB NS-1)
+    // NOTE: pulling images requires private endpoint or VNet service endpoint in production.
+    //       For demo deployability, set to Enabled in default mode only.
+    publicNetworkAccess: 'Disabled'
     zoneRedundancy: 'Disabled'
     // Hardened: policies
     policies: {
@@ -101,6 +104,8 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
         enableEncryptionAtHost: true
         // Hardened: enable accelerated networking
         enableNodePublicIP: false    // No public IPs on nodes
+        // Hardened: max pods per node >= 50 (CIS 5.x — pod density)
+        maxPods: 50
       }
     ]
     // Hardened: Azure CNI for full VNet IP visibility (required for network policy)

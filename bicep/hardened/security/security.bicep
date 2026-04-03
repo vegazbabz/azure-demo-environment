@@ -116,11 +116,13 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 var defenderPlans = [
   'VirtualMachines'
   'SqlServers'
+  'SqlServerVirtualMachines'    // Hardened: SQL on VMs coverage (CIS 2.x)
   'AppServices'
   'StorageAccounts'
   'Containers'
   'KeyVaults'
   'Arm'
+  'Apis'                        // Hardened: Defender for APIs coverage (MCSB NS-1)
   'OpenSourceRelationalDatabases'
   'CosmosDbs'
   'Dns'
