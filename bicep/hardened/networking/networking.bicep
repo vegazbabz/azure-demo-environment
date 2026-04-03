@@ -43,6 +43,9 @@ param enableDdos bool = false
 @description('Deploy Private DNS Zones for private endpoint name resolution.')
 param enablePrivateDnsZones bool = true    // Hardened: on by default
 
+@description('Deploy a Domain Controller VM. Sets VNet DNS to 10.0.15.4 so domain-joined resources resolve AD DNS.')
+param deployDomainController bool = false
+
 // ─── Address space ────────────────────────────────────────────────────────────
 
 var addressSpace                = '10.0.0.0/16'
@@ -60,6 +63,7 @@ var bastionSubnetPrefix         = '10.0.11.0/26'
 var gatewaySubnetPrefix         = '10.0.12.0/27'
 var privateEndpointSubnetPrefix = '10.0.13.0/24'
 var mysqlSubnetPrefix           = '10.0.14.0/24'  // MySQL Flexible Server VNet injection
+var dcSubnetPrefix              = '10.0.15.0/24'  // Domain Controller (static IP: 10.0.15.4)
 
 var firewallEnabled    = enableFirewall != 'None'
 var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
@@ -248,6 +252,15 @@ resource privateEndpointNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01'
   properties: { securityRules: hardenedInboundRules }
 }
 
+resource dcNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
+  name: '${prefix}-dc-nsg'
+  location: location
+  tags: tags
+  // Hardened: allow all VNet-internal AD traffic, deny all internet inbound.
+  // DC is accessed only from within the VNet (Bastion for admin, workloads for Kerberos/LDAP/DNS).
+  properties: { securityRules: hardenedInboundRules }
+}
+
 // ─── Route Table (UDR) — Only when Azure Firewall is enabled ──────────────────
 
 resource firewallRouteTable 'Microsoft.Network/routeTables@2023-09-01' = if (firewallEnabled) {
@@ -303,6 +316,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
     }
     ddosProtectionPlan: enableDdos ? { id: ddosProtectionPlan.id } : null
     enableDdosProtection: enableDdos
+    dhcpOptions: deployDomainController ? {
+      // Point VNet DNS to the DC so domain-joined resources resolve AD DNS.
+      // 168.63.129.16 = Azure DNS fallback for Azure-public FQDNs.
+      dnsServers: ['10.0.15.4', '168.63.129.16']
+    } : null
     subnets: concat(
       [
         {
@@ -438,6 +456,19 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
             serviceEndpoints: [
               { service: 'Microsoft.Storage' }
               { service: 'Microsoft.Sql' }
+            ]
+          }
+        }
+        // DC subnet — always provisioned; DC VM is deployed conditionally via deployDomainController flag
+        {
+          name: 'dc'
+          properties: {
+            addressPrefix: dcSubnetPrefix
+            networkSecurityGroup: { id: dcNsg.id }
+            routeTable: firewallEnabled ? { id: firewallRouteTable.id } : null
+            serviceEndpoints: [
+              { service: 'Microsoft.Storage' }
+              { service: 'Microsoft.KeyVault' }
             ]
           }
         }
@@ -770,6 +801,7 @@ output dataSubnetId string = '${vnet.id}/subnets/data'
 output managementSubnetId string = '${vnet.id}/subnets/management'
 output privateEndpointSubnetId string = '${vnet.id}/subnets/privateendpoints'
 output mysqlSubnetId string = '${vnet.id}/subnets/mysql'
+output dcSubnetId string = '${vnet.id}/subnets/dc'
 output bastionId string = bastionSku == 'Developer' ? bastionDeveloper.id : (bastionNeedsSubnet ? bastionPaid.id : '')
 output appGatewayPublicIp string = enableAppGateway ? appGwPublicIp!.properties.ipAddress : ''
 output firewallPrivateIp string = firewallEnabled ? '10.0.10.4' : ''

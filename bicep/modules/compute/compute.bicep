@@ -38,8 +38,21 @@ param enableAutoShutdown bool = false
 @description('VM size. Standard_B2s is cost-optimised for demo.')
 param vmSize string = 'Standard_B2s'
 
+@description('Deploy a Domain Controller VM. Requires dcSubnetId.')
+param deployDomainController bool = false
+
+@description('Domain Controller subnet resource ID.')
+param dcSubnetId string = ''
+
+@description('Active Directory domain FQDN. Example: ade.local')
+param domainName string = ''
+
 @description('Resource tags.')
 param tags object = {}
+
+var dcDomainName   = !empty(domainName) ? domainName : '${prefix}.local'
+var dcNetbiosName  = toUpper(take(prefix, 15))
+var dcStaticIp     = '10.0.15.4'
 
 // ─── Availability Set ─────────────────────────────────────────────────────────
 
@@ -278,6 +291,112 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = if (deplo
   }
 }
 
+// ─── Domain Controller VM ─────────────────────────────────────────────────────
+// Promotes a Windows Server 2022 VM to an AD DS Domain Controller.
+// Static private IP: 10.0.15.4. Public IP enabled (default mode).
+// CSE installs AD DS feature and runs Install-ADDSForest automatically.
+// VNet DNS must point to 10.0.15.4 — set deployDomainController=true in networking.
+//
+// SAFE MODE PASSWORD: Uses the same adminPassword as the VM for simplicity in
+// a demo environment. In production, use a separate secure secret.
+
+resource dcPublicIp 'Microsoft.Network/publicIPAddresses@2023-09-01' = if (deployDomainController) {
+  name: '${prefix}-dc-pip'
+  location: location
+  tags: tags
+  sku: { name: 'Standard', tier: 'Regional' }
+  properties: { publicIPAllocationMethod: 'Static' }
+}
+
+resource dcNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (deployDomainController) {
+  name: '${prefix}-dc-nic'
+  location: location
+  tags: tags
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfig1'
+        properties: {
+          subnet: { id: dcSubnetId }
+          // Static IP so it matches the VNet DNS server address (10.0.15.4)
+          privateIPAllocationMethod: 'Static'
+          privateIPAddress: dcStaticIp
+          publicIPAddress: { id: dcPublicIp.id }
+        }
+      }
+    ]
+  }
+}
+
+resource dcVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deployDomainController) {
+  name: '${prefix}-dc-vm'
+  location: location
+  tags: tags
+  properties: {
+    hardwareProfile: { vmSize: vmSize }
+    osProfile: {
+      computerName: '${take(prefix, 14)}dc'
+      adminUsername: adminUsername
+      adminPassword: adminPassword
+      windowsConfiguration: {
+        enableAutomaticUpdates: true
+        patchSettings: { patchMode: 'AutomaticByOS' }
+      }
+    }
+    storageProfile: {
+      imageReference: {
+        publisher: 'MicrosoftWindowsServer'
+        offer: 'WindowsServer'
+        sku: '2022-datacenter-azure-edition'
+        version: 'latest'
+      }
+      osDisk: {
+        createOption: 'FromImage'
+        managedDisk: { storageAccountType: 'Premium_LRS' }
+        deleteOption: 'Delete'
+      }
+    }
+    networkProfile: {
+      networkInterfaces: [
+        { id: dcNic.id, properties: { primary: true, deleteOption: 'Delete' } }
+      ]
+    }
+    diagnosticsProfile: {
+      bootDiagnostics: { enabled: true }
+    }
+  }
+}
+
+// Installs AD DS feature and promotes the VM to a Domain Controller.
+// The command runs inside protectedSettings so adminPassword is encrypted at rest.
+resource dcCse 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = if (deployDomainController) {
+  parent: dcVm
+  name: 'InstallADDS'
+  location: location
+  properties: {
+    publisher: 'Microsoft.Compute'
+    type: 'CustomScriptExtension'
+    typeHandlerVersion: '1.10'
+    autoUpgradeMinorVersion: true
+    protectedSettings: {
+      commandToExecute: 'powershell.exe -NonInteractive -Command "Install-WindowsFeature AD-Domain-Services -IncludeManagementTools; Import-Module ADDSDeployment; $pwd = ConvertTo-SecureString \'${adminPassword}\' -AsPlainText -Force; Install-ADDSForest -DomainName \'${dcDomainName}\' -DomainNetbiosName \'${dcNetbiosName}\' -SafeModeAdministratorPassword $pwd -InstallDns:$true -Force:$true -NoRebootOnCompletion:$false"'
+    }
+  }
+}
+
+resource dcAutoShutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = if (deployDomainController && enableAutoShutdown) {
+  name: 'shutdown-computevm-${prefix}-dc-vm'
+  location: location
+  tags: tags
+  properties: {
+    status: 'Enabled'
+    taskType: 'ComputeVmShutdownTask'
+    dailyRecurrence: { time: '1900' }
+    timeZoneId: 'UTC'
+    targetResourceId: dcVm.id
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 output windowsVmId string = deployWindowsVm ? windowsVm.id : ''
@@ -286,4 +405,7 @@ output linuxVmId string = deployLinuxVm ? linuxVm.id : ''
 output linuxVmName string = deployLinuxVm ? linuxVm.name : ''
 output vmssId string = deployVmss ? vmss.id : ''
 output availabilitySetId string = availabilitySet.id
+output dcVmName string = deployDomainController ? dcVm.name : ''
+output dcPrivateIp string = deployDomainController ? dcStaticIp : ''
+output domainName string = deployDomainController ? dcDomainName : ''
 
