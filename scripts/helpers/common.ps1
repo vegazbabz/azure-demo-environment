@@ -274,6 +274,10 @@ function Invoke-AdeBicepDeployment {
             # Encode objects as JSON for ARM parameter inline syntax
             $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
             $paramArgs += "$key=$jsonVal"
+        } elseif ($val -is [array] -or $val -is [System.Collections.ArrayList]) {
+            # Encode arrays as JSON — az CLI accepts key=["a","b"] for array params
+            $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
+            $paramArgs += "$key=$jsonVal"
         } else {
             # Pass value directly; array ArgumentList elements are not whitespace-split
             $paramArgs += "$key=$val"

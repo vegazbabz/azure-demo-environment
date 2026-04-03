@@ -13,7 +13,7 @@
     },
     "security": {
       "enabled": true,
-      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": true, "sentinel": true }
+      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": true, "sentinel": true, "allowedCidrRanges": [] }
     },
     "compute": {
       "enabled": true,
@@ -21,7 +21,7 @@
     },
     "storage": {
       "enabled": true,
-      "features": { "generalPurposeStorage": true, "dataLakeGen2": false, "fileShares": false, "enableSoftDelete": false, "enableVersioning": false }
+      "features": { "generalPurposeStorage": true, "dataLakeGen2": false, "fileShares": false, "enableSoftDelete": false, "enableVersioning": false, "allowedCidrRanges": [] }
     },
     "databases": {
       "enabled": true,
