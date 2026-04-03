@@ -137,8 +137,17 @@ if ($seedAll -or $Modules -contains 'storage') {
         $key = az storage account keys list `
             --account-name $accountName `
             --resource-group $storageRg `
-            --query '[0].value' -o tsv
+            --query '[0].value' -o tsv 2>$null
 
+        # Hardened mode: allowSharedKeyAccess = false — keys CLI returns empty.
+        # Fall back to Entra ID identity-based auth (requires caller to have
+        # Storage Blob Data Contributor role on the account).
+        $authArgs = if ($key) {
+            @('--account-key', $key)
+        } else {
+            Write-AdeLog "Shared keys disabled — using --auth-mode login (ensure Storage Blob Data Contributor role)." -Level Warning
+            @('--auth-mode', 'login')
+        }
         # Upload sample blobs to 'data' container
         $sampleFiles = @(
             @{ Name = 'customers.json';   Content = '[{"id":1,"name":"Contoso Ltd","tier":"gold"},{"id":2,"name":"Fabrikam Inc","tier":"silver"}]' }
@@ -151,7 +160,7 @@ if ($seedAll -or $Modules -contains 'storage') {
             $file.Content | Set-Content -Path $tmpPath -Encoding UTF8
             az storage blob upload `
                 --account-name $accountName `
-                --account-key $key `
+                @authArgs `
                 --container-name 'data' `
                 --name $file.Name `
                 --file $tmpPath `
@@ -171,7 +180,7 @@ Uploaded by seed-data.ps1 on $(Get-Date -Format 'yyyy-MM-dd').
 "@ | Set-Content -Path $readmePath -Encoding UTF8
         az storage blob upload `
             --account-name $accountName `
-            --account-key $key `
+            @authArgs `
             --container-name 'public' `
             --name 'README.md' `
             --file $readmePath `
@@ -209,8 +218,8 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
             az cosmosdb sql document create `
                 --account-name $accountName `
                 --resource-group $dbRg `
-                --database-name 'DemoDb' `
-                --container-name 'Orders' `
+                --database-name "${Prefix}-db" `
+                --container-name 'items' `
                 --body $tmpDoc `
                 --output none 2>$null
             Remove-Item $tmpDoc -Force

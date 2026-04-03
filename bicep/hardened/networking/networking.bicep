@@ -59,6 +59,7 @@ var firewallSubnetPrefix        = '10.0.10.0/26'
 var bastionSubnetPrefix         = '10.0.11.0/26'
 var gatewaySubnetPrefix         = '10.0.12.0/27'
 var privateEndpointSubnetPrefix = '10.0.13.0/24'
+var mysqlSubnetPrefix           = '10.0.14.0/24'  // MySQL Flexible Server VNet injection
 
 var firewallEnabled    = enableFirewall != 'None'
 var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
@@ -422,6 +423,24 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
             privateEndpointNetworkPolicies: 'Disabled'
           }
         }
+        {
+          name: 'mysql'
+          properties: {
+            addressPrefix: mysqlSubnetPrefix
+            networkSecurityGroup: { id: databaseNsg.id }
+            routeTable: firewallEnabled ? { id: firewallRouteTable.id } : null
+            delegations: [
+              {
+                name: 'mysql-delegation'
+                properties: { serviceName: 'Microsoft.DBforMySQL/flexibleServers' }
+              }
+            ]
+            serviceEndpoints: [
+              { service: 'Microsoft.Storage' }
+              { service: 'Microsoft.Sql' }
+            ]
+          }
+        }
         // Reserved subnets — always provisioned
         {
           name: 'AppGatewaySubnet'
@@ -713,6 +732,7 @@ var privateDnsZoneNames = [
   'privatelink.cognitiveservices.azure.com'
   'privatelink.openai.azure.com'
   'privatelink.search.windows.net'
+  'privatelink.redis.cache.windows.net'
 ]
 
 resource privateDnsZones 'Microsoft.Network/privateDnsZones@2020-06-01' = [
@@ -749,6 +769,19 @@ output aiSubnetId string = '${vnet.id}/subnets/ai'
 output dataSubnetId string = '${vnet.id}/subnets/data'
 output managementSubnetId string = '${vnet.id}/subnets/management'
 output privateEndpointSubnetId string = '${vnet.id}/subnets/privateendpoints'
+output mysqlSubnetId string = '${vnet.id}/subnets/mysql'
 output bastionId string = bastionSku == 'Developer' ? bastionDeveloper.id : (bastionNeedsSubnet ? bastionPaid.id : '')
-output appGatewayPublicIp string = enableAppGateway ? appGwPublicIp.id : ''
+output appGatewayPublicIp string = enableAppGateway ? appGwPublicIp!.properties.ipAddress : ''
 output firewallPrivateIp string = firewallEnabled ? '10.0.10.4' : ''
+// Private DNS zone IDs — populated only when enablePrivateDnsZones = true
+#disable-next-line no-hardcoded-env-urls
+output blobDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.blob.core.windows.net') : ''
+#disable-next-line no-hardcoded-env-urls
+output sqlDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.database.windows.net') : ''
+output cosmosDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com') : ''
+output postgresDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.postgres.database.azure.com') : ''
+output mysqlDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.mysql.database.azure.com') : ''
+output keyVaultDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net') : ''
+output serviceBusDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.servicebus.windows.net') : ''
+output eventHubDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.eventhub.windows.net') : ''
+output redisDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.redis.cache.windows.net') : ''

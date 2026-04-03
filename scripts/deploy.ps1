@@ -255,6 +255,15 @@ $state = @{
     serviceBusId            = ''
     eventHubId              = ''
     dataFactoryId           = ''
+
+    # Private DNS zone IDs (populated from networking outputs when enablePrivateDnsZones = true)
+    blobDnsZoneId           = ''
+    sqlDnsZoneId            = ''
+    cosmosDnsZoneId         = ''
+    keyVaultDnsZoneId       = ''
+    serviceBusDnsZoneId     = ''
+    eventHubDnsZoneId       = ''
+    redisDnsZoneId          = ''
 }
 
 # ─── Module deployment ────────────────────────────────────────────────────────
@@ -345,6 +354,14 @@ foreach ($moduleName in $deploymentOrder) {
                 $state.postgresDnsZoneId       = Get-AdeDeploymentOutput $outputs 'postgresDnsZoneId'
                 $state.mysqlDnsZoneId          = Get-AdeDeploymentOutput $outputs 'mysqlDnsZoneId'
                 $state.appGatewayPublicIpId    = Get-AdeDeploymentOutput $outputs 'appGatewayPublicIp'
+                # DNS zone IDs for private endpoints
+                $state.blobDnsZoneId           = Get-AdeDeploymentOutput $outputs 'blobDnsZoneId'
+                $state.sqlDnsZoneId            = Get-AdeDeploymentOutput $outputs 'sqlDnsZoneId'
+                $state.cosmosDnsZoneId         = Get-AdeDeploymentOutput $outputs 'cosmosDnsZoneId'
+                $state.keyVaultDnsZoneId       = Get-AdeDeploymentOutput $outputs 'keyVaultDnsZoneId'
+                $state.serviceBusDnsZoneId     = Get-AdeDeploymentOutput $outputs 'serviceBusDnsZoneId'
+                $state.eventHubDnsZoneId       = Get-AdeDeploymentOutput $outputs 'eventHubDnsZoneId'
+                $state.redisDnsZoneId          = Get-AdeDeploymentOutput $outputs 'redisDnsZoneId'
             }
 
             # ── SECURITY ────────────────────────────────────────────────────
@@ -362,6 +379,8 @@ foreach ($moduleName in $deploymentOrder) {
                     logAnalyticsId    = $state.logAnalyticsId
                     enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
                     enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
+                    privateEndpointSubnetId = $state.privateEndpointSubnetId
+                    keyVaultDnsZoneId       = $state.keyVaultDnsZoneId
                 }
                 if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
@@ -399,10 +418,12 @@ foreach ($moduleName in $deploymentOrder) {
             'storage' {
                 $bicep = Join-Path $bicepRoot 'storage\storage.bicep'
                 $params = @{
-                    prefix          = $Prefix
-                    location        = $Location
-                    enableDataLake  = ($deployProfile.modules.storage.features.dataLakeGen2 -eq $true).ToString().ToLower()
-                    enableSoftDelete = ($deployProfile.modules.storage.features.enableSoftDelete -eq $true).ToString().ToLower()
+                    prefix            = $Prefix
+                    location          = $Location
+                    enableDataLake    = ($deployProfile.modules.storage.features.dataLakeGen2 -eq $true).ToString().ToLower()
+                    enableSoftDelete  = ($deployProfile.modules.storage.features.enableSoftDelete -eq $true).ToString().ToLower()
+                    privateEndpointSubnetId = $state.privateEndpointSubnetId
+                    blobDnsZoneId           = $state.blobDnsZoneId
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
@@ -432,6 +453,10 @@ foreach ($moduleName in $deploymentOrder) {
                     mysqlSubnetId     = $state.mysqlSubnetId
                     mysqlDnsZoneId    = $state.mysqlDnsZoneId
                     deployRedis       = ($dbFeatures.redis -eq $true).ToString().ToLower()
+                    privateEndpointSubnetId = $state.privateEndpointSubnetId
+                    sqlDnsZoneId      = $state.sqlDnsZoneId
+                    cosmosDnsZoneId   = $state.cosmosDnsZoneId
+                    redisDnsZoneId    = $state.redisDnsZoneId
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
@@ -446,7 +471,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
-                    appServiceSubnetId    = $state.appServicesSubnetId
+                    subnetId              = $state.appServicesSubnetId
                     deployWindowsApp      = ($appFeatures.windowsWebApp -eq $true).ToString().ToLower()
                     deployLinuxApp        = ($appFeatures.linuxWebApp -eq $true).ToString().ToLower()
                     deployFunctionApp     = ($appFeatures.functionApp -eq $true).ToString().ToLower()
@@ -489,6 +514,9 @@ foreach ($moduleName in $deploymentOrder) {
                     deploySignalR       = ($intFeatures.signalR -eq $true).ToString().ToLower()
                     deployApim          = ($intFeatures.apiManagement -eq $true).ToString().ToLower()
                     apimSku             = if ($null -ne $intFeatures.apimSku) { $intFeatures.apimSku } else { 'Developer' }
+                    privateEndpointSubnetId = $state.privateEndpointSubnetId
+                    serviceBusDnsZoneId     = $state.serviceBusDnsZoneId
+                    eventHubDnsZoneId       = $state.eventHubDnsZoneId
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'integration' -BicepFile $bicep -Parameters $params
                 $state.serviceBusId   = Get-AdeDeploymentOutput $outputs 'serviceBusId'
