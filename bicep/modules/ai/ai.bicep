@@ -26,6 +26,9 @@ param deployCognitiveSearch bool = false
 @description('Deploy Azure Machine Learning workspace.')
 param deployMachineLearning bool = false
 
+@description('AI subnet resource ID for future VNet-integration of AI/ML services.')
+param subnetId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 

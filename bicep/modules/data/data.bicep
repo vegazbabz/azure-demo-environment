@@ -26,6 +26,9 @@ param deployDatabricks bool = false
 @description('Deploy Microsoft Purview. Off by default (~$50+/month).')
 param deployPurview bool = false
 
+@description('Data subnet resource ID for future VNet-integration of data services.')
+param subnetId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 

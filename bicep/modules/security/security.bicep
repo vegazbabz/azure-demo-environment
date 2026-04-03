@@ -31,6 +31,9 @@ param logAnalyticsId string = ''
 @description('Resource tags.')
 param tags object = {}
 
+@description('Object ID of the deployer principal (SP or user). When provided, grants Key Vault Secrets Officer so seed-data.ps1 can write secrets post-deploy.')
+param deployerPrincipalId string = ''
+
 // ─── Key Vault ────────────────────────────────────────────────────────────────
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
@@ -63,38 +66,27 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
   }
 }
 
-// Pre-seed dummy secrets for demo use
-resource secretDbConnectionString 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (deployKeyVault) {
-  parent: keyVault
-  name: 'db-connection-string'
-  properties: {
-    #disable-next-line no-hardcoded-env-urls
-    value: 'Server=demo.database.windows.net;Database=demodb;User Id=sqladmin;Password=DemoPassword123!'
-  }
-}
-
-resource secretApiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (deployKeyVault) {
-  parent: keyVault
-  name: 'api-key'
-  properties: {
-    value: 'demo-api-key-12345-placeholder'
-  }
-}
-
-resource secretStorageKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (deployKeyVault) {
-  parent: keyVault
-  name: 'storage-account-key'
-  properties: {
-    value: 'demo-storage-key-placeholder'
-  }
-}
-
 // ─── User-Assigned Managed Identity ───────────────────────────────────────────
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (deployManagedIdentity) {
   name: '${prefix}-identity'
   location: location
   tags: tags
+}
+
+// ─── Key Vault Secrets Officer for deployer ──────────────────────────────────
+// Grants seed-data.ps1 permission to write secrets after Bicep deployment.
+// Only created when deployerPrincipalId is explicitly passed.
+
+resource kvSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployKeyVault && !empty(deployerPrincipalId)) {
+  name: guid(keyVault.id, deployerPrincipalId, 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
+  scope: keyVault
+  properties: {
+    // Key Vault Secrets Officer
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
+    principalId: deployerPrincipalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 // ─── Defender for Cloud ───────────────────────────────────────────────────────

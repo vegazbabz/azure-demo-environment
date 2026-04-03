@@ -240,7 +240,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = if (deplo
     upgradePolicy: { mode: 'Automatic' }
     virtualMachineProfile: {
       osProfile: {
-        computerNamePrefix: '${prefix}vmss'
+        computerNamePrefix: take('${prefix}vmss', 9)
         adminUsername: adminUsername
         adminPassword: adminPassword
       }
