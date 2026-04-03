@@ -69,14 +69,15 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   }
 }
 
-// Grant Automation Account Contributor role on subscription for VM power operations
-resource automationContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAutomation) {
-  name: guid(subscription().subscriptionId, automationAccount.id, 'contributor')
+// Grant Automation Account Contributor role at subscription scope so runbooks can
+// manage VMs in any resource group. Deployed via a sub-module because this file
+// is resource-group scoped and subscription-scoped resources require a separate module.
+module automationContributorRole 'automation-role.bicep' = if (enableAutomation) {
+  name: '${prefix}-automation-role'
   scope: subscription()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
-    principalId: automationAccount!.identity.principalId
-    principalType: 'ServicePrincipal'
+  params: {
+    automationPrincipalId: automationAccount!.identity.principalId
+    automationAccountId: automationAccount!.id
   }
 }
 
