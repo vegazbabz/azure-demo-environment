@@ -202,7 +202,21 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         # Ensure current caller has secret set permission
         $kvTenantId = az account show --query tenantId -o tsv 2>$null
         if (-not $kvTenantId) { $kvTenantId = 'demo-tenant-id' }
+
+        # Resolve real SQL Server FQDN if deployed — replaces the Bicep placeholder
+        $dbRg      = "$Prefix-databases-rg"
+        $sqlServer = az sql server list --resource-group $dbRg --query '[0].name' -o tsv 2>$null
+        $sqlFqdn   = if ($sqlServer) {
+            az sql server show --resource-group $dbRg --name $sqlServer --query 'fullyQualifiedDomainName' -o tsv 2>$null
+        }
+        $dbConnString = if ($sqlFqdn) {
+            "Server=$sqlFqdn;Database=$Prefix-sqldb;User Id=sqladmin;Password=REPLACE_IN_PRODUCTION"
+        } else {
+            'Server=REPLACE_WITH_SQL_FQDN;Database=demodb;User Id=sqladmin;Password=REPLACE_IN_PRODUCTION'
+        }
+
         $kvSecrets = @{
+            'db-connection-string'  = $dbConnString
             'app-client-id'        = 'demo-client-id-00000000-0000-0000-0000-000000000001'
             'app-client-secret'    = 'demo-secret-value-replace-in-production'
             'app-tenant-id'        = $kvTenantId

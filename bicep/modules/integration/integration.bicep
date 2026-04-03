@@ -38,6 +38,9 @@ param apimPublisherEmail string = 'admin@example.com'
 @description('API Management publisher name.')
 param apimPublisherName string = 'ADE Demo'
 
+@description('Integration subnet resource ID for future VNet-integration of PaaS messaging services.')
+param subnetId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 

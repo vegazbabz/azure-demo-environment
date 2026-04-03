@@ -27,11 +27,19 @@ param deployStaticWebApp bool = true
 @description('Deploy Logic App (Standard).')
 param deployLogicApp bool = true
 
-@description('App Service Plan SKU.')
+@description('App Service Plan SKU. Automatically upgraded to S1 (Standard) when appServiceSubnetId is provided, since Basic tier does not support VNet integration.')
 param appServicePlanSku string = 'B1'
+
+@description('App Services subnet resource ID for outbound VNet integration. When set, plans upgrade to Standard (S1) and all web apps route traffic through the VNet.')
+param appServiceSubnetId string = ''
 
 @description('Resource tags.')
 param tags object = {}
+
+// Upgrade to Standard when VNet integration is requested — Basic does not support it
+var effectiveSku  = empty(appServiceSubnetId) ? appServicePlanSku : 'S1'
+var effectiveTier = empty(appServiceSubnetId) ? 'Basic' : 'Standard'
+var vnetEnabled   = !empty(appServiceSubnetId)
 
 // ─── App Service Plan (Windows) ───────────────────────────────────────────────
 
@@ -72,8 +80,8 @@ resource linuxAppServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = if (deploy
   location: location
   tags: tags
   sku: {
-    name: appServicePlanSku
-    tier: 'Basic'
+    name: effectiveSku
+    tier: effectiveTier
   }
   properties: {
     reserved: true
@@ -89,10 +97,12 @@ resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
   properties: {
     serverFarmId: linuxAppServicePlan.id
     httpsOnly: false
+    virtualNetworkSubnetId: vnetEnabled ? appServiceSubnetId : null
     siteConfig: {
       minTlsVersion: '1.0'
       ftpsState: 'AllAllowed'
       linuxFxVersion: 'NODE|20-lts'
+      vnetRouteAllEnabled: vnetEnabled
     }
   }
 }
@@ -195,9 +205,11 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
   properties: {
     serverFarmId: logicAppPlan.id
     httpsOnly: false
+    virtualNetworkSubnetId: vnetEnabled ? appServiceSubnetId : null
     siteConfig: {
       minTlsVersion: '1.0'
       ftpsState: 'AllAllowed'
+      vnetRouteAllEnabled: vnetEnabled
       appSettings: [
         {
           name: 'AzureWebJobsStorage'

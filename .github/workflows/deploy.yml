@@ -79,6 +79,10 @@ permissions:
   contents: read
 
 env:
+  # vars.ADE_DEFAULT_PREFIX / vars.ADE_DEFAULT_LOCATION are optional Actions variables
+  # (Settings → Secrets and variables → Actions → Variables) that pre-fill defaults.
+  # The vars.* context is valid GitHub Actions syntax but some linter versions flag it
+  # as unknown — the warnings are false positives and safe to ignore.
   INPUT_PREFIX:    ${{ github.event.inputs.prefix   || vars.ADE_DEFAULT_PREFIX   || 'ade' }}
   INPUT_LOCATION:  ${{ github.event.inputs.location || vars.ADE_DEFAULT_LOCATION || 'westeurope' }}
 

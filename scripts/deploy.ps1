@@ -230,7 +230,7 @@ $state = @{
 
     vnetId                  = ''
     computeSubnetId         = ''
-    appServiceSubnetId      = ''
+    appServicesSubnetId     = ''
     databaseSubnetId        = ''
     containerSubnetId       = ''
     appGatewayPublicIpId    = ''
@@ -247,6 +247,9 @@ $state = @{
 
     # New modules (v2)
     integrationSubnetId     = ''
+    mysqlSubnetId           = ''
+    postgresDnsZoneId       = ''
+    mysqlDnsZoneId          = ''
     aiSubnetId              = ''
     dataSubnetId            = ''
     serviceBusId            = ''
@@ -331,19 +334,28 @@ foreach ($moduleName in $deploymentOrder) {
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'
                 $state.computeSubnetId         = Get-AdeDeploymentOutput $outputs 'computeSubnetId'
-                $state.appServiceSubnetId      = Get-AdeDeploymentOutput $outputs 'appServicesSubnetId'
+                $state.appServicesSubnetId     = Get-AdeDeploymentOutput $outputs 'appServicesSubnetId'
                 $state.databaseSubnetId        = Get-AdeDeploymentOutput $outputs 'databaseSubnetId'
                 $state.containerSubnetId       = Get-AdeDeploymentOutput $outputs 'containerSubnetId'
                 $state.integrationSubnetId     = Get-AdeDeploymentOutput $outputs 'integrationSubnetId'
                 $state.aiSubnetId              = Get-AdeDeploymentOutput $outputs 'aiSubnetId'
                 $state.dataSubnetId            = Get-AdeDeploymentOutput $outputs 'dataSubnetId'
                 $state.privateEndpointSubnetId = Get-AdeDeploymentOutput $outputs 'privateEndpointSubnetId'
+                $state.mysqlSubnetId           = Get-AdeDeploymentOutput $outputs 'mysqlSubnetId'
+                $state.postgresDnsZoneId       = Get-AdeDeploymentOutput $outputs 'postgresDnsZoneId'
+                $state.mysqlDnsZoneId          = Get-AdeDeploymentOutput $outputs 'mysqlDnsZoneId'
                 $state.appGatewayPublicIpId    = Get-AdeDeploymentOutput $outputs 'appGatewayPublicIp'
             }
 
             # ── SECURITY ────────────────────────────────────────────────────
             'security' {
                 $bicep = Join-Path $bicepRoot 'security\security.bicep'
+                # Resolve deployer object ID so KV Secrets Officer role can be granted for seed-data.ps1
+                $deployerOid = az ad signed-in-user show --query id -o tsv 2>$null
+                if (-not $deployerOid) {
+                    $callerAppId = az account show --query 'user.name' -o tsv 2>$null
+                    $deployerOid = az ad sp show --id $callerAppId --query id -o tsv 2>$null
+                }
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location
@@ -351,6 +363,7 @@ foreach ($moduleName in $deploymentOrder) {
                     enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
                     enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
                 }
+                if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
                 $state.keyVaultId              = Get-AdeDeploymentOutput $outputs 'keyVaultId'
                 $state.keyVaultName            = Get-AdeDeploymentOutput $outputs 'keyVaultName'
@@ -414,7 +427,10 @@ foreach ($moduleName in $deploymentOrder) {
                     sqlVmSubnetId     = if ($state.computeSubnetId) { $state.computeSubnetId } else { '' }
                     deployCosmos      = ($dbFeatures.cosmosDb -eq $true).ToString().ToLower()
                     deployPostgresql  = ($dbFeatures.postgresql -eq $true).ToString().ToLower()
+                    postgresDnsZoneId = $state.postgresDnsZoneId
                     deployMysql       = ($dbFeatures.mysql -eq $true).ToString().ToLower()
+                    mysqlSubnetId     = $state.mysqlSubnetId
+                    mysqlDnsZoneId    = $state.mysqlDnsZoneId
                     deployRedis       = ($dbFeatures.redis -eq $true).ToString().ToLower()
                 }
                 if ($Mode -eq 'hardened') {
@@ -430,6 +446,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
+                    appServiceSubnetId    = $state.appServicesSubnetId
                     deployWindowsApp      = ($appFeatures.windowsWebApp -eq $true).ToString().ToLower()
                     deployLinuxApp        = ($appFeatures.linuxWebApp -eq $true).ToString().ToLower()
                     deployFunctionApp     = ($appFeatures.functionApp -eq $true).ToString().ToLower()
@@ -465,6 +482,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
+                    subnetId            = $state.integrationSubnetId
                     deployServiceBus    = ($intFeatures.serviceBus -eq $true).ToString().ToLower()
                     deployEventHub      = ($intFeatures.eventHub -eq $true).ToString().ToLower()
                     deployEventGrid     = ($intFeatures.eventGrid -eq $true).ToString().ToLower()
@@ -484,6 +502,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
+                    subnetId                = $state.aiSubnetId
                     deployAiServices        = ($aiFeatures.aiServices -eq $true).ToString().ToLower()
                     deployOpenAi            = ($aiFeatures.openAi -eq $true).ToString().ToLower()
                     deployCognitiveSearch   = ($aiFeatures.cognitiveSearch -eq $true).ToString().ToLower()
@@ -499,6 +518,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
+                    subnetId            = $state.dataSubnetId
                     deployDataFactory   = ($dataFeatures.dataFactory -eq $true).ToString().ToLower()
                     deploySynapse       = ($dataFeatures.synapse -eq $true).ToString().ToLower()
                     deployDatabricks    = ($dataFeatures.databricks -eq $true).ToString().ToLower()

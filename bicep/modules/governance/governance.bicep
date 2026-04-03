@@ -72,7 +72,7 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 // Grant Automation Account Contributor role on subscription for VM power operations
 resource automationContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAutomation) {
   name: guid(subscription().subscriptionId, automationAccount.id, 'contributor')
-  scope: resourceGroup()
+  scope: subscription()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
     principalId: automationAccount!.identity.principalId

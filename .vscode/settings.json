@@ -1,3 +1,5 @@
 {
-    "powershell.powerShellExePath": "${env:LOCALAPPDATA}/Programs/pwsh7/pwsh.exe"
+    "powershell.powerShellExePath": "${env:LOCALAPPDATA}/Programs/pwsh7/pwsh.exe",
+    "powershell.scriptAnalysis.settingsPath": "PSScriptAnalyzerSettings.psd1",
+    "powershell.useX86Host": false
 }
