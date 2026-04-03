@@ -33,7 +33,7 @@ param deploySql bool = true
 @description('Deploy SQL Server on a Windows VM (IaaS). Requires sqlVmSubnetId or subnetId.')
 param deploySqlVm bool = false
 
-@description('Subnet resource ID for the SQL Server VM. Falls back to subnetId if empty.')
+@description('Subnet resource ID for the SQL Server VM. Required when deploySqlVm = true. Must NOT be the PG-delegated databases subnet.')
 param sqlVmSubnetId string = ''
 
 @description('Deploy Cosmos DB (serverless). Off by default — opt-in only.')
@@ -48,9 +48,17 @@ param deployMysql bool = false
 @description('Deploy Redis Cache.')
 param deployRedis bool = false
 
-@description('Database subnet resource ID (used for PostgreSQL/MySQL delegation).')
-#disable-next-line no-unused-params
+@description('Database subnet resource ID (used for PostgreSQL VNet injection — requires Microsoft.DBforPostgreSQL/flexibleServers delegation).')
 param subnetId string = ''
+
+@description('MySQL subnet resource ID for VNet injection (requires Microsoft.DBforMySQL/flexibleServers delegation).')
+param mysqlSubnetId string = ''
+
+@description('Private DNS zone resource ID for PostgreSQL VNet injection (privatelink.postgres.database.azure.com). When empty, falls back to public access with AllowAzureServices rule.')
+param postgresDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for MySQL VNet injection (privatelink.mysql.database.azure.com). When empty, falls back to public access with AllowAzureServices rule.')
+param mysqlDnsZoneId string = ''
 
 @description('Resource tags.')
 param tags object = {}
@@ -163,6 +171,8 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
 }
 
 // ─── PostgreSQL Flexible Server ───────────────────────────────────────────────
+// Private mode: VNet injection using the PG-delegated databases subnet + private DNS zone.
+// Public mode (fallback): AllowAzureServices firewall rule.
 
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = if (deployPostgresql) {
   name: '${prefix}-postgres'
@@ -181,15 +191,28 @@ resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-pr
       backupRetentionDays: 7
       geoRedundantBackup: 'Disabled'
     }
-    // Public access — default mode (VNet integration requires private DNS zone)
-    network: {
+    network: empty(postgresDnsZoneId) ? {
       publicNetworkAccess: 'Enabled'
+    } : {
+      publicNetworkAccess: 'Disabled'
+      delegatedSubnetResourceId: subnetId
+      privateDnsZoneArmResourceId: postgresDnsZoneId
     }
     highAvailability: { mode: 'Disabled' }
     authConfig: {
       activeDirectoryAuth: 'Disabled'
       passwordAuth: 'Enabled'
     }
+  }
+}
+
+// AllowAzureServices firewall rule — only applied in public mode
+resource postgresFirewallAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = if (deployPostgresql && empty(postgresDnsZoneId)) {
+  parent: postgresServer
+  name: 'AllowAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
   }
 }
 
@@ -203,6 +226,8 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
 }
 
 // ─── MySQL Flexible Server ────────────────────────────────────────────────────
+// Private mode: VNet injection using the MySQL-delegated subnet + private DNS zone.
+// Public mode (fallback): AllowAzureServices firewall rule.
 
 resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = if (deployMysql) {
   name: '${prefix}-mysql'
@@ -221,10 +246,21 @@ resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = if (dep
       backupRetentionDays: 7
       geoRedundantBackup: 'Disabled'
     }
-    network: {
-      publicNetworkAccess: 'Enabled'
+    network: empty(mysqlDnsZoneId) ? {} : {
+      delegatedSubnetResourceId: mysqlSubnetId
+      privateDnsZoneResourceId: mysqlDnsZoneId
     }
     highAvailability: { mode: 'Disabled' }
+  }
+}
+
+// AllowAzureServices firewall rule — only applied in public mode
+resource mysqlFirewallAzureServices 'Microsoft.DBforMySQL/flexibleServers/firewallRules@2023-06-30' = if (deployMysql && empty(mysqlDnsZoneId)) {
+  parent: mysqlServer
+  name: 'AllowAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
   }
 }
 
@@ -257,7 +293,9 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = if (deployRedis) {
 
 // ─── SQL Server on VM (IaaS) ──────────────────────────────────────────────────
 
-var sqlVmEffectiveSubnetId = empty(sqlVmSubnetId) ? subnetId : sqlVmSubnetId
+// SQL VM NIC uses sqlVmSubnetId directly. Leaving it empty when deploySqlVm = true
+// causes an ARM validation failure — intentional to prevent silent misconfiguration.
+var sqlVmEffectiveSubnetId = sqlVmSubnetId
 
 resource sqlVmPublicIp 'Microsoft.Network/publicIPAddresses@2023-09-01' = if (deploySqlVm) {
   name: '${prefix}-sqlvm-pip'
@@ -285,6 +323,7 @@ resource sqlVmNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (deployS
   }
 }
 
+
 resource sqlVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deploySqlVm) {
   name: '${prefix}-sqlvm'
   location: location
@@ -310,10 +349,19 @@ resource sqlVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deploySqlVm)
       osDisk: {
         createOption: 'FromImage'
         managedDisk: { storageAccountType: 'Premium_LRS' }
+        deleteOption: 'Delete'
       }
     }
     networkProfile: {
-      networkInterfaces: [ { id: sqlVmNic.id } ]
+      networkInterfaces: [
+        {
+          id: sqlVmNic.id
+          properties: { deleteOption: 'Delete' }
+        }
+      ]
+    }
+    diagnosticsProfile: {
+      bootDiagnostics: { enabled: true }
     }
   }
 }

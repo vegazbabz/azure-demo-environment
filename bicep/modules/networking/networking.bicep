@@ -62,6 +62,7 @@ var firewallSubnetPrefix        = '10.0.10.0/26'   // AzureFirewallSubnet: /26 m
 var bastionSubnetPrefix         = '10.0.11.0/26'   // AzureBastionSubnet: /26 minimum
 var gatewaySubnetPrefix         = '10.0.12.0/27'   // GatewaySubnet: /27 minimum
 var privateEndpointSubnetPrefix = '10.0.13.0/24'
+var mysqlSubnetPrefix           = '10.0.14.0/24'  // MySQL Flexible Server VNet injection
 
 var firewallEnabled    = enableFirewall != 'None'
 var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
@@ -296,6 +297,20 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
             addressPrefix: privateEndpointSubnetPrefix
             networkSecurityGroup: { id: privateEndpointNsg.id }
             privateEndpointNetworkPolicies: 'Disabled'
+          }
+        }
+        {
+          name: 'mysql'
+          properties: {
+            addressPrefix: mysqlSubnetPrefix
+            networkSecurityGroup: { id: databaseNsg.id }
+            routeTable: firewallEnabled ? { id: firewallRouteTable.id } : null
+            delegations: [
+              {
+                name: 'mysql-delegation'
+                properties: { serviceName: 'Microsoft.DBforMySQL/flexibleServers' }
+              }
+            ]
           }
         }
         // Reserved subnets — always provisioned, resources are conditional
@@ -620,6 +635,11 @@ output aiSubnetId string = '${vnet.id}/subnets/ai'
 output dataSubnetId string = '${vnet.id}/subnets/data'
 output managementSubnetId string = '${vnet.id}/subnets/management'
 output privateEndpointSubnetId string = '${vnet.id}/subnets/privateendpoints'
+output mysqlSubnetId string = '${vnet.id}/subnets/mysql'
+// Private DNS zone IDs for Flexible Server VNet injection (non-empty only when enablePrivateDnsZones = true)
+#disable-next-line no-hardcoded-env-urls
+output postgresDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.postgres.database.azure.com') : ''
+output mysqlDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.mysql.database.azure.com') : ''
 output appGwSubnetId string = '${vnet.id}/subnets/AppGatewaySubnet'
 output firewallSubnetId string = '${vnet.id}/subnets/AzureFirewallSubnet'
 output gatewaySubnetId string = '${vnet.id}/subnets/GatewaySubnet'

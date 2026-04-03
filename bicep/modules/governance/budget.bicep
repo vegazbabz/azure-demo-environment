@@ -17,6 +17,9 @@ param alertEmail string = 'ops@example.com'
 @description('Budget alert threshold percentages.')
 param thresholds array = [50, 80, 100]
 
+@description('Budget start date in YYYY-MM-01 format. Defaults to the first day of the current month.')
+param budgetStartDate string = '${substring(utcNow('o'), 0, 7)}-01'
+
 resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
   name: '${prefix}-monthly-budget'
   properties: {
@@ -24,7 +27,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     amount: monthlyBudgetUsd
     timeGrain: 'Monthly'
     timePeriod: {
-      startDate: '2026-04-01'
+      startDate: budgetStartDate
       endDate: '2030-12-31'
     }
     filter: {

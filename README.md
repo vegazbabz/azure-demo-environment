@@ -2,9 +2,9 @@
 
 A fully automated, modular Azure infrastructure project for **security benchmark testing** and **environment provisioning**. Deploy a complete multi-tier Azure environment in minutes — either with out-of-the-box Azure defaults (to measure your baseline CIS/MCSB score) or with CIS/MCSB-hardened configuration (to measure remediations).
 
-> **New to Azure?** Start with [Prerequisites](#prerequisites) and [Your first deployment](#your-first-deployment).
-> **Just want to see what this deploys?** Skip to [What gets deployed](#what-gets-deployed).
-> **Setting up CI/CD?** Jump to [GitHub Actions setup](#github-actions-setup).
+> **New to Azure?** Start with [Prerequisites](#prerequisites) and [Your first deployment](#your-first-deployment).  
+> **Just want to see what this deploys?** Skip to [What gets deployed](#what-gets-deployed).  
+> **Setting up CI/CD?** Jump to [GitHub Actions setup](#github-actions-setup).  
 
 ---
 
