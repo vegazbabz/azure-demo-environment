@@ -1,4 +1,5 @@
-﻿<#
+﻿#Requires -Version 7
+<#
 .SYNOPSIS
     Azure Demo Environment (ADE) — Cost & Status Dashboard
 
