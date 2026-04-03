@@ -6,12 +6,19 @@
 .DESCRIPTION
     Seeds dummy data into deployed ADE resources so they are usable for
     demo and benchmark testing immediately after deployment:
-      - Azure Blob Storage: uploads sample files (JSON, CSV, images)
-      - Azure SQL Database: confirms AdventureWorksLT was deployed
-      - Cosmos DB: inserts sample JSON documents
+      - Azure Blob Storage: uploads sample files (JSON, CSV)
+      - Cosmos DB: inserts sample order documents
+      - Azure SQL Database: runs data/sql/seed.sql against AdventureWorksLT
+      - PostgreSQL: creates demo_products table and inserts sample rows
+      - MySQL: creates demo_events table and inserts sample rows
+      - Redis Cache: sets demo keys via TLS RESP connection
       - Key Vault: adds commonly-expected demo secrets
-      - Service Bus: sends a test message to each queue
-      - Event Hub: sends a batch of test events
+      - Service Bus: sends test messages to the orders queue
+      - Event Hub: sends a batch of test telemetry events
+
+    NOTE: SQL, PostgreSQL, and MySQL require -DatabaseAdminPassword.
+    In hardened mode all databases are behind private endpoints — run this
+    script from within the VNet (e.g. via Bastion or a jump VM).
 
 .PARAMETER Prefix
     The prefix used during deployment. Default: ade
@@ -21,16 +28,22 @@
 
 .PARAMETER Modules
     Which resource types to seed. Defaults to all available.
-    Accepted values: storage, cosmosdb, keyvault, servicebus, eventhub
+    Accepted values: storage, cosmosdb, sql, postgresql, mysql, redis,
+                     keyvault, servicebus, eventhub, all
+
+.PARAMETER DatabaseAdminPassword
+    Admin password for Azure SQL, PostgreSQL, and MySQL seeding.
+    Required for those three blocks; omit to skip them.
+    Use: -DatabaseAdminPassword (Read-Host -AsSecureString 'DB password')
 
 .PARAMETER Force
     Skip confirmation prompts.
 
 .EXAMPLE
-    ./seed-data.ps1 -Prefix ade
+    ./seed-data.ps1 -Prefix ade -DatabaseAdminPassword (Read-Host -AsSecureString 'DB pwd')
 
 .EXAMPLE
-    ./seed-data.ps1 -Prefix ade -Modules storage,cosmosdb,keyvault
+    ./seed-data.ps1 -Prefix ade -Modules storage,cosmosdb,redis -Force
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -42,8 +55,12 @@ param(
     [string]$SubscriptionId = '',
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet('storage', 'cosmosdb', 'keyvault', 'servicebus', 'eventhub', 'all')]
+    [ValidateSet('storage', 'cosmosdb', 'sql', 'postgresql', 'mysql', 'redis',
+                 'keyvault', 'servicebus', 'eventhub', 'all')]
     [string[]]$Modules = @('all'),
+
+    [Parameter(Mandatory = $false)]
+    [securestring]$DatabaseAdminPassword,
 
     [Parameter(Mandatory = $false)]
     [switch]$Force
@@ -86,6 +103,22 @@ function Get-AdeResource {
         --query "[0].$Query" `
         -o tsv 2>$null
     return $result
+}
+
+# Sends a single RESP command over an already-open SslStream and returns the raw reply.
+function Invoke-RedisCommand {
+    param([System.Net.Security.SslStream]$Stream, [string[]]$Parts)
+    $resp = "*$($Parts.Count)`r`n"
+    foreach ($p in $Parts) {
+        $len = [System.Text.Encoding]::UTF8.GetByteCount($p)
+        $resp += "`$$len`r`n$p`r`n"
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($resp)
+    $Stream.Write($bytes, 0, $bytes.Length)
+    $Stream.Flush()
+    $buf = New-Object byte[] 1024
+    $n   = $Stream.Read($buf, 0, $buf.Length)
+    return [System.Text.Encoding]::UTF8.GetString($buf, 0, $n).Trim()
 }
 
 # ─── Blob Storage ─────────────────────────────────────────────────────────────
@@ -186,8 +219,181 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
     }
 }
 
-# ─── Key Vault ────────────────────────────────────────────────────────────────
+# ─── Azure SQL ───────────────────────────────────────────────────────────────
 
+if ($seedAll -or $Modules -contains 'sql') {
+    Write-AdeSection "Seeding: Azure SQL Database"
+
+    $dbRg      = "$Prefix-databases-rg"
+    $sqlServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.Sql/servers'
+
+    if (-not $sqlServer) {
+        Write-AdeLog "No SQL Server found in '$dbRg'. Skipping." -Level Warning
+    } elseif (-not $DatabaseAdminPassword) {
+        Write-AdeLog "SQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
+    } else {
+        $dbAdminPwd = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $dbName     = "$Prefix-sqldb"
+        Write-AdeLog "SQL Server: $sqlServer  DB: $dbName" -Level Info
+
+        $seedSql = Get-Content (Join-Path $PSScriptRoot '..\data\sql\seed.sql') -Raw
+        # Strip GO batch separators — az sql db query does not support them
+        $seedSql = ($seedSql -split '(?m)^\s*GO\s*$' | Where-Object { $_.Trim() }) -join "`n"
+
+        az sql db query `
+            --resource-group $dbRg `
+            --server $sqlServer `
+            --name $dbName `
+            --admin-user 'sqladmin' `
+            --admin-password $dbAdminPwd `
+            --query-text $seedSql `
+            --output none 2>$null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "SQL seed applied: $dbName (AdventureWorksLT + demo rows)" -Level Success
+        } else {
+            Write-AdeLog "SQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+        }
+    }
+}
+
+# ─── PostgreSQL ───────────────────────────────────────────────────────────────
+
+if ($seedAll -or $Modules -contains 'postgresql') {
+    Write-AdeSection "Seeding: PostgreSQL Flexible Server"
+
+    $dbRg    = "$Prefix-databases-rg"
+    $pgServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.DBforPostgreSQL/flexibleServers'
+
+    if (-not $pgServer) {
+        Write-AdeLog "No PostgreSQL server found in '$dbRg'. Skipping." -Level Warning
+    } elseif (-not $DatabaseAdminPassword) {
+        Write-AdeLog "PostgreSQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
+    } else {
+        $dbAdminPwd = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $pgDbName   = "${Prefix}db"
+        Write-AdeLog "PostgreSQL server: $pgServer  DB: $pgDbName" -Level Info
+
+        $pgSeed = Get-Content (Join-Path $PSScriptRoot '..\data\postgres\seed.sql') -Raw
+
+        az postgres flexible-server execute `
+            --resource-group $dbRg `
+            --name $pgServer `
+            --database-name $pgDbName `
+            --admin-user 'pgadmin' `
+            --admin-password $dbAdminPwd `
+            --querytext $pgSeed `
+            --output none 2>$null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
+        } else {
+            Write-AdeLog "PostgreSQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+        }
+    }
+}
+
+# ─── MySQL ────────────────────────────────────────────────────────────────────
+
+if ($seedAll -or $Modules -contains 'mysql') {
+    Write-AdeSection "Seeding: MySQL Flexible Server"
+
+    $dbRg      = "$Prefix-databases-rg"
+    $mysqlServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.DBforMySQL/flexibleServers'
+
+    if (-not $mysqlServer) {
+        Write-AdeLog "No MySQL server found in '$dbRg'. Skipping." -Level Warning
+    } elseif (-not $DatabaseAdminPassword) {
+        Write-AdeLog "MySQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
+    } else {
+        $dbAdminPwd  = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $mysqlDbName = "${Prefix}db"
+        Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
+
+        $mysqlSeed = Get-Content (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') -Raw
+
+        az mysql flexible-server execute `
+            --resource-group $dbRg `
+            --name $mysqlServer `
+            --database-name $mysqlDbName `
+            --admin-user 'pgadmin' `
+            --admin-password $dbAdminPwd `
+
+            --file-path (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') `
+            --output none 2>$null
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
+        } else {
+            Write-AdeLog "MySQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+        }
+    }
+}
+
+# ─── Redis Cache ──────────────────────────────────────────────────────────────
+
+if ($seedAll -or $Modules -contains 'redis') {
+    Write-AdeSection "Seeding: Redis Cache"
+
+    $dbRg      = "$Prefix-databases-rg"
+    $redisName = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.Cache/redis'
+
+    if (-not $redisName) {
+        Write-AdeLog "No Redis Cache found in '$dbRg'. Skipping." -Level Warning
+    } else {
+        Write-AdeLog "Redis Cache: $redisName" -Level Info
+
+        $redisKeys  = az redis list-keys `
+            --resource-group $dbRg `
+            --name $redisName `
+            --output json 2>$null | ConvertFrom-Json
+
+        if (-not $redisKeys) {
+            Write-AdeLog "Could not retrieve Redis keys. Skipping." -Level Warning
+        } else {
+            $primaryKey = $redisKeys.primaryKey
+            $redisHost  = "$redisName.redis.cache.windows.net"
+
+            # Demo key-value pairs to seed
+            $demoKeys = [ordered]@{
+                'demo:session:001'      = '{"userId":"user-001","role":"admin","exp":9999999999}'
+                'demo:session:002'      = '{"userId":"user-002","role":"reader","exp":9999999999}'
+                'demo:config:app'       = '{"theme":"dark","language":"en","maxRetries":3}'
+                'demo:counter:requests' = '42000'
+                'demo:feature:flags'    = '{"newUI":true,"betaSearch":false,"darkMode":true}'
+            }
+
+            $tcp = $null
+            try {
+                $tcp = [System.Net.Sockets.TcpClient]::new($redisHost, 6380)
+                $ssl = [System.Net.Security.SslStream]::new(
+                    $tcp.GetStream(), $false,
+                    [System.Net.Security.RemoteCertificateValidationCallback]{ param($s, $c, $ch, $e) $true }
+                )
+                $ssl.AuthenticateAsClient($redisHost)
+
+                # Authenticate
+                $null = Invoke-RedisCommand -Stream $ssl -Parts @('AUTH', $primaryKey)
+
+                # SET demo keys (sessions with 24h TTL, others permanent)
+                foreach ($kv in $demoKeys.GetEnumerator()) {
+                    $null = Invoke-RedisCommand -Stream $ssl -Parts @('SET', $kv.Key, $kv.Value)
+                    Write-AdeLog "Redis SET: $($kv.Key)" -Level Success
+                }
+                $null = Invoke-RedisCommand -Stream $ssl -Parts @('EXPIRE', 'demo:session:001', '86400')
+                $null = Invoke-RedisCommand -Stream $ssl -Parts @('EXPIRE', 'demo:session:002', '86400')
+
+                $null = Invoke-RedisCommand -Stream $ssl -Parts @('QUIT')
+            } catch {
+                Write-AdeLog "Redis TLS connection failed: $_. Ensure the runner has network access to $redisHost." -Level Warning
+            } finally {
+                if ($tcp) { $tcp.Dispose() }
+            }
+        }
+    }
+}
+
+# ─── Key Vault ────────────────────────────────────────────────────────────────
 if ($seedAll -or $Modules -contains 'keyvault') {
     Write-AdeSection "Seeding: Key Vault"
 
