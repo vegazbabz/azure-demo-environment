@@ -92,6 +92,10 @@ resource windowsVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deployWi
   name: '${prefix}-win-vm'
   location: location
   tags: tags
+  // Hardened: system-assigned managed identity required for AAD login extension (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     availabilitySet: { id: availabilitySet.id }
     hardwareProfile: { vmSize: vmSize }
@@ -224,6 +228,10 @@ resource linuxVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deployLinu
   name: '${prefix}-linux-vm'
   location: location
   tags: tags
+  // Hardened: system-assigned managed identity required for AAD SSH login extension (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     availabilitySet: { id: availabilitySet.id }
     hardwareProfile: { vmSize: vmSize }
@@ -240,10 +248,10 @@ resource linuxVm 'Microsoft.Compute/virtualMachines@2023-09-01' = if (deployLinu
       adminUsername: adminUsername
       adminPassword: adminPassword
       linuxConfiguration: {
-        // NOTE: Password auth kept enabled for demo API compatibility (adminPassword param required).
-        // In production, set disablePasswordAuthentication: true and supply an SSH public key.
-        // Access is via Bastion only (no public IP); SSH key auth is strongly preferred.
-        disablePasswordAuthentication: false
+        // Hardened: password auth disabled — AAD SSH (AADSSHLoginForLinux extension) is the only
+        //          login path. Access is via Bastion only (no public IP). (CIS 7.3, MCSB PA-1)
+        //          adminPassword param retained to satisfy ARM API; it is not used for SSH access.
+        disablePasswordAuthentication: true
         patchSettings: {
           patchMode: 'AutomaticByPlatform'
           assessmentMode: 'AutomaticByPlatform'
@@ -334,6 +342,10 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = if (deplo
   name: '${prefix}-vmss'
   location: location
   tags: tags
+  // Hardened: system-assigned identity for AMA and AAD extension auth (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   sku: {
     name: 'Standard_B2s'
     tier: 'Standard'

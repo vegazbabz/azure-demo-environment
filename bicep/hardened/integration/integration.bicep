@@ -151,6 +151,10 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2023-12-15-preview' = if (de
   name: '${prefix}-egt'
   location: location
   tags: tags
+  // Hardened: managed identity for identity-based event delivery (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     publicNetworkAccess: 'Disabled'
     inputSchema: 'EventGridSchema'
@@ -166,6 +170,10 @@ resource signalR 'Microsoft.SignalRService/signalR@2023-08-01-preview' = if (dep
   name: '${prefix}-signalr'
   location: location
   tags: tags
+  // Hardened: managed identity (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   sku: {
     name: 'Free_F1'
     tier: 'Free'
@@ -196,6 +204,10 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = if (deployA
   name: '${prefix}-apim'
   location: location
   tags: tags
+  // Hardened: system-assigned managed identity (MCSB IM-1)
+  identity: {
+    type: 'SystemAssigned'
+  }
   sku: {
     name: apimSku
     capacity: 1
@@ -203,8 +215,14 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = if (deployA
   properties: {
     publisherEmail: apimPublisherEmail
     publisherName: apimPublisherName
-    virtualNetworkType: 'None'
-    publicNetworkAccess: 'Enabled'
+    // Hardened: External VNet integration for inbound isolation (MCSB NS-1)
+    // NOTE: External VNet requires Standard/Premium SKU; Developer SKU supports External VNet
+    virtualNetworkType: 'External'
+    publicNetworkAccess: 'Disabled'
+    // Hardened: minimum API version 2019-12-01 (removes legacy mgmt plane vulnerabilities)
+    apiVersionConstraint: {
+      minApiVersion: '2019-12-01'
+    }
     // Hardened: enforce TLS 1.2 for APIM gateway
     customProperties: {
       'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10': 'False'
