@@ -25,7 +25,7 @@
     },
     "databases": {
       "enabled": true,
-      "features": { "sqlDatabase": true, "cosmosDb": false, "postgresql": false, "mysql": false, "redis": false }
+      "features": { "sqlDatabase": true, "sqlVm": false, "cosmosDb": false, "postgresql": false, "mysql": false, "redis": false }
     },
     "appservices": { "enabled": false },
     "containers": { "enabled": false },

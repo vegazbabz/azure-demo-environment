@@ -410,6 +410,8 @@ foreach ($moduleName in $deploymentOrder) {
                     pgAdminLogin      = $state.adminUsername
                     pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     deploySql         = ($dbFeatures.sqlDatabase -eq $true).ToString().ToLower()
+                    deploySqlVm       = ($dbFeatures.sqlVm -eq $true).ToString().ToLower()
+                    sqlVmSubnetId     = if ($state.computeSubnetId) { $state.computeSubnetId } else { '' }
                     deployCosmos      = ($dbFeatures.cosmosDb -eq $true).ToString().ToLower()
                     deployPostgresql  = ($dbFeatures.postgresql -eq $true).ToString().ToLower()
                     deployMysql       = ($dbFeatures.mysql -eq $true).ToString().ToLower()
