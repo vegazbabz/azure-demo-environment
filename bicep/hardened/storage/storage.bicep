@@ -26,6 +26,12 @@ param enableDataLake bool = true
 @description('Log Analytics workspace resource ID for diagnostic settings.')
 param logAnalyticsId string = ''
 
+@description('Private endpoint subnet resource ID. When set, private endpoints for blob and Data Lake blob are deployed.')
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for blob storage (privatelink.blob.core.windows.net).')
+param blobDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -239,3 +245,69 @@ output storageAccountId string = storageAccount.id
 output storageAccountName string = storageAccount.name
 output dataLakeId string = enableDataLake ? dataLakeAccount.id : ''
 output dataLakeName string = enableDataLake ? dataLakeAccount.name : ''
+
+// ─── Private Endpoints ────────────────────────────────────────────────────────
+// Required: storage has publicNetworkAccess: 'Disabled' and allowSharedKeyAccess: false
+// Callers inside the VNet reach storage only via these private endpoints + DNS zones.
+
+resource storageBlobPe 'Microsoft.Network/privateEndpoints@2023-09-01' = if (!empty(privateEndpointSubnetId)) {
+  name: '${prefix}-storage-blob-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-storage-blob-plsc'
+        properties: {
+          privateLinkServiceId: storageAccount.id
+          groupIds: ['blob']
+        }
+      }
+    ]
+  }
+}
+
+resource storageBlobPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (!empty(privateEndpointSubnetId) && !empty(blobDnsZoneId)) {
+  parent: storageBlobPe
+  name: 'blob-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-blob-core-windows-net'
+        properties: { privateDnsZoneId: blobDnsZoneId }
+      }
+    ]
+  }
+}
+
+resource dataLakeBlobPe 'Microsoft.Network/privateEndpoints@2023-09-01' = if (enableDataLake && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-datalake-blob-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-datalake-blob-plsc'
+        properties: {
+          privateLinkServiceId: dataLakeAccount.id
+          groupIds: ['blob']
+        }
+      }
+    ]
+  }
+}
+
+resource dataLakeBlobPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (enableDataLake && !empty(privateEndpointSubnetId) && !empty(blobDnsZoneId)) {
+  parent: dataLakeBlobPe
+  name: 'datalake-blob-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-blob-core-windows-net'
+        properties: { privateDnsZoneId: blobDnsZoneId }
+      }
+    ]
+  }
+}

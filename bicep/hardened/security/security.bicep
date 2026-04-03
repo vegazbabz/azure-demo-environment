@@ -30,6 +30,15 @@ param enableSentinel bool = true     // Hardened: on
 @description('Log Analytics Workspace resource ID (required for Sentinel).')
 param logAnalyticsId string = ''
 
+@description('Private endpoint subnet resource ID. When set, a private endpoint for Key Vault is deployed.')
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for Key Vault (privatelink.vaultcore.azure.net).')
+param keyVaultDnsZoneId string = ''
+
+@description('Object ID of the deployer (user or service principal). When set, grants Key Vault Secrets Officer role so seed-data.ps1 can write secrets post-deployment.')
+param deployerPrincipalId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -163,3 +172,52 @@ output keyVaultUri string = deployKeyVault ? keyVault!.properties.vaultUri : ''
 output managedIdentityId string = deployManagedIdentity ? managedIdentity.id : ''
 output managedIdentityClientId string = deployManagedIdentity ? managedIdentity!.properties.clientId : ''
 output managedIdentityPrincipalId string = deployManagedIdentity ? managedIdentity!.properties.principalId : ''
+
+// ─── Key Vault Private Endpoint ───────────────────────────────────────────────
+// Required: KV has publicNetworkAccess: 'Disabled' and networkAcls defaultAction: 'Deny'
+// Without a private endpoint callers inside the VNet cannot reach Key Vault at all.
+
+resource kvPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = if (deployKeyVault && !empty(privateEndpointSubnetId)) {
+  name: '${prefix}-kv-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-kv-plsc'
+        properties: {
+          privateLinkServiceId: keyVault.id
+          groupIds: ['vault']
+        }
+      }
+    ]
+  }
+}
+
+resource kvPeDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (deployKeyVault && !empty(privateEndpointSubnetId) && !empty(keyVaultDnsZoneId)) {
+  parent: kvPrivateEndpoint
+  name: 'kv-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-vaultcore-azure-net'
+        properties: { privateDnsZoneId: keyVaultDnsZoneId }
+      }
+    ]
+  }
+}
+
+// ─── Deployer RBAC ────────────────────────────────────────────────────────────
+// Grant the deployer Key Vault Secrets Officer so seed-data.ps1 can write secrets
+// from inside the VNet or via the Azure CLI with trusted-service bypass.
+
+resource kvSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployKeyVault && !empty(deployerPrincipalId)) {
+  name: guid(keyVault.id, deployerPrincipalId, 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')  // Key Vault Secrets Officer
+    principalId: deployerPrincipalId
+    principalType: 'User'
+  }
+}
