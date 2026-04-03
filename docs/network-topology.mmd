@@ -1,0 +1,93 @@
+%%{ init: { 'flowchart': { 'curve': 'linear' } } }%%
+flowchart LR
+    Internet(["Internet"])
+
+    APPGW["Application Gateway WAF\nv2\nPublic IP – HTTP listeners"]
+    AZFW["Azure Firewall\nStd/Premium\nnext-hop 10.0.10.4"]
+
+    subgraph VNET["Azure Virtual Network 10.0.0.0/16"]
+
+        subgraph DNS_ZONES["Private DNS Zones — 15 zones when enabled"]
+            direction LR
+            DNS1["blob/file/queue/table\n.core.windows.net"]
+            DNS2["database.windows.net"]
+            DNS3["documents.azure.com"]
+            DNS4["postgres.database.azure.com"]
+            DNS5["mysql.database.azure.com"]
+            DNS6["vaultcore.azure.net"]
+            DNS7["azurecr.io"]
+            DNS8["servicebus/eventhub\n.windows.net"]
+            DNS9["cognitiveservices.azure.com\nopenai.azure.com\nsearch.windows.net"]
+        end
+
+        PE["privateendpoints 10.0.13.0/24\nPrivateEndpointNetworkPolicies=Disabled"]
+
+        subgraph OPTIONAL["Optional Infrastructure Subnets"]
+            APPGWSUB["AppGatewaySubnet\n10.0.9.0/24\nNo NSG"]
+            FWSUB["AzureFirewallSubnet\n10.0.10.0/26\nNo NSG"]
+            BASTIONSUB["AzureBastionSubnet\n10.0.11.0/26"]
+            GWSUB["GatewaySubnet\n10.0.12.0/27\nNo NSG"]
+        end
+
+        UDR["UDR Route Table\nnext-hop 10.0.10.4\napplied when Firewall enabled"]
+
+        BASTION_DEV["Azure Bastion Developer\nDefault – always deployed\nNo subnet required"]
+        BASTION_PAID["Azure Bastion\nBasic/Standard\nopt-in – requires\nAzureBastionSubnet"]
+        VPN["VPN Gateway – Point-to-Site"]
+
+        subgraph WORKLOAD["Workload Subnets"]
+            APPSERVICES["appservices 10.0.2.0/24\nDelegation:\nWeb/serverFarms\nWeb Apps – Logic App"]
+            CONTAINERS["containers 10.0.4.0/24\nAKS – Container Apps –\nContainer Instances"]
+            INTEGRATION["integration 10.0.5.0/24\nService Bus – Event Hub"]
+            AI["ai 10.0.6.0/24\nAI Services – OpenAI"]
+            DATA["data 10.0.7.0/24\nData Factory – Synapse"]
+            MGMT["management 10.0.8.0/24\nReserved – Jump boxes"]
+            COMPUTE["compute 10.0.1.0/24\nWindows VM – Linux VM – VMSS"]
+            DBS["databases 10.0.3.0/24\nDelegation:\nPostgreSQL/flexibleServers\nPostgreSQL Flexible Server"]
+            MYSQL["mysql 10.0.14.0/24\nDelegation:\nMySQL/flexibleServers\nMySQL Flexible Server"]
+        end
+
+        NATGW["NAT Gateway\nOutbound SNAT – compute subnet"]
+        DDOS["DDoS Network Protection\nopt-in"]
+
+    end
+
+    %% ── Internet ingress ───────────────────────────────────────────────────
+    Internet -->|"HTTPS WAF"| APPGW
+    Internet -->|"when Firewall enabled"| AZFW
+
+    %% ── App Gateway ────────────────────────────────────────────────────────
+    APPGW --> APPGWSUB
+    APPGW -->|"backend pool\nVNet integration outbound"| APPSERVICES
+
+    %% ── Azure Firewall ─────────────────────────────────────────────────────
+    AZFW --> FWSUB
+
+    %% ── Bastion ────────────────────────────────────────────────────────────
+    BASTION_DEV -->|"RDP/SSH"| MGMT
+    BASTION_PAID --> BASTIONSUB
+    BASTION_PAID -->|"RDP/SSH"| MGMT
+
+    %% ── VPN Gateway ────────────────────────────────────────────────────────
+    VPN --> GWSUB
+
+    %% ── UDR (applied to all 9 workload subnets when Firewall enabled) ──────
+    UDR -->|"UDR enforced"| COMPUTE
+    UDR -->|"UDR enforced"| APPSERVICES
+    UDR -->|"UDR enforced"| DBS
+    UDR -->|"UDR enforced"| CONTAINERS
+    UDR -->|"UDR enforced"| INTEGRATION
+    UDR -->|"UDR enforced"| AI
+    UDR -->|"UDR enforced"| DATA
+    UDR -->|"UDR enforced"| MGMT
+    UDR -->|"UDR enforced"| MYSQL
+
+    %% ── Cross-subnet traffic ───────────────────────────────────────────────
+    COMPUTE -->|"to databases"| DBS
+    DBS -->|"to compute"| COMPUTE
+
+    %% ── Private endpoints DNS resolution ───────────────────────────────────
+    PE -->|"resolves via DNS zones"| DNS1
+
+    %% ── Optional network services ──────────────────────────────────────────
+    NATGW -->|"SNAT when NAT GW enabled"| COMPUTE
