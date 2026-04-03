@@ -34,6 +34,9 @@ param synapseAdminPassword string = ''
 @description('Resource tags.')
 param tags object = {}
 
+@description('Name of the deployed storage account. Used to set the ADF blob linked service endpoint.')
+param storageAccountName string = ''
+
 // ─── Azure Data Factory ───────────────────────────────────────────────────────
 // Hardened: managed VNet, no public network access, system-assigned identity.
 
@@ -56,8 +59,9 @@ resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@20
   properties: {
     type: 'AzureBlobStorage'
     typeProperties: {
-      #disable-next-line no-hardcoded-env-urls
-      serviceEndpoint: 'https://demo.blob.core.windows.net'
+      serviceEndpoint: empty(storageAccountName)
+        ? 'https://placeholder.blob.${environment().suffixes.storage}'
+        : 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
       accountKind: 'StorageV2'
       // Hardened: managed identity authentication (no SAS or connection string)
     }
