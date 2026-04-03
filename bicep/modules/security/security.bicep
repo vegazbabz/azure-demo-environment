@@ -2,9 +2,9 @@
 // Deploys: Key Vault (Standard), User-Assigned Managed Identity.
 //          Optional: Defender for Cloud (P2), Microsoft Sentinel.
 //
-// DEFAULT MODE: Key Vault with default settings — soft delete enabled (Azure
-//               enforces this), but no RBAC forced, access policies allowed,
-//               no diagnostic settings. No Defender, no Sentinel by default.
+// DEFAULT MODE: Key Vault with RBAC authorization — access is controlled via
+//               Azure role assignments (Key Vault Administrator, Secrets User,
+//               etc.) rather than vault-level access policies.
 // ─────────────────────────────────────────────────────────────────────────────
 
 @description('Resource prefix for naming all resources.')
@@ -43,8 +43,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
       name: 'standard'
     }
     tenantId: tenant().tenantId
-    // Default: access policy model (not RBAC-based) — default Azure portal behaviour
-    enableRbacAuthorization: false
+    // RBAC authorization — access policies are ignored when this is true.
+    // Assign roles (Key Vault Administrator, Key Vault Secrets User, etc.)
+    // via Azure RBAC instead of vault-level access policies.
+    enableRbacAuthorization: true
     accessPolicies: []
     // Soft delete is now enforced by Azure (cannot be disabled)
     enableSoftDelete: true
