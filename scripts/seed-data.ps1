@@ -319,15 +319,12 @@ if ($seedAll -or $Modules -contains 'mysql') {
         $mysqlDbName = "${Prefix}db"
         Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
 
-        $mysqlSeed = Get-Content (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') -Raw
-
         az mysql flexible-server execute `
             --resource-group $dbRg `
             --name $mysqlServer `
             --database-name $mysqlDbName `
-            --admin-user 'pgadmin' `
+            --admin-user 'mysqladmin' `
             --admin-password $dbAdminPwd `
-
             --file-path (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') `
             --output none 2>$null
 
