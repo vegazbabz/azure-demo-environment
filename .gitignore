@@ -35,6 +35,9 @@ local.*.json
 azuredeploy.json
 azuredeploy.parameters.json
 
+# ── Copilot prompt files (internal — not for public distribution) ─────────────
+.github/prompts/
+
 # ── OS and editor artefacts ───────────────────────────────────────────────────
 Thumbs.db
 .DS_Store
