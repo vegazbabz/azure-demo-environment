@@ -364,48 +364,49 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
     BeforeAll {
         $script:repoRoot  = Split-Path $PSScriptRoot -Parent
         $script:deploySrc = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
-    }
 
-    # Returns declared param names from a Bicep file.
-    function script:Get-BicepParamNames ([string]$BicepPath) {
-        $src = Get-Content $BicepPath -Raw
-        [regex]::Matches($src, '(?m)^param\s+(\w+)') |
-            ForEach-Object { $_.Groups[1].Value }
-    }
-
-    # Returns the param keys that deploy.ps1 passes to a module in default mode
-    # (mode-guarded blocks are stripped so only unconditional keys remain).
-    function script:Get-DeployParamKeys ([string]$ModuleName) {
-        $escapedMod = [regex]::Escape($ModuleName)
-
-        # Locate the switch block for this module — between "'module' {" and
-        # the next sibling case label or the closing brace of the switch.
-        $pattern   = "(?s)'$escapedMod'\s*\{(.+?)(?=\n[ \t]+'[a-z]+'\s*\{|\n[ \t]*\}[ \t]*\n[ \t]*\})"
-        $blockMatch = [regex]::Match($script:deploySrc, $pattern)
-        if (-not $blockMatch.Success) { return @() }
-        $block = $blockMatch.Groups[1].Value
-
-        # Strip hardened-only blocks so we only see unconditionally passed keys.
-        $block = [regex]::Replace(
-            $block,
-            "(?s)if\s*\(\s*\`$Mode\s*-eq\s*'hardened'\s*\)\s*\{.+?\n[ \t]*\}",
-            ''
-        )
-
-        # Extract keys from the $params = @{ key = val; ... } literal.
-        $keys = [System.Collections.Generic.List[string]]::new()
-        $htMatch = [regex]::Match($block, '(?s)\$params\s*=\s*@\{(.+?)\}')
-        if ($htMatch.Success) {
-            [regex]::Matches($htMatch.Groups[1].Value, '(?m)^[ \t]*(\w+)\s*=') |
-                ForEach-Object { $keys.Add($_.Groups[1].Value) }
+        # Returns declared param names from a Bicep file.
+        # Defined in BeforeAll so they are available inside It -ForEach scriptblocks.
+        function Get-BicepParamNames ([string]$BicepPath) {
+            $src = Get-Content $BicepPath -Raw
+            [regex]::Matches($src, '(?m)^param\s+(\w+)') |
+                ForEach-Object { $_.Groups[1].Value }
         }
 
-        # Also pick up unconditional $params['key'] = additions outside the hashtable.
-        [regex]::Matches($block, "\`$params\[['`"](\w+)['`"]\]\s*=") |
-            ForEach-Object { $keys.Add($_.Groups[1].Value) }
+        # Returns the param keys that deploy.ps1 passes to a module in default mode
+        # (mode-guarded blocks are stripped so only unconditional keys remain).
+        function Get-DeployParamKeys ([string]$ModuleName) {
+            $escapedMod = [regex]::Escape($ModuleName)
 
-        # 'tags' is injected by Deploy-AdeModule itself and is always valid — exclude it.
-        return $keys | Where-Object { $_ -ne 'tags' } | Sort-Object -Unique
+            # Locate the switch block for this module — between "'module' {" and
+            # the next sibling case label or the closing brace of the switch.
+            $pattern   = "(?s)'$escapedMod'\s*\{(.+?)(?=\n[ \t]+'[a-z]+'\s*\{|\n[ \t]*\}[ \t]*\n[ \t]*\})"
+            $blockMatch = [regex]::Match($script:deploySrc, $pattern)
+            if (-not $blockMatch.Success) { return @() }
+            $block = $blockMatch.Groups[1].Value
+
+            # Strip hardened-only blocks so we only see unconditionally passed keys.
+            $block = [regex]::Replace(
+                $block,
+                "(?s)if\s*\(\s*\`$Mode\s*-eq\s*'hardened'\s*\)\s*\{.+?\n[ \t]*\}",
+                ''
+            )
+
+            # Extract keys from the $params = @{ key = val; ... } literal.
+            $keys = [System.Collections.Generic.List[string]]::new()
+            $htMatch = [regex]::Match($block, '(?s)\$params\s*=\s*@\{(.+?)\}')
+            if ($htMatch.Success) {
+                [regex]::Matches($htMatch.Groups[1].Value, '(?m)^[ \t]*(\w+)\s*=') |
+                    ForEach-Object { $keys.Add($_.Groups[1].Value) }
+            }
+
+            # Also pick up unconditional $params['key'] = additions outside the hashtable.
+            [regex]::Matches($block, "\`$params\[['`"](\w+)['`"]\]\s*=") |
+                ForEach-Object { $keys.Add($_.Groups[1].Value) }
+
+            # 'tags' is injected by Deploy-AdeModule itself and is always valid — exclude it.
+            return $keys | Where-Object { $_ -ne 'tags' } | Sort-Object -Unique
+        }
     }
 
     $knownModules = @(
@@ -424,8 +425,8 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
             return
         }
 
-        $bicepParams  = script:Get-BicepParamNames -BicepPath $bicepPath
-        $passedParams = script:Get-DeployParamKeys -ModuleName $mod
+        $bicepParams  = Get-BicepParamNames -BicepPath $bicepPath
+        $passedParams = Get-DeployParamKeys -ModuleName $mod
 
         if ($passedParams.Count -eq 0) {
             Set-ItResult -Skipped -Because "could not locate switch block for '$mod' in deploy.ps1"
