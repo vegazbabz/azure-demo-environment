@@ -113,6 +113,12 @@ function Get-AdeResource {
     return $result
 }
 
+# Opens a TcpClient to a Redis host. Extracted so unit tests can mock it.
+function New-RedisTcpClient {
+    param([string]$Host, [int]$Port)
+    return [System.Net.Sockets.TcpClient]::new($Host, $Port)
+}
+
 # Sends a single RESP command over an already-open SslStream and returns the raw reply.
 function Invoke-RedisCommand {
     param([System.Net.Security.SslStream]$Stream, [string[]]$Parts)
@@ -402,7 +408,7 @@ if ($seedAll -or $Modules -contains 'redis') {
 
             $tcp = $null
             try {
-                $tcp = [System.Net.Sockets.TcpClient]::new($redisHost, 6380)
+                $tcp = New-RedisTcpClient -Host $redisHost -Port 6380
                 $ssl = [System.Net.Security.SslStream]::new(
                     $tcp.GetStream(), $false,
                     [System.Net.Security.RemoteCertificateValidationCallback]{ param($s, $c, $ch, $e) $true }
