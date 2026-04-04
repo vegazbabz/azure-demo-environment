@@ -261,6 +261,244 @@ resource dcNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
   properties: { securityRules: hardenedInboundRules }
 }
 
+// ─── AppGateway NSG ───────────────────────────────────────────────────────────
+// Application Gateway v2 requires specific inbound rules or it will fail health checks.
+// Without these rules, the gateway's backend health probes and management traffic are blocked.
+
+resource appGwNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
+  name: '${prefix}-appgw-nsg'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      // Required: Azure management traffic for the Application Gateway v2 control plane
+      {
+        name: 'Allow_GatewayManager_Inbound'
+        properties: {
+          priority: 100
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'GatewayManager'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '65200-65535'
+        }
+      }
+      // Required: Azure Load Balancer health probes
+      {
+        name: 'Allow_AzureLoadBalancer_Inbound'
+        properties: {
+          priority: 110
+          protocol: '*'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'AzureLoadBalancer'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+      // Allow HTTPS client traffic to the gateway
+      {
+        name: 'Allow_HTTPS_Inbound'
+        properties: {
+          priority: 200
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'Internet'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
+        }
+      }
+      // Allow HTTP for demo deployability (WAF Prevention mode is the primary control)
+      {
+        name: 'Allow_HTTP_Inbound'
+        properties: {
+          priority: 210
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'Internet'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '80'
+        }
+      }
+      // Deny all other internet inbound
+      {
+        name: 'Deny_Internet_Inbound'
+        properties: {
+          priority: 4000
+          protocol: '*'
+          access: 'Deny'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'Internet'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
+// ─── Bastion NSG ──────────────────────────────────────────────────────────────
+// Azure Bastion Standard/Basic requires specific inbound and outbound rules to function.
+// Without these rules, Bastion management plane and SSH/RDP sessions will fail.
+
+resource bastionNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = if (bastionNeedsSubnet) {
+  name: '${prefix}-bastion-nsg'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      // Inbound: HTTPS from clients on the internet
+      {
+        name: 'Allow_HTTPS_From_Internet'
+        properties: {
+          priority: 100
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'Internet'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
+        }
+      }
+      // Inbound: Azure Bastion control plane from GatewayManager
+      {
+        name: 'Allow_GatewayManager_443'
+        properties: {
+          priority: 110
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'GatewayManager'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
+        }
+      }
+      // Inbound: Bastion data plane (Standard SKU host-to-host communication)
+      {
+        name: 'Allow_VNet_DataPlane_Inbound'
+        properties: {
+          priority: 120
+          protocol: '*'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'VirtualNetwork'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'VirtualNetwork'
+          destinationPortRanges: ['8080', '5701']
+        }
+      }
+      // Inbound: Azure Load Balancer health probes
+      {
+        name: 'Allow_AzureLoadBalancer_Inbound'
+        properties: {
+          priority: 130
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: 'AzureLoadBalancer'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '443'
+        }
+      }
+      // Deny all other inbound
+      {
+        name: 'Deny_All_Other_Inbound'
+        properties: {
+          priority: 4000
+          protocol: '*'
+          access: 'Deny'
+          direction: 'Inbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+      // Outbound: RDP/SSH to target VMs inside the VNet
+      {
+        name: 'Allow_SSH_RDP_Outbound'
+        properties: {
+          priority: 100
+          protocol: '*'
+          access: 'Allow'
+          direction: 'Outbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'VirtualNetwork'
+          destinationPortRanges: ['22', '3389']
+        }
+      }
+      // Outbound: Azure control plane and diagnostics
+      {
+        name: 'Allow_AzureCloud_HTTPS_Outbound'
+        properties: {
+          priority: 110
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Outbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'AzureCloud'
+          destinationPortRange: '443'
+        }
+      }
+      // Outbound: Bastion data plane (Standard SKU host-to-host)
+      {
+        name: 'Allow_VNet_DataPlane_Outbound'
+        properties: {
+          priority: 120
+          protocol: '*'
+          access: 'Allow'
+          direction: 'Outbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'VirtualNetwork'
+          destinationPortRanges: ['8080', '5701']
+        }
+      }
+      // Outbound: Bastion health check
+      {
+        name: 'Allow_Internet_HTTP_Outbound'
+        properties: {
+          priority: 130
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Outbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: 'Internet'
+          destinationPortRange: '80'
+        }
+      }
+      // Deny all other outbound
+      {
+        name: 'Deny_All_Other_Outbound'
+        properties: {
+          priority: 4000
+          protocol: '*'
+          access: 'Deny'
+          direction: 'Outbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
 // ─── Route Table (UDR) — Only when Azure Firewall is enabled ──────────────────
 
 resource firewallRouteTable 'Microsoft.Network/routeTables@2023-09-01' = if (firewallEnabled) {
@@ -477,6 +715,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
           name: 'AppGatewaySubnet'
           properties: {
             addressPrefix: appGwSubnetPrefix
+            // Hardened: NSG with GatewayManager rule required for AppGW v2 health probes and management
+            networkSecurityGroup: { id: appGwNsg.id }
           }
         }
         {
@@ -497,6 +737,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
           name: 'AzureBastionSubnet'
           properties: {
             addressPrefix: bastionSubnetPrefix
+            // Hardened: Bastion NSG with required inbound/outbound rules (see bastionNsg resource)
+            networkSecurityGroup: { id: bastionNsg.id }
           }
         }
       ] : []
@@ -817,3 +1059,5 @@ output keyVaultDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.
 output serviceBusDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.servicebus.windows.net') : ''
 output eventHubDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.eventhub.windows.net') : ''
 output redisDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.redis.cache.windows.net') : ''
+#disable-next-line no-hardcoded-env-urls
+output fileDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.file.core.windows.net') : ''

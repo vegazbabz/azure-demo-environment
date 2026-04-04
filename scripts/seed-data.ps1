@@ -31,6 +31,11 @@
     Accepted values: storage, cosmosdb, sql, postgresql, mysql, redis,
                      keyvault, servicebus, eventhub, all
 
+.PARAMETER AdminUsername
+    Admin username used during ADE deployment. Must match the -AdminUsername value
+    passed to deploy.ps1 (default: 'adeadmin'). Used as the login for SQL, PostgreSQL,
+    and MySQL seeding.
+
 .PARAMETER DatabaseAdminPassword
     Admin password for Azure SQL, PostgreSQL, and MySQL seeding.
     Required for those three blocks; omit to skip them.
@@ -58,6 +63,9 @@ param(
     [ValidateSet('storage', 'cosmosdb', 'sql', 'postgresql', 'mysql', 'redis',
                  'keyvault', 'servicebus', 'eventhub', 'all')]
     [string[]]$Modules = @('all'),
+
+    [Parameter(Mandatory = $false)]
+    [string]$AdminUsername = 'adeadmin',
 
     [Parameter(Mandatory = $false)]
     [securestring]$DatabaseAdminPassword,
@@ -170,24 +178,34 @@ if ($seedAll -or $Modules -contains 'storage') {
             Remove-Item $tmpPath -Force
         }
 
-        # Upload a README to 'public' container
-        $readmePath = Join-Path ([System.IO.Path]::GetTempPath()) 'README.md'
-        @"
+        # Upload a README to 'public' container only if it exists (absent in hardened mode)
+        $publicExists = (az storage container exists `
+            --account-name $accountName `
+            @authArgs `
+            --name 'public' `
+            --query exists `
+            --output tsv 2>$null) -eq 'true'
+        if ($publicExists) {
+            $readmePath = Join-Path ([System.IO.Path]::GetTempPath()) 'README.md'
+            @"
 # Azure Demo Environment — Sample Data
 
 This container contains publicly accessible sample files.
 Uploaded by seed-data.ps1 on $(Get-Date -Format 'yyyy-MM-dd').
 "@ | Set-Content -Path $readmePath -Encoding UTF8
-        az storage blob upload `
-            --account-name $accountName `
-            @authArgs `
-            --container-name 'public' `
-            --name 'README.md' `
-            --file $readmePath `
-            --overwrite `
-            --output none
-        Write-AdeLog "Uploaded: public/README.md" -Level Success
-        Remove-Item $readmePath -Force
+            az storage blob upload `
+                --account-name $accountName `
+                @authArgs `
+                --container-name 'public' `
+                --name 'README.md' `
+                --file $readmePath `
+                --overwrite `
+                --output none
+            Write-AdeLog "Uploaded: public/README.md" -Level Success
+            Remove-Item $readmePath -Force
+        } else {
+            Write-AdeLog "'public' container not found (hardened mode — expected). Skipping README upload." -Level Warning
+        }
     }
 }
 
@@ -204,6 +222,18 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
     } else {
         Write-AdeLog "Cosmos DB account: $accountName" -Level Info
 
+        # In hardened mode, disableLocalAuth=true blocks key-based data plane access.
+        # az cosmosdb sql document create uses keys internally; it has no --auth-mode login flag.
+        $localAuthDisabled = (az cosmosdb show `
+            --name $accountName `
+            --resource-group $dbRg `
+            --query 'properties.disableLocalAuth' `
+            --output tsv 2>$null) -eq 'true'
+
+        if ($localAuthDisabled) {
+            Write-AdeLog "Cosmos DB local auth is disabled (hardened mode). Skipping document seeding via CLI." -Level Warning
+            Write-AdeLog "To seed manually: assign 'Cosmos DB Built-in Data Contributor' to your identity, then use the Azure Portal Data Explorer or the Cosmos REST API with an Entra Bearer token." -Level Info
+        } else {
         # Use az cosmosdb sql document create for simplicity
         $sampleDocs = @(
             @{ id = 'order-001'; customerId = 1; total = 149.99; status = 'completed'; items = @(@{ sku = 'WIDGET-A'; qty = 2 }) }
@@ -225,6 +255,7 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
             Remove-Item $tmpDoc -Force
             Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
         }
+        } # end else (local auth enabled)
     }
 }
 
@@ -253,7 +284,7 @@ if ($seedAll -or $Modules -contains 'sql') {
             --resource-group $dbRg `
             --server $sqlServer `
             --name $dbName `
-            --admin-user 'sqladmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --query-text $seedSql `
             --output none 2>$null
@@ -289,7 +320,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
             --resource-group $dbRg `
             --name $pgServer `
             --database-name $pgDbName `
-            --admin-user 'pgadmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --querytext $pgSeed `
             --output none 2>$null
@@ -323,7 +354,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
             --resource-group $dbRg `
             --name $mysqlServer `
             --database-name $mysqlDbName `
-            --admin-user 'mysqladmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --file-path (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') `
             --output none 2>$null

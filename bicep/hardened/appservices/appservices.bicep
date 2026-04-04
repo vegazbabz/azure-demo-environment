@@ -87,8 +87,9 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
     serverFarmId: appServicePlan.id
     // Hardened: HTTPS-only (CIS 9.2)
     httpsOnly: true
-    // Hardened: disable public network access (MCSB NS-1)
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint (group ID 'sites') is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; add privateEndpointSubnetId param + PE resource for full hardening.
+    publicNetworkAccess: 'Enabled'
     // Hardened: client cert in Optional mode — enables mutual TLS where clients supply certs (CIS 9.4)
     clientCertEnabled: true
     clientCertMode: 'Optional'
@@ -129,7 +130,9 @@ resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
   properties: {
     serverFarmId: linuxAppServicePlan.id
     httpsOnly: true
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint (group ID 'sites') is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; add privateEndpointSubnetId param + PE resource for full hardening.
+    publicNetworkAccess: 'Enabled'
     clientCertEnabled: true
     clientCertMode: 'Optional'
     virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
@@ -157,7 +160,10 @@ resource functionStorageName 'Microsoft.Storage/storageAccounts@2023-04-01' = if
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    // Shared key retained for Consumption plan AzureWebJobsStorage connection string
+    // Shared key retained: Y1 Consumption plan WEBSITE_CONTENTAZUREFILECONNECTIONSTRING
+    // requires key access for the deployment content share. AzureWebJobsStorage itself
+    // uses managed identity (see siteConfig.appSettings below). Migrate to EP1 Premium
+    // plan to fully eliminate key-based storage access.
     allowSharedKeyAccess: true
   }
 }
@@ -186,16 +192,33 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = if (deployFunctionApp) {
   properties: {
     serverFarmId: functionPlan.id
     httpsOnly: true
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint (group ID 'sites') is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; add privateEndpointSubnetId param + PE resource for full hardening.
+    publicNetworkAccess: 'Enabled'
     // NOTE: Consumption (Y1) plan supports outbound VNet integration since 2023
     // Required for the function to reach private endpoints (databases, Key Vault, Service Bus)
     virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
       vnetRouteAllEnabled: !empty(subnetId)
       appSettings: [
+        // Hardened: AzureWebJobsStorage uses managed identity — no storage key in App Settings (MCSB IM-3).
+        // WEBSITE_CONTENTAZUREFILECONNECTIONSTRING retains a key: Y1 Consumption plan requires it
+        // for the code deployment content share. Migrate to EP1 Premium to fully eliminate keys.
         {
-          name: 'AzureWebJobsStorage'
+          name: 'AzureWebJobsStorage__accountName'
+          value: functionStorageName!.name
+        }
+        {
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
+        }
+        {
+          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
           value: 'DefaultEndpointsProtocol=https;AccountName=${functionStorageName!.name};AccountKey=${functionStorageName!.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+        }
+        {
+          name: 'WEBSITE_CONTENTSHARE'
+          value: '${prefix}-funcapp'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -249,7 +272,9 @@ resource logicAppStorage 'Microsoft.Storage/storageAccounts@2023-04-01' = if (de
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true    // Required for Logic App Standard backing storage
+    // Hardened: shared key disabled — Logic App Standard (WS1) supports full managed identity
+    // storage access via AzureWebJobsStorage__accountName (see app settings below).
+    allowSharedKeyAccess: false
   }
 }
 
@@ -264,14 +289,22 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
   properties: {
     serverFarmId: logicAppPlan.id
     httpsOnly: true
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint (group ID 'sites') is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; add privateEndpointSubnetId param + PE resource for full hardening.
+    publicNetworkAccess: 'Enabled'
     virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
     siteConfig: union(hardenedSiteConfig, {
       vnetRouteAllEnabled: !empty(subnetId)
       appSettings: [
+        // Hardened: full managed identity storage — no keys in App Settings (MCSB IM-3).
+        // Logic App Standard (WS1) fully supports AzureWebJobsStorage__accountName with managed identity.
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${logicAppStorage!.name};AccountKey=${logicAppStorage!.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+          name: 'AzureWebJobsStorage__accountName'
+          value: logicAppStorage!.name
+        }
+        {
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -287,6 +320,74 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
         }
       ]
     })
+  }
+}
+
+// ─── Storage RBAC — Function App identity → Function backing storage ─────────
+// Required for managed identity AzureWebJobsStorage connection (MCSB IM-3).
+// Roles needed by the Functions runtime: Blob Data Owner, Queue Data Contributor,
+// Table Data Contributor.
+
+resource funcStorageBlobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployFunctionApp) {
+  name: guid(functionStorageName!.id, functionApp!.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: functionStorageName
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Owner
+    principalId: functionApp!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource funcStorageQueueContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployFunctionApp) {
+  name: guid(functionStorageName!.id, functionApp!.id, '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  scope: functionStorageName
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88') // Storage Queue Data Contributor
+    principalId: functionApp!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource funcStorageTableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployFunctionApp) {
+  name: guid(functionStorageName!.id, functionApp!.id, '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+  scope: functionStorageName
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3') // Storage Table Data Contributor
+    principalId: functionApp!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ─── Storage RBAC — Logic App identity → Logic App backing storage ────────────
+// Logic App Standard (WS1) uses managed identity for all storage operations.
+
+resource logicStorageBlobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployLogicApp) {
+  name: guid(logicAppStorage!.id, logicApp!.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: logicAppStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Owner
+    principalId: logicApp!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource logicStorageQueueContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployLogicApp) {
+  name: guid(logicAppStorage!.id, logicApp!.id, '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  scope: logicAppStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88') // Storage Queue Data Contributor
+    principalId: logicApp!.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource logicStorageTableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployLogicApp) {
+  name: guid(logicAppStorage!.id, logicApp!.id, '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+  scope: logicAppStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3') // Storage Table Data Contributor
+    principalId: logicApp!.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

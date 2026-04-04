@@ -9,7 +9,8 @@
         "logAnalyticsWorkspace": true,
         "applicationInsights": true,
         "actionGroup": true,
-        "alertRules": true
+        "alertRules": true,
+        "alertEmail": ""
       }
     },
     "networking": {
@@ -30,7 +31,8 @@
         "keyVault": true,
         "managedIdentity": true,
         "defenderForCloud": true,
-        "sentinel": true
+        "sentinel": true,
+        "allowedCidrRanges": []
       }
     },
     "compute": {
@@ -52,7 +54,8 @@
         "dataLakeGen2": true,
         "fileShares": true,
         "enableSoftDelete": true,
-        "enableVersioning": true
+        "enableVersioning": true,
+        "allowedCidrRanges": []
       }
     },
     "databases": {
@@ -62,7 +65,8 @@
         "cosmosDb": true,
         "postgresql": true,
         "mysql": false,
-        "redis": false
+        "redis": false,
+        "sqlVm": false
       }
     },
     "appservices": {
@@ -81,7 +85,8 @@
         "containerRegistry": true,
         "kubernetesService": true,
         "containerApps": true,
-        "containerInstances": true
+        "containerInstances": true,
+        "aksAuthorizedIpRanges": []
       }
     },
     "integration": {
@@ -120,7 +125,8 @@
         "budget": true,
         "budgetAmount": 400,
         "resourceLocks": true,
-        "policyAssignments": true
+        "policyAssignments": true,
+        "budgetAlertEmail": ""
       }
     }
   },

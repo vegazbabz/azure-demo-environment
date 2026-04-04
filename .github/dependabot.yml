@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date.
+  # Dependabot will open PRs to pin/update action versions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(actions)"
+    groups:
+      # Batch all action updates into a single PR per week
+      github-actions:
+        patterns:
+          - "*"

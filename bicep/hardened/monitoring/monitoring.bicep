@@ -2,8 +2,9 @@
 // Deploys: Log Analytics Workspace, Application Insights, Action Group.
 //          Optional: Alert rules.
 //
-// HARDENED MODE: 90-day retention, private ingestion/query endpoints disabled
-//               for public access, diagnostic settings enabled by default,
+// HARDENED MODE: 90-day retention, public ingestion/query endpoints retained
+//               pending AMPLS private link scope deployment (disabling without
+//               AMPLS breaks AMA data shipping), diagnostic settings enabled by default,
 //               data collection rule for Azure Monitor Agent.
 //               Aligns with: CIS 5.x (Logging), MCSB LT-1, LT-3, LT-4.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,8 +15,8 @@ param prefix string
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('Email address to receive alert notifications.')
-param alertEmailAddress string = 'admin@example.com'
+@description('Email address to receive alert notifications. Leave empty to deploy the Action Group without an email receiver (alerts fire but have no delivery target).')
+param alertEmailAddress string = ''   // Set in profile monitoring.features.alertEmail
 
 @description('Log Analytics Workspace retention in days.')
 param retentionDays int = 90   // Hardened: 90 days (CIS 5.1.2 recommends 90+)
@@ -36,9 +37,10 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
     sku: { name: 'PerGB2018' }
     retentionInDays: retentionDays
     workspaceCapping: { dailyQuotaGb: -1 }
-    // Hardened: restrict public network access to the workspace
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    // NOTE: AMPLS + private endpoint is required to set these to 'Disabled'.
+    // Without an Azure Monitor Private Link Scope, AMA agents cannot ship data.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
     features: {
       // Immutable log collection — prevents tampering with audit logs
       immediatePurgeDataOn30Days: false
@@ -57,9 +59,9 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   properties: {
     Application_Type: 'web'
     WorkspaceResourceId: logAnalyticsWorkspace.id
-    // Hardened: ingestion/query only via workspace private link
-    publicNetworkAccessForIngestion: 'Disabled'
-    publicNetworkAccessForQuery: 'Disabled'
+    // NOTE: Keep Enabled until AMPLS private link scope is deployed.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
     // Disable sampling to ensure all telemetry is captured
     SamplingPercentage: 100
     DisableIpMasking: false
@@ -75,7 +77,8 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   properties: {
     groupShortName: 'ade-alerts'
     enabled: true
-    emailReceivers: [
+    // Omit email receivers when no address is configured to avoid ARM validation failure.
+    emailReceivers: empty(alertEmailAddress) ? [] : [
       {
         name: 'admin-email'
         emailAddress: alertEmailAddress
