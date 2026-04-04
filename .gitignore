@@ -24,6 +24,17 @@ local.*.json
 *.log
 *.tmp
 
+# ── VS Code Local History extension ──────────────────────────────────────────
+.history/
+
+# ── Bicep compiled outputs (az bicep build) ───────────────────────────────────
+*.compiled.json
+
+# ── Azure deployment output / parameter snapshots ────────────────────────────
+*.deploymentOutput.json
+azuredeploy.json
+azuredeploy.parameters.json
+
 # ── OS and editor artefacts ───────────────────────────────────────────────────
 Thumbs.db
 .DS_Store
