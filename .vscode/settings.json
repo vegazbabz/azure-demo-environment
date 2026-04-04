@@ -1,4 +1,4 @@
 {
-    "powershell.scriptAnalysis.settingsPath": "PSScriptAnalyzerSettings.psd1",
+    "powershell.scriptAnalysis.settingsPath": ".config/PSScriptAnalyzerSettings.psd1",
     "powershell.useX86Host": false
 }

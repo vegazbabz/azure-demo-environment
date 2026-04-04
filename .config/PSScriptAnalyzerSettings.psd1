@@ -4,7 +4,7 @@
 # Project-wide PSScriptAnalyzer settings for Azure Demo Environment.
 #
 # Usage (local):
-#   Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+#   Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Settings ./.config/PSScriptAnalyzerSettings.psd1
 #
 # The CI lint workflow automatically picks this file up via -Settings.
 # ─────────────────────────────────────────────────────────────────────────────
