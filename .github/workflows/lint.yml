@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Azure Demo Environment (ADE) — Lint Workflow
 #
-# Runs on every PR and every push. No Azure credentials required.
+# Runs on every PR targeting main/feature/fix branches. No Azure credentials required.
 #
 # Checks:
 #   1. Bicep lint        — all *.bicep files (az bicep lint)
@@ -17,17 +17,6 @@ on:
       - main
       - 'feature/**'
       - 'fix/**'
-  push:
-    branches:
-      - main
-    paths:
-      - 'bicep/**'
-      - 'scripts/**'
-      - 'config/**'
-      - 'data/**'
-      - 'tests/**'
-      - 'policies/**'
-      - '.github/workflows/**'
 
 permissions:
   contents: read
