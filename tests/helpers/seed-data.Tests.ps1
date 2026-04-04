@@ -194,8 +194,8 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules cosmosdb -Force
-            # 1 (resource list) + 3 (document creates)
-            Should -Invoke az -Times 4 -Exactly
+            # 1 (resource list) + 1 (cosmosdb show for disableLocalAuth check) + 3 (document creates)
+            Should -Invoke az -Times 5 -Exactly
         }
     }
 
