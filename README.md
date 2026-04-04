@@ -2,6 +2,12 @@
 
 A fully automated, modular Azure infrastructure project for **security benchmark testing** and **environment provisioning**. Deploy a complete multi-tier Azure environment in minutes — either with out-of-the-box Azure defaults (to measure your baseline CIS/MCSB score) or with CIS/MCSB-hardened configuration (to measure remediations).
 
+> [!WARNING]
+> **Deploying resources from this repository will incur real costs in your Azure subscription.**
+> Every module provisions billable Azure resources. Some — such as Azure Firewall, DDoS Protection, and VPN Gateway — are expensive even when idle. See [Cost guidance](#cost-guidance) for estimates.
+>
+> **The author of this repository accepts no responsibility for any Azure costs, charges, or overspend incurred by anyone using this project.** You are solely responsible for monitoring and managing spend in your own subscription. Before deploying, set up [Azure Cost Management budgets and alerts](https://learn.microsoft.com/azure/cost-management-billing/costs/tutorial-acm-create-budgets) to cap unexpected spend.
+
 > **New to Azure?** Start with [Prerequisites](#prerequisites) and [Your first deployment](#your-first-deployment).  
 > **Just want to see what this deploys?** Skip to [What gets deployed](#what-gets-deployed).  
 > **Setting up CI/CD?** Jump to [GitHub Actions setup](#github-actions-setup).  
@@ -449,6 +455,9 @@ To enable Cosmos DB and PostgreSQL in your custom profile's databases module:
 ---
 
 ## Cost guidance
+
+> [!IMPORTANT]
+> **Disclaimer:** Deploying resources from this repository will create billable Azure resources in your subscription. The author of this project accepts **no responsibility** for any charges, costs, or overspend incurred by anyone using this code. Always configure [Azure Cost Management budgets](https://learn.microsoft.com/azure/cost-management-billing/costs/tutorial-acm-create-budgets) with email alerts before deploying, and tear down environments when they are not in use.
 
 Most modules are inexpensive at rest. The following resources carry meaningful ongoing cost:
 
@@ -1028,6 +1037,9 @@ All Azure CLI calls are mocked — no subscription required to run tests.
 ---
 
 ## Cost guidance
+
+> [!IMPORTANT]
+> **Disclaimer:** Deploying resources from this repository will create billable Azure resources in your subscription. The author of this project accepts **no responsibility** for any charges, costs, or overspend incurred by anyone using this code. Always configure [Azure Cost Management budgets](https://learn.microsoft.com/azure/cost-management-billing/costs/tutorial-acm-create-budgets) with email alerts before deploying, and tear down environments when they are not in use.
 
 Most modules are low-cost at rest. Notable exceptions:
 
