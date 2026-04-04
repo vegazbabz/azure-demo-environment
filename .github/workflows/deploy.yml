@@ -74,6 +74,12 @@ on:
       - 'config/**'
       - 'scripts/**'
 
+# Prevent concurrent deployments to the same prefix — a new run waits for any
+# in-progress run with the same prefix to finish before proceeding.
+concurrency:
+  group: ade-deploy-${{ github.event.inputs.prefix || vars.ADE_DEFAULT_PREFIX || 'ade' }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write   # OIDC federated credential
   contents: read
@@ -93,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Install Bicep CLI
         run: az bicep install
@@ -119,6 +125,23 @@ jobs:
             echo "::warning::Mode 'hardened' is selected with profile '$PROFILE'. The hardened Bicep modules will be used with non-hardened profile settings."
           fi
 
+      - name: Validate free-text inputs
+        # Constrain prefix and location to safe characters before they reach
+        # any shell/PowerShell interpolation. Blocks script injection.
+        env:
+          ADE_PREFIX:   ${{ env.INPUT_PREFIX }}
+          ADE_LOCATION: ${{ env.INPUT_LOCATION }}
+        run: |
+          if ! [[ "$ADE_PREFIX" =~ ^[a-z0-9]{2,8}$ ]]; then
+            echo "::error::prefix must be 2-8 lowercase alphanumeric characters (e.g. 'ade'). Got: '$ADE_PREFIX'"
+            exit 1
+          fi
+          if ! [[ "$ADE_LOCATION" =~ ^[a-z][a-z0-9]{1,29}$ ]]; then
+            echo "::error::location must be a valid Azure region name (e.g. 'westeurope'). Got: '$ADE_LOCATION'"
+            exit 1
+          fi
+          echo "✓ prefix='$ADE_PREFIX' location='$ADE_LOCATION' — format OK"
+
 # ─── Job 2: Deploy (manual trigger only) ─────────────────────────────────────
   deploy:
     name: Deploy — ${{ github.event.inputs.profile }} @ ${{ github.event.inputs.location }}
@@ -128,10 +151,10 @@ jobs:
     environment: demo
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2.3.0
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
@@ -234,53 +257,72 @@ jobs:
       - name: Deploy ADE
         id: deploy
         shell: pwsh
+        # Pass all variable inputs through env — never interpolate user-controlled
+        # values directly into the run: block (GitHub Actions injection hardening).
         env:
-          ADMIN_PASSWORD: ${{ secrets.ADE_ADMIN_PASSWORD }}
+          ADMIN_PASSWORD:   ${{ secrets.ADE_ADMIN_PASSWORD }}
+          ADE_PROFILE:      ${{ github.event.inputs.profile }}
+          ADE_MODE:         ${{ github.event.inputs.mode || 'default' }}
+          ADE_LOCATION:     ${{ env.INPUT_LOCATION }}
+          ADE_PREFIX:       ${{ env.INPUT_PREFIX }}
+          ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_SKIP_MODULES: ${{ github.event.inputs.skip_modules }}
         run: |
           $skipModules = @()
-          if ('${{ github.event.inputs.skip_modules }}') {
-            $skipModules = '${{ github.event.inputs.skip_modules }}' -split ',' | ForEach-Object { $_.Trim() }
+          if ($env:ADE_SKIP_MODULES) {
+            $skipModules = $env:ADE_SKIP_MODULES -split ',' | ForEach-Object { $_.Trim() }
           }
 
           ./scripts/deploy.ps1 `
-            -Profile       '${{ github.event.inputs.profile }}' `
-            -Mode          '${{ github.event.inputs.mode || 'default' }}' `
-            -Location      '${{ env.INPUT_LOCATION }}' `
-            -Prefix        '${{ env.INPUT_PREFIX }}' `
-            -SubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -Profile        $env:ADE_PROFILE `
+            -Mode           $env:ADE_MODE `
+            -Location       $env:ADE_LOCATION `
+            -Prefix         $env:ADE_PREFIX `
+            -SubscriptionId $env:ADE_SUBSCRIPTION `
             -AdminPassword (ConvertTo-SecureString $env:ADMIN_PASSWORD -AsPlainText -Force) `
-            -SkipModules   $skipModules `
+            -SkipModules    $skipModules `
             -Force
 
       - name: Seed dummy data
         if: ${{ github.event.inputs.seed_data == 'true' && steps.deploy.outcome == 'success' }}
         shell: pwsh
+        env:
+          ADE_PREFIX:       ${{ env.INPUT_PREFIX }}
+          ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           ./scripts/seed-data.ps1 `
-            -Prefix        '${{ env.INPUT_PREFIX }}' `
-            -SubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -Prefix         $env:ADE_PREFIX `
+            -SubscriptionId $env:ADE_SUBSCRIPTION `
             -Force
 
       - name: Write job summary
         if: always()
+        env:
+          ADE_PREFIX:   ${{ env.INPUT_PREFIX }}
+          ADE_LOCATION: ${{ env.INPUT_LOCATION }}
+          ADE_PROFILE:  ${{ github.event.inputs.profile }}
+          ADE_MODE:     ${{ github.event.inputs.mode || 'default' }}
+          ADE_SEED:     ${{ github.event.inputs.seed_data }}
         run: |
           STATUS="${{ steps.deploy.outcome }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## ${ICON} ADE Deployment — ${{ github.event.inputs.profile }}
-
-          | Field        | Value |
-          |--------------|-------|
-          | Profile      | \`${{ github.event.inputs.profile }}\` |
-          | Mode         | \`${{ github.event.inputs.mode || 'default' }}\` |
-          | Location     | \`${{ env.INPUT_LOCATION }}\` |
-          | Prefix       | \`${{ env.INPUT_PREFIX }}\` |
-          | Status       | ${STATUS} |
-          | Seed data    | ${{ github.event.inputs.seed_data }} |
-          | Run          | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
-
-          ### Resource Groups
-          $(for mod in monitoring networking security compute storage databases appservices containers integration ai data governance; do
-            echo "- \`${{ env.INPUT_PREFIX }}-${mod}-rg\`"
-          done)
-          EOF
+          # Write summary using env vars — never interpolate user inputs directly
+          # into shell here-doc body (prevents command substitution injection).
+          {
+            echo "## ${ICON} ADE Deployment — ${ADE_PROFILE}"
+            echo ""
+            echo "| Field        | Value |"
+            echo "|--------------|-------|"
+            echo "| Profile      | \`${ADE_PROFILE}\` |"
+            echo "| Mode         | \`${ADE_MODE}\` |"
+            echo "| Location     | \`${ADE_LOCATION}\` |"
+            echo "| Prefix       | \`${ADE_PREFIX}\` |"
+            echo "| Status       | ${STATUS} |"
+            echo "| Seed data    | ${ADE_SEED} |"
+            echo "| Run          | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo ""
+            echo "### Resource Groups"
+            for mod in monitoring networking security compute storage databases appservices containers integration ai data governance; do
+              echo "- \`${ADE_PREFIX}-${mod}-rg\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

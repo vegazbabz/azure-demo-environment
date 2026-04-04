@@ -34,6 +34,9 @@ param synapseAdminPassword string = ''
 @description('Resource tags.')
 param tags object = {}
 
+@description('Name of the deployed storage account. Used to set the ADF blob linked service endpoint.')
+param storageAccountName string = ''
+
 // ─── Azure Data Factory ───────────────────────────────────────────────────────
 // Hardened: managed VNet, no public network access, system-assigned identity.
 
@@ -43,8 +46,9 @@ resource dataFactory 'Microsoft.DataFactory/factories@2018-06-01' = if (deployDa
   tags: tags
   identity: { type: 'SystemAssigned' }
   properties: {
-    // Hardened: no public network access — use private endpoint
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; restrict via managed VNet PE in production.
+    publicNetworkAccess: 'Enabled'
     globalParameters: {}
   }
 }
@@ -56,8 +60,9 @@ resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@20
   properties: {
     type: 'AzureBlobStorage'
     typeProperties: {
-      #disable-next-line no-hardcoded-env-urls
-      serviceEndpoint: 'https://demo.blob.core.windows.net'
+      serviceEndpoint: empty(storageAccountName)
+        ? 'https://placeholder.blob.${environment().suffixes.storage}'
+        : 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
       accountKind: 'StorageV2'
       // Hardened: managed identity authentication (no SAS or connection string)
     }
@@ -102,8 +107,9 @@ resource synapseWorkspace 'Microsoft.Synapse/workspaces@2021-06-01' = if (deploy
     }
     sqlAdministratorLogin: 'synapseadmin'
     sqlAdministratorLoginPassword: synapseAdminPassword
-    // Hardened: no public access (MCSB NS-1)
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; restrict via PE in production.
+    publicNetworkAccess: 'Enabled'
     managedVirtualNetwork: 'default'
     // Hardened: Azure AD-only auth where possible
     azureADOnlyAuthentication: false    // Keep false so SQL auth still works for demos
@@ -126,8 +132,9 @@ resource databricks 'Microsoft.Databricks/workspaces@2023-02-01' = if (deployDat
   sku: { name: 'premium' }
   properties: {
     managedResourceGroupId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${prefix}-databricks-managed-rg'
-    // Hardened: no public network access (MCSB NS-1)
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; requiredNsgRules still hardens the managed VNet.
+    publicNetworkAccess: 'Enabled'
     // Hardened: remove open Databricks NSG rules — use Secure Cluster Connectivity
     requiredNsgRules: 'NoAzureDatabricksRules'
     parameters: {
@@ -146,8 +153,9 @@ resource purviewAccount 'Microsoft.Purview/accounts@2021-12-01' = if (deployPurv
   tags: tags
   identity: { type: 'SystemAssigned' }
   properties: {
-    // Hardened: public access disabled
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; restrict via PE in production.
+    publicNetworkAccess: 'Enabled'
   }
 }
 

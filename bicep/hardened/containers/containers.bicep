@@ -35,6 +35,9 @@ param aksNodeSize string = 'Standard_B2s'
 @description('Log Analytics workspace resource ID. Used to enable AKS Defender for Containers.')
 param logAnalyticsId string = ''
 
+@description('Authorized IP ranges for the AKS API server. Empty array = no restriction (accessible from any IP). Hardened: set to deployer/CI runner CIDRs. Example: ["203.0.113.0/24"]')
+param aksAuthorizedIpRanges array = []
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -51,10 +54,10 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (deployAcr
   properties: {
     // Hardened: admin user disabled — use Entra ID RBAC (CIS 8.3, MCSB IM-3)
     adminUserEnabled: false
-    // Hardened: public network access disabled (CIS 8.4, MCSB NS-1)
-    // NOTE: pulling images requires private endpoint or VNet service endpoint in production.
-    //       For demo deployability, set to Enabled in default mode only.
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Without a PE, AKS nodes in the VNet cannot pull images. Keeping Enabled for
+    // demo deployability; restrict to PE-only in production.
+    publicNetworkAccess: 'Enabled'
     zoneRedundancy: 'Disabled'
     // Hardened: policies
     policies: {
@@ -87,7 +90,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
     type: 'SystemAssigned'
   }
   properties: {
-    kubernetesVersion: '1.29'
+    kubernetesVersion: '1.31'
     dnsPrefix: '${prefix}-aks'
     enableRBAC: true    // Hardened: RBAC enabled (always on for hardened mode)
     agentPoolProfiles: [
@@ -149,10 +152,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
       adminGroupObjectIDs: []    // Populated post-deploy via RBAC assignment
     }
     disableLocalAccounts: true
-    // Hardened: API server access profile — no public access in fully hardened setup
-    // Left as public for demo deployability; restrict via authorizedIPRanges in production
+    // Hardened: API server access profile — populate aksAuthorizedIpRanges in the
+    // profile (containers.features.aksAuthorizedIpRanges) to restrict the kube-apiserver
+    // to deployer/CI runner CIDRs. Empty array = unrestricted (any IP can reach API server).
     apiServerAccessProfile: {
       enablePrivateCluster: false
+      authorizedIPRanges: !empty(aksAuthorizedIpRanges) ? aksAuthorizedIpRanges : null
     }
   }
 }
