@@ -391,15 +391,16 @@ foreach ($moduleName in $deploymentOrder) {
                     logAnalyticsId    = $state.logAnalyticsId
                     enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
                     enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
-                    privateEndpointSubnetId = $state.privateEndpointSubnetId
-                    keyVaultDnsZoneId       = $state.keyVaultDnsZoneId
                 }
                 if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
-                # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
-                # (e.g. deployer workstation or CI runner). Passed as a JSON array.
-                $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
-                if ($kvCidrs -and $kvCidrs.Count -gt 0) {
-                    $params['allowedCidrRanges'] = $kvCidrs
+                # privateEndpointSubnetId, keyVaultDnsZoneId, and allowedCidrRanges are only
+                # declared in the hardened security module — do not pass them to the default one.
+                if ($Mode -eq 'hardened') {
+                    $params['privateEndpointSubnetId'] = $state.privateEndpointSubnetId
+                    $params['keyVaultDnsZoneId']       = $state.keyVaultDnsZoneId
+                    # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
+                    $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
+                    if ($kvCidrs -and $kvCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $kvCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
                 $state.keyVaultId              = Get-AdeDeploymentOutput $outputs 'keyVaultId'
@@ -451,9 +452,7 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                     # allowedCidrRanges: public IPs (CIDR) permitted through Storage network ACLs
                     $stCidrs = $deployProfile.modules.storage.features.allowedCidrRanges
-                    if ($stCidrs -and $stCidrs.Count -gt 0) {
-                        $params['allowedCidrRanges'] = $stCidrs
-                    }
+                    if ($stCidrs -and $stCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $stCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
                 $state.storageAccountName = Get-AdeDeploymentOutput $outputs 'storageAccountName'
@@ -497,7 +496,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
-                    subnetId              = $state.appServicesSubnetId
+                    appServiceSubnetId    = $state.appServicesSubnetId
                     deployWindowsApp      = ($appFeatures.windowsWebApp -eq $true).ToString().ToLower()
                     deployLinuxApp        = ($appFeatures.linuxWebApp -eq $true).ToString().ToLower()
                     deployFunctionApp     = ($appFeatures.functionApp -eq $true).ToString().ToLower()

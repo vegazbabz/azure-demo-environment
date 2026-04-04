@@ -60,6 +60,22 @@ param postgresDnsZoneId string = ''
 @description('Private DNS zone resource ID for MySQL VNet injection (privatelink.mysql.database.azure.com). When empty, falls back to public access with AllowAzureServices rule.')
 param mysqlDnsZoneId string = ''
 
+@description('Private endpoint subnet resource ID for private endpoint connectivity.')
+#disable-next-line no-unused-params
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for SQL Server (privatelink.database.windows.net).')
+#disable-next-line no-unused-params
+param sqlDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Cosmos DB (privatelink.documents.azure.com).')
+#disable-next-line no-unused-params
+param cosmosDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Redis Cache (privatelink.redis.cache.windows.net).')
+#disable-next-line no-unused-params
+param redisDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 

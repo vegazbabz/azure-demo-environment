@@ -20,6 +20,18 @@ param enableSoftDelete bool = false
 @description('Enable Data Lake Gen2 storage account.')
 param enableDataLake bool = true
 
+@description('Private endpoint subnet resource ID for private endpoint connectivity.')
+#disable-next-line no-unused-params
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for blob storage (privatelink.blob.core.windows.net).')
+#disable-next-line no-unused-params
+param blobDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for file storage (privatelink.file.core.windows.net).')
+#disable-next-line no-unused-params
+param fileDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
