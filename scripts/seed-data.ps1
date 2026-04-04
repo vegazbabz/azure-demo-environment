@@ -31,6 +31,11 @@
     Accepted values: storage, cosmosdb, sql, postgresql, mysql, redis,
                      keyvault, servicebus, eventhub, all
 
+.PARAMETER AdminUsername
+    Admin username used during ADE deployment. Must match the -AdminUsername value
+    passed to deploy.ps1 (default: 'adeadmin'). Used as the login for SQL, PostgreSQL,
+    and MySQL seeding.
+
 .PARAMETER DatabaseAdminPassword
     Admin password for Azure SQL, PostgreSQL, and MySQL seeding.
     Required for those three blocks; omit to skip them.
@@ -58,6 +63,9 @@ param(
     [ValidateSet('storage', 'cosmosdb', 'sql', 'postgresql', 'mysql', 'redis',
                  'keyvault', 'servicebus', 'eventhub', 'all')]
     [string[]]$Modules = @('all'),
+
+    [Parameter(Mandatory = $false)]
+    [string]$AdminUsername = 'adeadmin',
 
     [Parameter(Mandatory = $false)]
     [securestring]$DatabaseAdminPassword,
@@ -276,7 +284,7 @@ if ($seedAll -or $Modules -contains 'sql') {
             --resource-group $dbRg `
             --server $sqlServer `
             --name $dbName `
-            --admin-user 'sqladmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --query-text $seedSql `
             --output none 2>$null
@@ -312,7 +320,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
             --resource-group $dbRg `
             --name $pgServer `
             --database-name $pgDbName `
-            --admin-user 'pgadmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --querytext $pgSeed `
             --output none 2>$null
@@ -346,7 +354,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
             --resource-group $dbRg `
             --name $mysqlServer `
             --database-name $mysqlDbName `
-            --admin-user 'mysqladmin' `
+            --admin-user $AdminUsername `
             --admin-password $dbAdminPwd `
             --file-path (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') `
             --output none 2>$null

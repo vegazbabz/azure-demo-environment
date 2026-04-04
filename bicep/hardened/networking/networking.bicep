@@ -1059,3 +1059,5 @@ output keyVaultDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.
 output serviceBusDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.servicebus.windows.net') : ''
 output eventHubDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.eventhub.windows.net') : ''
 output redisDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.redis.cache.windows.net') : ''
+#disable-next-line no-hardcoded-env-urls
+output fileDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.file.core.windows.net') : ''

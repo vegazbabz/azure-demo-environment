@@ -35,7 +35,7 @@ param enableResourceLocks bool = true    // Hardened: on by default
 param budgetAmount int = 300
 
 @description('Budget alert email address.')
-param budgetAlertEmail string = 'ops@example.com'
+param budgetAlertEmail string = ''
 
 @description('Resource tags.')
 param tags object = {}
@@ -194,13 +194,31 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
   }
 }
 
-// Schedule links are created by deploy.ps1 after runbooks are published
+// Schedule links — connect each schedule to its runbook so triggers actually fire.
+// Conditional on runbooksBaseUrl being set (runbooks must have content before they can be scheduled).
 
-// ─── ReadOnly Resource Lock — Networking RG ────────────────────────────────────
-// Hardened: prevents accidental modification of networking resources.
-// Lock targets the governance RG (networking RG is a separate resource group —
-// locks must be applied from within that RG or via a cross-RG deployment).
-// Here we lock the current (governance) RG as a reference implementation.
+resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(automationAccount.id, stopRunbook.name, stopSchedule.name)
+  properties: {
+    runbook: { name: stopRunbook.name }
+    schedule: { name: stopSchedule.name }
+  }
+}
+
+resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(automationAccount.id, startRunbook.name, startSchedule.name)
+  properties: {
+    runbook: { name: startRunbook.name }
+    schedule: { name: startSchedule.name }
+  }
+}
+
+// ─── CanNotDelete Resource Lock — Governance RG ─────────────────────────────
+// Hardened: prevents accidental deletion of governance resources (automation,
+// policy assignments, monitoring). Uses CanNotDelete so this lock can be removed
+// during destroy without a ReadOnly deadlock on the lock API itself.
 
 resource governanceLock 'Microsoft.Authorization/locks@2020-05-01' = if (enableResourceLocks) {
   name: '${prefix}-governance-lock'
@@ -214,7 +232,9 @@ resource governanceLock 'Microsoft.Authorization/locks@2020-05-01' = if (enableR
 
 // ─── Budget Alert ─────────────────────────────────────────────────────────────
 
-module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget) {
+// Skip budget deployment entirely when no alert email is provided to avoid ARM validation failure
+// (Consumption Budgets API requires a valid email in contactEmails — an empty string is rejected).
+module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget && !empty(budgetAlertEmail)) {
   name: 'ade-budget'
   scope: subscription()
   params: {
