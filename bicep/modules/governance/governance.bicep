@@ -56,6 +56,9 @@ param computeResourceGroupName string = '${prefix}-compute-rg'
 #disable-next-line no-unused-params
 param runbooksBaseUrl string = ''
 
+@description('Allow the role assignment for the Automation Account managed identity. Requires Owner or User Access Administrator on the subscription. Set to false when deploying with Contributor-only credentials.')
+param enableAutomationRoleAssignment bool = false
+
 // ─── Automation Account ───────────────────────────────────────────────────────
 
 resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' = if (enableAutomation) {
@@ -80,7 +83,8 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 // Grant Automation Account Contributor role at subscription scope so runbooks can
 // manage VMs in any resource group. Deployed via a sub-module because this file
 // is resource-group scoped and subscription-scoped resources require a separate module.
-module automationContributorRole 'automation-role.bicep' = if (enableAutomation) {
+// Guarded by enableAutomationRoleAssignment — requires Owner or User Access Administrator.
+module automationContributorRole 'automation-role.bicep' = if (enableAutomation && enableAutomationRoleAssignment) {
   name: '${prefix}-automation-role'
   scope: subscription()
   params: {

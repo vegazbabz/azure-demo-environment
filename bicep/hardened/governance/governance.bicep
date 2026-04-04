@@ -58,6 +58,9 @@ param computeResourceGroupName string = '${prefix}-compute-rg'
 @description('Base URL for raw runbook content (e.g. https://raw.githubusercontent.com/org/repo/main). Leave empty to skip publishContentLink.')
 param runbooksBaseUrl string = ''
 
+@description('Allow the role assignment for the Automation Account managed identity. Requires Owner or User Access Administrator on the subscription. Set to false when deploying with Contributor-only credentials.')
+param enableAutomationRoleAssignment bool = false
+
 // ─── Automation Account ───────────────────────────────────────────────────────
 // Hardened: local auth disabled, no public network access, system-assigned identity.
 
@@ -84,7 +87,8 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 
 // Hardened: VM Contributor on compute RG only (least-privilege for start/stop runbooks).
 // Cross-RG scope requires a separate module deployment.
-module automationVmContributorRole 'automation-vm-role.bicep' = if (enableAutomation) {
+// Guarded by enableAutomationRoleAssignment — requires Owner or User Access Administrator.
+module automationVmContributorRole 'automation-vm-role.bicep' = if (enableAutomation && enableAutomationRoleAssignment) {
   name: 'automation-vm-contributor-role'
   scope: resourceGroup(computeResourceGroupName)
   params: {
