@@ -607,21 +607,10 @@ foreach ($moduleName in $deploymentOrder) {
                 # Always pass budgetAlertEmail — empty string overrides the Bicep default (which was 'ops@example.com').
                 $params['budgetAlertEmail'] = if ($govFeatures.budgetAlertEmail) { $govFeatures.budgetAlertEmail } else { '' }
 
-                # Probe whether the caller has permission to write role assignments.
-                # Requires Owner or User Access Administrator at subscription scope.
-                # Falls back to false (skips role assignment) — Automation Account still
-                # deploys but won't have the VM Contributor role until granted manually.
-                $callerForRoleCheck = az account show --query 'user.name' -o tsv 2>$null
-                $hasRoleAssignPerms = $false
-                if ($callerForRoleCheck) {
-                    $ownerAssign = az role assignment list --role 'Owner' --assignee $callerForRoleCheck --scope "/subscriptions/$SubscriptionId" --query '[].id' -o tsv 2>$null
-                    $uaaAssign   = az role assignment list --role 'User Access Administrator' --assignee $callerForRoleCheck --scope "/subscriptions/$SubscriptionId" --query '[].id' -o tsv 2>$null
-                    $hasRoleAssignPerms = (-not [string]::IsNullOrWhiteSpace($ownerAssign)) -or (-not [string]::IsNullOrWhiteSpace($uaaAssign))
-                }
-                $params['enableAutomationRoleAssignment'] = $hasRoleAssignPerms.ToString().ToLower()
-                if (-not $hasRoleAssignPerms) {
-                    Write-AdeLog "SP lacks Owner/User Access Administrator — Automation Account role assignment skipped. Grant 'User Access Administrator' to '$callerForRoleCheck' in Azure Portal to enable VM start/stop runbooks." -Level Warning
-                }
+                # Role assignment requires Owner/User Access Administrator.
+                # Keep disabled by default — grant 'User Access Administrator' to the SP
+                # in the Azure Portal and set enableAutomationRoleAssignment=true manually.
+                $params['enableAutomationRoleAssignment'] = 'false'
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
                 if ($govFeatures.budget -eq $true -and [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
                     Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is empty — budget was NOT deployed. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
