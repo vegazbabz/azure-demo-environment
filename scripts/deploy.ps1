@@ -233,7 +233,7 @@ $state = @{
     appServicesSubnetId     = ''
     databaseSubnetId        = ''
     containerSubnetId       = ''
-    appGatewayPublicIpId    = ''
+    appGatewayPublicIp      = ''
     privateEndpointSubnetId = ''
 
     keyVaultId              = ''
@@ -363,7 +363,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $state.mysqlSubnetId           = Get-AdeDeploymentOutput $outputs 'mysqlSubnetId'
                 $state.postgresDnsZoneId       = Get-AdeDeploymentOutput $outputs 'postgresDnsZoneId'
                 $state.mysqlDnsZoneId          = Get-AdeDeploymentOutput $outputs 'mysqlDnsZoneId'
-                $state.appGatewayPublicIpId    = Get-AdeDeploymentOutput $outputs 'appGatewayPublicIp'
+                $state.appGatewayPublicIp      = Get-AdeDeploymentOutput $outputs 'appGatewayPublicIp'
                 # DNS zone IDs for private endpoints
                 $state.blobDnsZoneId           = Get-AdeDeploymentOutput $outputs 'blobDnsZoneId'
                 $state.sqlDnsZoneId            = Get-AdeDeploymentOutput $outputs 'sqlDnsZoneId'
@@ -385,6 +385,8 @@ foreach ($moduleName in $deploymentOrder) {
                     $callerAppId = az account show --query 'user.name' -o tsv 2>$null
                     $deployerOid = az ad sp show --id $callerAppId --query id -o tsv 2>$null
                 }
+                # Some az CLI versions return the GUID wrapped in double-quotes (e.g. "abc-..."); strip them.
+                if ($deployerOid) { $deployerOid = $deployerOid.Trim().Trim('"') }
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location

@@ -338,11 +338,11 @@ function Get-AdeDeploymentOutput {
         [Parameter(Mandatory)][string]$Key
     )
 
-    if ($null -eq $Outputs) { return $null }
+    if ($null -eq $Outputs) { return '' }
     $prop = $Outputs.PSObject.Properties[$Key]
-    if ($null -eq $prop) { return $null }
+    if ($null -eq $prop) { return '' }
     $val = $prop.Value
-    if ($null -eq $val) { return $null }
+    if ($null -eq $val) { return '' }
     return $val.value
 }
 

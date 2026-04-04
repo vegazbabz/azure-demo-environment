@@ -42,6 +42,18 @@ param apimPublisherName string = 'ADE Demo'
 #disable-next-line no-unused-params
 param subnetId string = ''
 
+@description('Private endpoint subnet resource ID (hardened mode).')
+#disable-next-line no-unused-params
+param privateEndpointSubnetId string = ''
+
+@description('Private DNS zone resource ID for Service Bus (privatelink.servicebus.windows.net; hardened mode).')
+#disable-next-line no-unused-params
+param serviceBusDnsZoneId string = ''
+
+@description('Private DNS zone resource ID for Event Hub (privatelink.servicebus.windows.net; hardened mode).')
+#disable-next-line no-unused-params
+param eventHubDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 

@@ -394,7 +394,7 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
 
             # Extract keys from the $params = @{ key = val; ... } literal.
             $keys = [System.Collections.Generic.List[string]]::new()
-            $htMatch = [regex]::Match($block, '(?s)\$params\s*=\s*@\{(.+?)\}')
+            $htMatch = [regex]::Match($block, '(?s)\$params\s*=\s*@\{(.+?)\n[ \t]*\}')
             if ($htMatch.Success) {
                 [regex]::Matches($htMatch.Groups[1].Value, '(?m)^[ \t]*(\w+)\s*=') |
                     ForEach-Object { $keys.Add($_.Groups[1].Value) }
