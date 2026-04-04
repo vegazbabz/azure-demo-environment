@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Azure Demo Environment (ADE) — Release Workflow
+#
+# Triggers on version tags: v1.0.0, v1.2.3, etc.
+#
+# Steps:
+#   1. Extract the matching section from CHANGELOG.md
+#   2. Create a GitHub Release with those notes
+#
+# Tagging convention (Semantic Versioning):
+#   MAJOR — breaking changes to the deploy/destroy interface or output contract
+#   MINOR — new modules, new parameters with defaults, new features
+#   PATCH — bug fixes, test fixes, documentation, CI tweaks
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: ADE — Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.4
+
+      - name: Extract changelog for this version
+        id: changelog
+        shell: pwsh
+        run: |
+          $tag     = "${{ github.ref_name }}"          # e.g. v1.2.3
+          $version = $tag -replace '^v', ''             # e.g. 1.2.3
+
+          $content   = Get-Content CHANGELOG.md -Raw
+          # Match from "## [X.Y.Z]" to the next "## [" (or end of file)
+          $pattern   = "(?s)## \[$([regex]::Escape($version))\].*?(?=\n## \[|\z)"
+          $match     = [regex]::Match($content, $pattern)
+
+          if (-not $match.Success) {
+            Write-Error "No CHANGELOG entry found for version $version"
+            exit 1
+          }
+
+          $notes = $match.Value.Trim()
+          # Write to file to avoid multiline env-var escaping issues
+          $notes | Set-Content release-notes.txt -Encoding UTF8
+          Write-Host "Extracted release notes for $version"
+
+      - name: Create GitHub Release
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const fs   = require('fs');
+            const body = fs.readFileSync('release-notes.txt', 'utf8');
+            const tag  = context.ref.replace('refs/tags/', '');
+
+            await github.rest.repos.createRelease({
+              owner:            context.repo.owner,
+              repo:             context.repo.repo,
+              tag_name:         tag,
+              name:             `Release ${tag}`,
+              body:             body,
+              draft:            false,
+              prerelease:       tag.includes('-'),
+            });
+            core.info(`Release ${tag} created.`);
