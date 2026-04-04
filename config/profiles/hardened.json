@@ -9,7 +9,8 @@
         "logAnalyticsWorkspace": true,
         "applicationInsights": true,
         "actionGroup": true,
-        "alertRules": true
+        "alertRules": true,
+        "alertEmail": ""
       }
     },
     "networking": {
@@ -64,7 +65,8 @@
         "cosmosDb": true,
         "postgresql": true,
         "mysql": false,
-        "redis": false
+        "redis": false,
+        "sqlVm": false
       }
     },
     "appservices": {
@@ -83,7 +85,8 @@
         "containerRegistry": true,
         "kubernetesService": true,
         "containerApps": true,
-        "containerInstances": true
+        "containerInstances": true,
+        "aksAuthorizedIpRanges": []
       }
     },
     "integration": {

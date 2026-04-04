@@ -35,6 +35,9 @@ param blobDnsZoneId string = ''
 @description('Public IP address ranges (CIDR notation) to allow through Storage network ACLs. Use this to permit deployer workstation or CI runner IPs. RFC1918 private ranges are not supported here — VNet access uses private endpoints. Example: ["203.0.113.0/24"]')
 param allowedCidrRanges array = []
 
+@description('Private DNS zone resource ID for Azure Files (privatelink.file.core.windows.net). Required for the file share private endpoint DNS resolution.')
+param fileDnsZoneId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -313,6 +316,41 @@ resource dataLakeBlobPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZo
       {
         name: 'privatelink-blob-core-windows-net'
         properties: { privateDnsZoneId: blobDnsZoneId }
+      }
+    ]
+  }
+}
+
+// ─── File Share Private Endpoint ──────────────────────────────────────────────
+// Required: the storage account has publicNetworkAccess: 'Disabled'.
+// Without a file PE, SMB/NFS connections to the file share time out.
+
+resource storageFilePe 'Microsoft.Network/privateEndpoints@2023-09-01' = if (!empty(privateEndpointSubnetId)) {
+  name: '${prefix}-storage-file-pe'
+  location: location
+  tags: tags
+  properties: {
+    subnet: { id: privateEndpointSubnetId }
+    privateLinkServiceConnections: [
+      {
+        name: '${prefix}-storage-file-plsc'
+        properties: {
+          privateLinkServiceId: storageAccount.id
+          groupIds: ['file']
+        }
+      }
+    ]
+  }
+}
+
+resource storageFilePeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-09-01' = if (!empty(privateEndpointSubnetId) && !empty(fileDnsZoneId)) {
+  parent: storageFilePe
+  name: 'file-dns-group'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-file-core-windows-net'
+        properties: { privateDnsZoneId: fileDnsZoneId }
       }
     ]
   }
