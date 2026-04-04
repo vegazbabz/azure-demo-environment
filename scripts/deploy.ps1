@@ -391,15 +391,18 @@ foreach ($moduleName in $deploymentOrder) {
                     logAnalyticsId    = $state.logAnalyticsId
                     enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
                     enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
-                    privateEndpointSubnetId = $state.privateEndpointSubnetId
-                    keyVaultDnsZoneId       = $state.keyVaultDnsZoneId
                 }
                 if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
-                # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
-                # (e.g. deployer workstation or CI runner). Passed as a JSON array.
-                $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
-                if ($kvCidrs -and $kvCidrs.Count -gt 0) {
-                    $params['allowedCidrRanges'] = $kvCidrs
+                # privateEndpointSubnetId, keyVaultDnsZoneId, and allowedCidrRanges are only
+                # declared in the hardened security module — do not pass them to the default one.
+                if ($Mode -eq 'hardened') {
+                    $params['privateEndpointSubnetId'] = $state.privateEndpointSubnetId
+                    $params['keyVaultDnsZoneId']       = $state.keyVaultDnsZoneId
+                    # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
+                    $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
+                    if ($kvCidrs -and $kvCidrs.Count -gt 0) {
+                        $params['allowedCidrRanges'] = $kvCidrs
+                    }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
                 $state.keyVaultId              = Get-AdeDeploymentOutput $outputs 'keyVaultId'
