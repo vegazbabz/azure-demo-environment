@@ -31,7 +31,7 @@ param enableResourceLocks bool = false
 param budgetAmount int = 300
 
 @description('Budget alert email address.')
-param budgetAlertEmail string = 'ops@example.com'
+param budgetAlertEmail string = ''
 
 @description('Resource tags.')
 param tags object = {}
@@ -47,6 +47,14 @@ param autoShutdownTimezone string = 'UTC'
 
 @description('Enable daily auto-start at 08:00 UTC on weekdays.')
 param autoStartEnabled bool = false
+
+@description('Compute resource group name (hardened mode — used for VM Contributor role scope).')
+#disable-next-line no-unused-params
+param computeResourceGroupName string = '${prefix}-compute-rg'
+
+@description('Base URL for runbook script content (hardened mode).')
+#disable-next-line no-unused-params
+param runbooksBaseUrl string = ''
 
 // ─── Automation Account ───────────────────────────────────────────────────────
 
