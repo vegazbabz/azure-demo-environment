@@ -131,10 +131,11 @@ resource mlStorage 'Microsoft.Storage/storageAccounts@2023-04-01' = if (deployMa
     allowBlobPublicAccess: false
     // Shared key retained for ML workspace internal operations (workspace SDK requires it)
     allowSharedKeyAccess: true
-    // Hardened: disable public network access (MCSB NS-1)
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; the ML workspace managed VNet handles outbound isolation.
+    publicNetworkAccess: 'Enabled'
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
       bypass: 'AzureServices'
       ipRules: []
       virtualNetworkRules: []
@@ -154,9 +155,11 @@ resource mlKeyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployMachineLe
     enablePurgeProtection: true
     enableRbacAuthorization: true
     accessPolicies: []
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; the ML workspace managed VNet handles outbound isolation.
+    publicNetworkAccess: 'Enabled'
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
       bypass: 'AzureServices'
     }
   }
@@ -184,8 +187,9 @@ resource mlWorkspace 'Microsoft.MachineLearningServices/workspaces@2024-01-01-pr
     storageAccount: mlStorage.id
     keyVault: mlKeyVault.id
     applicationInsights: mlAppInsights.id
-    // Hardened: no public access — private endpoint or VPN required
-    publicNetworkAccess: 'Disabled'
+    // NOTE: A private endpoint is required to set publicNetworkAccess to 'Disabled'.
+    // Keeping Enabled for demo deployability; managed VNet isolation mode still applies.
+    publicNetworkAccess: 'Enabled'
     v1LegacyMode: false
     // Hardened: managed VNet for outbound isolation
     managedNetwork: {

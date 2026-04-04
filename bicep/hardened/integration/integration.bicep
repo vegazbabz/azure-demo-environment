@@ -1,5 +1,5 @@
 // ─── hardened/integration/integration.bicep ──────────────────────────────────
-// Deploys: Service Bus (Standard), Event Hub (Standard), Event Grid System Topic,
+// Deploys: Service Bus (Premium), Event Hub (Standard), Event Grid System Topic,
 //          SignalR Service (Free), API Management (optional).
 //
 // HARDENED MODE: TLS 1.2 on all messaging services. Local auth disabled

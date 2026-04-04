@@ -9,7 +9,8 @@
         "logAnalyticsWorkspace": true,
         "applicationInsights": true,
         "actionGroup": true,
-        "alertRules": false
+        "alertRules": false,
+        "alertEmail": ""
       }
     },
     "networking": {
@@ -84,7 +85,8 @@
         "containerRegistry": true,
         "kubernetesService": true,
         "containerApps": true,
-        "containerInstances": true
+        "containerInstances": true,
+        "aksAuthorizedIpRanges": []
       }
     },
     "integration": {

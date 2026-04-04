@@ -256,6 +256,7 @@ $state = @{
     eventHubId              = ''
     dataFactoryId           = ''
     dcSubnetId              = ''
+    storageAccountName      = ''
 
     # Private DNS zone IDs (populated from networking outputs when enablePrivateDnsZones = true)
     blobDnsZoneId           = ''
@@ -265,6 +266,7 @@ $state = @{
     serviceBusDnsZoneId     = ''
     eventHubDnsZoneId       = ''
     redisDnsZoneId          = ''
+    fileDnsZoneId           = ''
 }
 
 # ─── Module deployment ────────────────────────────────────────────────────────
@@ -315,9 +317,15 @@ foreach ($moduleName in $deploymentOrder) {
             # ── MONITORING ──────────────────────────────────────────────────
             'monitoring' {
                 $bicep = Join-Path $bicepRoot 'monitoring\monitoring.bicep'
+                $monFeatures = $deployProfile.modules.monitoring.features
                 $params = @{
                     prefix   = $Prefix
                     location = $Location
+                }
+                # Pass alertEmailAddress only when explicitly configured in the profile.
+                # An empty string causes ARM to reject the Action Group email receiver.
+                if (-not [string]::IsNullOrEmpty($monFeatures.alertEmail)) {
+                    $params['alertEmailAddress'] = $monFeatures.alertEmail
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'monitoring' -BicepFile $bicep -Parameters $params
                 $state.logAnalyticsId       = Get-AdeDeploymentOutput $outputs 'logAnalyticsId'
@@ -364,6 +372,7 @@ foreach ($moduleName in $deploymentOrder) {
                 $state.serviceBusDnsZoneId     = Get-AdeDeploymentOutput $outputs 'serviceBusDnsZoneId'
                 $state.eventHubDnsZoneId       = Get-AdeDeploymentOutput $outputs 'eventHubDnsZoneId'
                 $state.redisDnsZoneId          = Get-AdeDeploymentOutput $outputs 'redisDnsZoneId'
+                $state.fileDnsZoneId           = Get-AdeDeploymentOutput $outputs 'fileDnsZoneId'
                 $state.dcSubnetId              = Get-AdeDeploymentOutput $outputs 'dcSubnetId'
             }
 
@@ -436,6 +445,7 @@ foreach ($moduleName in $deploymentOrder) {
                     enableSoftDelete  = ($deployProfile.modules.storage.features.enableSoftDelete -eq $true).ToString().ToLower()
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     blobDnsZoneId           = $state.blobDnsZoneId
+                    fileDnsZoneId           = $state.fileDnsZoneId
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
@@ -462,8 +472,6 @@ foreach ($moduleName in $deploymentOrder) {
                     pgAdminLogin      = $state.adminUsername
                     pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     deploySql         = ($dbFeatures.sqlDatabase -eq $true).ToString().ToLower()
-                    deploySqlVm       = ($dbFeatures.sqlVm -eq $true).ToString().ToLower()
-                    sqlVmSubnetId     = if ($state.computeSubnetId) { $state.computeSubnetId } else { '' }
                     deployCosmos      = ($dbFeatures.cosmosDb -eq $true).ToString().ToLower()
                     deployPostgresql  = ($dbFeatures.postgresql -eq $true).ToString().ToLower()
                     postgresDnsZoneId = $state.postgresDnsZoneId
@@ -514,6 +522,8 @@ foreach ($moduleName in $deploymentOrder) {
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
+                    $aksIpRanges = if ($null -ne $ctFeatures) { $ctFeatures.aksAuthorizedIpRanges } else { $null }
+                    if ($null -ne $aksIpRanges) { $params['aksAuthorizedIpRanges'] = $aksIpRanges }
                 }
                 $null = Deploy-AdeModule -ModuleName 'containers' -BicepFile $bicep -Parameters $params
             }
@@ -525,7 +535,6 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
-                    subnetId            = $state.integrationSubnetId
                     deployServiceBus    = ($intFeatures.serviceBus -eq $true).ToString().ToLower()
                     deployEventHub      = ($intFeatures.eventHub -eq $true).ToString().ToLower()
                     deployEventGrid     = ($intFeatures.eventGrid -eq $true).ToString().ToLower()
@@ -550,7 +559,6 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
-                    subnetId                = $state.aiSubnetId
                     deployAiServices        = ($aiFeatures.aiServices -eq $true).ToString().ToLower()
                     deployOpenAi            = ($aiFeatures.openAi -eq $true).ToString().ToLower()
                     deployCognitiveSearch   = ($aiFeatures.cognitiveSearch -eq $true).ToString().ToLower()
@@ -566,7 +574,6 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
-                    subnetId            = $state.dataSubnetId
                     deployDataFactory   = ($dataFeatures.dataFactory -eq $true).ToString().ToLower()
                     deploySynapse       = ($dataFeatures.synapse -eq $true).ToString().ToLower()
                     deployDatabricks    = ($dataFeatures.databricks -eq $true).ToString().ToLower()
@@ -596,10 +603,12 @@ foreach ($moduleName in $deploymentOrder) {
                     computeResourceGroupName = "$Prefix-compute-rg"
                     runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
                 }
-                if (-not [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
-                    $params['budgetAlertEmail'] = $govFeatures.budgetAlertEmail
-                }
+                # Always pass budgetAlertEmail — empty string overrides the Bicep default (which was 'ops@example.com').
+                $params['budgetAlertEmail'] = if ($govFeatures.budgetAlertEmail) { $govFeatures.budgetAlertEmail } else { '' }
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
+                if ($govFeatures.budget -eq $true -and [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
+                    Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is empty — budget was NOT deployed. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                }
                 $state.automationAccountId   = Get-AdeDeploymentOutput $outputs 'automationAccountId'
                 $state.automationAccountName = Get-AdeDeploymentOutput $outputs 'automationAccountName'
             }
