@@ -39,6 +39,9 @@ param keyVaultDnsZoneId string = ''
 @description('Object ID of the deployer (user or service principal). When set, grants Key Vault Secrets Officer role so seed-data.ps1 can write secrets post-deployment.')
 param deployerPrincipalId string = ''
 
+@description('Public IP address ranges (CIDR notation) to allow through Key Vault network ACLs. Use this to permit deployer workstation or CI runner IPs. RFC1918 private ranges are not supported here — VNet access uses private endpoints. Example: ["203.0.113.0/24"]')
+param allowedCidrRanges array = []
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -67,11 +70,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
     enabledForTemplateDeployment: true
     enabledForDiskEncryption: true
     // Hardened: no public network access — private endpoints only (MCSB NS-2)
-    publicNetworkAccess: 'Disabled'
+    // Exception: allowedCidrRanges can be set to permit deployer/CI runner public IPs.
+    publicNetworkAccess: empty(allowedCidrRanges) ? 'Disabled' : 'Enabled'
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
-      ipRules: []
+      // Inject deployer/CI public IPs so they can reach KV without VPN.
+      // RFC1918 private ranges are NOT supported in ipRules; use private endpoints for VNet access.
+      ipRules: [for cidr in allowedCidrRanges: { value: cidr }]
       virtualNetworkRules: []
     }
   }

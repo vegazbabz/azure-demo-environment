@@ -5,7 +5,7 @@
   "modules": {
     "monitoring": {
       "enabled": true,
-      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false }
+      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false, "alertEmail": "" }
     },
     "networking": {
       "enabled": true,
@@ -13,7 +13,7 @@
     },
     "security": {
       "enabled": true,
-      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": false, "sentinel": false }
+      "features": { "keyVault": true, "managedIdentity": true, "defenderForCloud": false, "sentinel": false, "allowedCidrRanges": [] }
     },
     "compute": {
       "enabled": true,
@@ -28,7 +28,8 @@
     "data": { "enabled": false },
     "governance": {
       "enabled": true,
-      "features": { "automationAccount": true, "budget": true, "budgetAmount": 150, "resourceLocks": false, "policyAssignments": false }
+      "features": { "automationAccount": true, "budget": true, "budgetAmount": 150, "resourceLocks": false, "policyAssignments": false,
+        "budgetAlertEmail": "" }
     }
   },
   "seedDummyData": false

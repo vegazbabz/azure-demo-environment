@@ -35,7 +35,7 @@ param enableResourceLocks bool = true    // Hardened: on by default
 param budgetAmount int = 300
 
 @description('Budget alert email address.')
-param budgetAlertEmail string = 'ops@example.com'
+param budgetAlertEmail string = ''
 
 @description('Resource tags.')
 param tags object = {}
@@ -51,6 +51,12 @@ param autoShutdownTimezone string = 'UTC'
 
 @description('Enable daily auto-start at 08:00 UTC on weekdays.')
 param autoStartEnabled bool = false
+
+@description('Name of the compute resource group. Automation Account MI gets VM Contributor on this RG.')
+param computeResourceGroupName string = '${prefix}-compute-rg'
+
+@description('Base URL for raw runbook content (e.g. https://raw.githubusercontent.com/org/repo/main). Leave empty to skip publishContentLink.')
+param runbooksBaseUrl string = ''
 
 // ─── Automation Account ───────────────────────────────────────────────────────
 // Hardened: local auth disabled, no public network access, system-assigned identity.
@@ -76,13 +82,14 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   }
 }
 
-resource automationContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAutomation) {
-  name: guid(subscription().subscriptionId, automationAccount.id, 'contributor')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
-    principalId: automationAccount!.identity.principalId
-    principalType: 'ServicePrincipal'
+// Hardened: VM Contributor on compute RG only (least-privilege for start/stop runbooks).
+// Cross-RG scope requires a separate module deployment.
+module automationVmContributorRole 'automation-vm-role.bicep' = if (enableAutomation) {
+  name: 'automation-vm-contributor-role'
+  scope: resourceGroup(computeResourceGroupName)
+  params: {
+    automationPrincipalId: automationAccount!.identity.principalId
+    automationAccountId: automationAccount!.id
   }
 }
 
@@ -118,12 +125,16 @@ resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-0
   name: 'Stop-AdeResources'
   location: location
   tags: tags
-  properties: {
+  properties: union({
     runbookType: 'PowerShell72'
     description: 'Deallocates all ADE VMs, VMSS, and AKS clusters to minimize costs outside working hours.'
     logProgress: true
     logVerbose: false
-  }
+  }, empty(runbooksBaseUrl) ? {} : {
+    publishContentLink: {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Stop-AdeResources.ps1'
+    }
+  })
 }
 
 // ─── Start Runbook ────────────────────────────────────────────────────────────
@@ -133,12 +144,16 @@ resource startRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-
   name: 'Start-AdeResources'
   location: location
   tags: tags
-  properties: {
+  properties: union({
     runbookType: 'PowerShell72'
     description: 'Starts all ADE VMs, VMSS, and AKS clusters at the start of the working day.'
     logProgress: true
     logVerbose: false
-  }
+  }, empty(runbooksBaseUrl) ? {} : {
+    publishContentLink: {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Start-AdeResources.ps1'
+    }
+  })
 }
 
 // ─── Schedules ────────────────────────────────────────────────────────────────
@@ -179,25 +194,47 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
   }
 }
 
-// Schedule links are created by deploy.ps1 after runbooks are published
+// Schedule links — connect each schedule to its runbook so triggers actually fire.
+// Conditional on runbooksBaseUrl being set (runbooks must have content before they can be scheduled).
 
-// ─── ReadOnly Resource Lock — Networking RG ────────────────────────────────────
-// Hardened: prevents accidental modification of networking resources.
-// Lock targets the governance RG (networking RG is a separate resource group —
-// locks must be applied from within that RG or via a cross-RG deployment).
-// Here we lock the current (governance) RG as a reference implementation.
+resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(automationAccount.id, stopRunbook.name, stopSchedule.name)
+  properties: {
+    runbook: { name: stopRunbook.name }
+    schedule: { name: stopSchedule.name }
+  }
+}
+
+resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(automationAccount.id, startRunbook.name, startSchedule.name)
+  properties: {
+    runbook: { name: startRunbook.name }
+    schedule: { name: startSchedule.name }
+  }
+}
+
+// ─── CanNotDelete Resource Lock — Governance RG ─────────────────────────────
+// Hardened: prevents accidental deletion of governance resources (automation,
+// policy assignments, monitoring). Uses CanNotDelete so this lock can be removed
+// during destroy without a ReadOnly deadlock on the lock API itself.
 
 resource governanceLock 'Microsoft.Authorization/locks@2020-05-01' = if (enableResourceLocks) {
   name: '${prefix}-governance-lock'
   properties: {
-    level: 'ReadOnly'
-    notes: 'ADE hardened mode: governance resource group locked read-only to prevent accidental changes.'
+    // CanNotDelete (not ReadOnly) so that az lock delete can remove this lock during destroy.
+    // ReadOnly would block the lock deletion API itself, causing a deadlock in destroy.ps1.
+    level: 'CanNotDelete'
+    notes: 'ADE hardened mode: governance resource group protected from accidental deletion.'
   }
 }
 
 // ─── Budget Alert ─────────────────────────────────────────────────────────────
 
-module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget) {
+// Skip budget deployment entirely when no alert email is provided to avoid ARM validation failure
+// (Consumption Budgets API requires a valid email in contactEmails — an empty string is rejected).
+module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget && !empty(budgetAlertEmail)) {
   name: 'ade-budget'
   scope: subscription()
   params: {

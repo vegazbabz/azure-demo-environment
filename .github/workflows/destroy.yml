@@ -3,7 +3,8 @@
 #
 # DANGER: Permanently deletes all ADE resource groups for the given prefix.
 # Manual trigger ONLY — never runs on push.
-# Protected by the 'demo' environment (require reviewers recommended).
+# Protected by the 'demo' environment (require reviewers MUST be configured
+# in Settings → Environments → demo → Required reviewers).
 #
 # Required secrets:
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
@@ -33,6 +34,12 @@ on:
           - 'false'
           - 'true'
 
+# Shares the same concurrency group as the deploy workflow so a destroy
+# waits for any in-progress deploy of the same prefix (and vice versa).
+concurrency:
+  group: ade-deploy-${{ github.event.inputs.prefix }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read
@@ -44,10 +51,10 @@ jobs:
     environment: demo        # <-- add required reviewers here for extra safety
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2.3.0
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2.3.0
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
@@ -58,9 +65,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq powershell
 
-      - name: List targeted resource groups (dry run)
+      - name: Validate prefix input
+        env:
+          ADE_PREFIX: ${{ github.event.inputs.prefix }}
         run: |
-          PREFIX="${{ github.event.inputs.prefix }}"
+          if ! [[ "$ADE_PREFIX" =~ ^[a-z0-9]{2,8}$ ]]; then
+            echo "::error::prefix must be 2-8 lowercase alphanumeric characters. Got: '$ADE_PREFIX'"
+            exit 1
+          fi
+          echo "✓ prefix='$ADE_PREFIX' — format OK"
+
+      - name: List targeted resource groups (dry run)
+        env:
+          ADE_PREFIX: ${{ github.event.inputs.prefix }}
+        run: |
+          PREFIX="$ADE_PREFIX"
           echo "### Resource groups to be deleted:" >> "$GITHUB_STEP_SUMMARY"
           az group list \
             --query "[?tags.managedBy=='ade' && starts_with(name,'${PREFIX}-')].name" \
@@ -71,17 +90,23 @@ jobs:
 
       - name: Destroy ADE environment
         shell: pwsh
+        # Pass all user-provided inputs through env vars — never interpolate
+        # string inputs directly into the run: block (injection hardening).
+        env:
+          ADE_PREFIX:       ${{ github.event.inputs.prefix }}
+          ADE_MODULES:      ${{ github.event.inputs.modules }}
+          ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           $modulesArg = @()
-          if ('${{ github.event.inputs.modules }}') {
-            $modulesArg = '${{ github.event.inputs.modules }}' -split ',' | ForEach-Object { $_.Trim() }
+          if ($env:ADE_MODULES) {
+            $modulesArg = $env:ADE_MODULES -split ',' | ForEach-Object { $_.Trim() }
           }
 
-          $noWait = '${{ github.event.inputs.no_wait }}' -eq 'true'
+          $noWait = '${{ github.event.inputs.no_wait }}' -eq 'true'  # choice input — safe
 
           $splat = @{
-            Prefix         = '${{ github.event.inputs.prefix }}'
-            SubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            Prefix         = $env:ADE_PREFIX
+            SubscriptionId = $env:ADE_SUBSCRIPTION
             Force          = $true
             NoWait         = $noWait
           }
@@ -91,15 +116,19 @@ jobs:
 
       - name: Write job summary
         if: always()
+        env:
+          ADE_PREFIX:   ${{ github.event.inputs.prefix }}
+          ADE_MODULES:  ${{ github.event.inputs.modules || 'all' }}
+          ADE_NO_WAIT:  ${{ github.event.inputs.no_wait }}
         run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-
-          ## Destroy Result: ${{ job.status }}
-
-          | Field   | Value |
-          |---------|-------|
-          | Prefix  | \`${{ github.event.inputs.prefix }}\` |
-          | Modules | ${{ github.event.inputs.modules || 'all' }} |
-          | No-wait | ${{ github.event.inputs.no_wait }} |
-          | Run     | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
-          EOF
+          {
+            echo ""
+            echo "## Destroy Result: ${{ job.status }}"
+            echo ""
+            echo "| Field   | Value |"
+            echo "|---------|-------|"
+            echo "| Prefix  | \`${ADE_PREFIX}\` |"
+            echo "| Modules | ${ADE_MODULES} |"
+            echo "| No-wait | ${ADE_NO_WAIT} |"
+            echo "| Run     | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+          } >> "$GITHUB_STEP_SUMMARY"
