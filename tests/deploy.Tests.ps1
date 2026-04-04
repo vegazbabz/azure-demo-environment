@@ -413,30 +413,30 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
         'databases','appservices','containers','integration','ai','data','governance'
     )
 
-    foreach ($mod in $knownModules) {
-
-        It "Default '$mod' module: every unconditional param key exists in bicep/modules/$mod/$mod.bicep" {
-
-            $bicepPath = Join-Path (Split-Path $PSScriptRoot -Parent) "bicep\modules\$mod\$mod.bicep"
-            if (-not (Test-Path $bicepPath)) {
-                Set-ItResult -Skipped -Because "bicep/modules/$mod/$mod.bicep not present"
-                return
-            }
-
-            $bicepParams  = script:Get-BicepParamNames -BicepPath $bicepPath
-            $passedParams = script:Get-DeployParamKeys -ModuleName $mod
-
-            if ($passedParams.Count -eq 0) {
-                Set-ItResult -Skipped -Because "could not locate switch block for '$mod' in deploy.ps1"
-                return
-            }
-
-            $unrecognised = $passedParams | Where-Object { $_ -notin $bicepParams }
-            $unrecognised | Should -BeNullOrEmpty -Because (
-                "deploy.ps1 passes '$($unrecognised -join `"', '`")' to the default '$mod' module " +
-                "but that param is not declared in bicep/modules/$mod/$mod.bicep. " +
-                "Wrap it in 'if (`$Mode -eq ''hardened'') { }' or add it to the Bicep file."
-            )
+    # Use -ForEach so Pester 5 binds $mod correctly at test-execution time.
+    # A plain foreach loop does not capture the loop variable in It scriptblocks.
+    It "Default '<mod>' module: every unconditional param key exists in bicep/modules/<mod>/<mod>.bicep" -ForEach (
+        $knownModules | ForEach-Object { @{ mod = $_ } }
+    ) {
+        $bicepPath = Join-Path (Split-Path $PSScriptRoot -Parent) "bicep\modules\$mod\$mod.bicep"
+        if (-not (Test-Path $bicepPath)) {
+            Set-ItResult -Skipped -Because "bicep/modules/$mod/$mod.bicep not present"
+            return
         }
+
+        $bicepParams  = script:Get-BicepParamNames -BicepPath $bicepPath
+        $passedParams = script:Get-DeployParamKeys -ModuleName $mod
+
+        if ($passedParams.Count -eq 0) {
+            Set-ItResult -Skipped -Because "could not locate switch block for '$mod' in deploy.ps1"
+            return
+        }
+
+        $unrecognised = $passedParams | Where-Object { $_ -notin $bicepParams }
+        $unrecognised | Should -BeNullOrEmpty -Because (
+            "deploy.ps1 passes '$($unrecognised -join `"', '`")' to the default '$mod' module " +
+            "but that param is not declared in bicep/modules/$mod/$mod.bicep. " +
+            "Wrap it in 'if (`$Mode -eq ''hardened'') { }' or add it to the Bicep file."
+        )
     }
 }
