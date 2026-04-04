@@ -114,7 +114,7 @@ jobs:
             $sep = [System.IO.Path]::DirectorySeparatorChar
             $rel = $file.Replace($PWD.Path + $sep, '')
             Write-Host "→ Analysing: $rel"
-            $results = Invoke-ScriptAnalyzer -Path $file -Severity Error,Warning -Settings (Join-Path $PWD 'PSScriptAnalyzerSettings.psd1')
+            $results = Invoke-ScriptAnalyzer -Path $file -Severity Error,Warning -Settings (Join-Path $PWD '.config' 'PSScriptAnalyzerSettings.psd1')
             foreach ($r in $results) {
               $msg = "  [$($r.Severity)] $rel`:$($r.Line) — $($r.RuleName): $($r.Message)"
               if ($r.Severity -eq 'Error') {
