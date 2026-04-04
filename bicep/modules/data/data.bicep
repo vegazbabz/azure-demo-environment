@@ -26,6 +26,10 @@ param deployDatabricks bool = false
 @description('Deploy Microsoft Purview. Off by default (~$50+/month).')
 param deployPurview bool = false
 
+@description('Storage account name from the storage module output, used as the linked service for Data Factory.')
+#disable-next-line no-unused-params
+param storageAccountName string = ''
+
 @description('Data subnet resource ID for future VNet-integration of data services.')
 #disable-next-line no-unused-params
 param subnetId string = ''
