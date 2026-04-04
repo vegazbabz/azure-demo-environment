@@ -736,7 +736,8 @@ azure-demo-environment/
 │       ├── lint.yml              Lint pipeline (Bicep + PS + JSON + Pester)
 │       ├── deploy.yml            Deploy pipeline (manual trigger)
 │       └── destroy.yml           Destroy pipeline (manual trigger)
-├── PSScriptAnalyzerSettings.psd1 PSScriptAnalyzer rule configuration
+├── .config/
+│   └── PSScriptAnalyzerSettings.psd1  PSScriptAnalyzer rule configuration
 └── README.md
 ```
 
