@@ -26,7 +26,7 @@ Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser
 3. **Run lint and tests locally** before opening a PR:
    ```powershell
    # PowerShell lint
-   Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error,Warning -Settings .\PSScriptAnalyzerSettings.psd1
+   Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error,Warning -Settings .\.config\PSScriptAnalyzerSettings.psd1
 
    # Pester tests
    ./tests/Invoke-PesterSuite.ps1
@@ -50,7 +50,7 @@ Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser
 | Area | Convention |
 |------|-----------|
 | Bicep | `camelCase` param/var names; section headers with `// ─── ` dividers |
-| PowerShell | Follow the existing `PSScriptAnalyzerSettings.psd1` rules; `PascalCase` function names; `Verb-Noun` convention |
+| PowerShell | Follow the existing `.config/PSScriptAnalyzerSettings.psd1` rules; `PascalCase` function names; `Verb-Noun` convention |
 | JSON profiles | All module keys present; boolean values, never string `"true"` |
 | Commit messages | `type: short summary` — e.g. `fix: correct AKS API server param` |
 
