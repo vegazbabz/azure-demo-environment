@@ -115,6 +115,7 @@ function Get-AdeResource {
 
 # Opens a TcpClient to a Redis host. Extracted so unit tests can mock it.
 function New-RedisTcpClient {
+    [CmdletBinding(SupportsShouldProcess)]
     param([string]$Host, [int]$Port)
     return [System.Net.Sockets.TcpClient]::new($Host, $Port)
 }
