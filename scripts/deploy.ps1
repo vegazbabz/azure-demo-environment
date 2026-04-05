@@ -199,6 +199,19 @@ foreach ($mod in $EnableModules) {
 
 Test-AdeProfile -Profile $deployProfile
 
+# ─── Permission preflight ────────────────────────────────────────────────────
+# Check UAA/Owner up front when the Automation Account role assignment will run.
+# Fails early so the caller gets a clear error before any resources are created.
+$adeCanAssignRoles = $false
+$govModPre       = $deployProfile.modules.PSObject.Properties['governance']
+$automationWanted = $null -ne $govModPre -and
+                   $govModPre.Value.enabled -eq $true -and
+                   $govModPre.Value.features.automationAccount -eq $true
+if ($automationWanted) {
+    Test-AdePermissions -SubscriptionId $SubscriptionId -StopOnError
+    $adeCanAssignRoles = $true
+}
+
 # ─── Admin password ───────────────────────────────────────────────────────────
 if (-not $AdminPassword) {
     $AdminPassword = Read-Host -AsSecureString "Enter VM admin password (min 12 chars, upper+lower+digit+symbol)"
@@ -607,9 +620,7 @@ foreach ($moduleName in $deploymentOrder) {
                 # Always pass budgetAlertEmail — empty string overrides the Bicep default (which was 'ops@example.com').
                 $params['budgetAlertEmail'] = if ($govFeatures.budgetAlertEmail) { $govFeatures.budgetAlertEmail } else { '' }
 
-                # ade-github-actions SP has both Contributor + User Access Administrator
-                # at subscription scope — role assignment is safe to enable.
-                $params['enableAutomationRoleAssignment'] = 'true'
+                $params['enableAutomationRoleAssignment'] = ($adeCanAssignRoles).ToString().ToLower()
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
                 if ($govFeatures.budget -eq $true -and [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
                     Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is empty — budget was NOT deployed. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning

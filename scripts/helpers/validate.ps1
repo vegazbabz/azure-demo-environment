@@ -209,4 +209,53 @@ function Confirm-AdeDeployment {
     }
 }
 
+function Test-AdePermissions {
+    <#
+    .SYNOPSIS
+        Checks the caller has 'User Access Administrator' (or 'Owner') at subscription scope.
+        Required when the Automation Account managed-identity role assignment will be deployed.
+        Throws when -StopOnError is set and the permission is missing.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [switch]$StopOnError
+    )
+
+    Write-AdeLog "Checking role-assignment permissions on subscription '$SubscriptionId'" -Level Info
+
+    # Resolve caller object ID — works for interactive users and OIDC service principals.
+    $callerId = az ad signed-in-user show --query id -o tsv 2>$null
+    if (-not $callerId) {
+        $appId    = az account show --query 'user.name' -o tsv 2>$null
+        $callerId = az ad sp show --id $appId --query id -o tsv 2>$null
+    }
+    if ($callerId) { $callerId = $callerId.Trim().Trim('"') }
+
+    if (-not $callerId) {
+        Write-AdeLog "Could not resolve caller object ID — skipping UAA check." -Level Warning
+        return $false
+    }
+
+    $assignments = az role assignment list `
+        --assignee $callerId `
+        --subscription $SubscriptionId `
+        --include-inherited `
+        --query "[?roleDefinitionName == 'Owner' || roleDefinitionName == 'User Access Administrator'].roleDefinitionName" `
+        -o tsv 2>$null
+
+    if (-not $assignments) {
+        $grantCmd = "az role assignment create --assignee $callerId --role 'User Access Administrator' --scope /subscriptions/$SubscriptionId"
+        $message  = "Caller '$callerId' lacks 'Owner' or 'User Access Administrator' at subscription '$SubscriptionId'. " +
+                    "This role is required to create the Automation Account managed-identity role assignment. " +
+                    "Grant it with: $grantCmd"
+        if ($StopOnError) { throw $message }
+        Write-AdeLog $message -Level Error
+        return $false
+    }
+
+    $grantedRole = ($assignments -split "`n")[0].Trim()
+    Write-AdeLog "Permission confirmed: '$grantedRole' on '$SubscriptionId' ✓" -Level Success
+    return $true
+}
+
 Write-AdeLog "validate.ps1 loaded" -Level Debug
