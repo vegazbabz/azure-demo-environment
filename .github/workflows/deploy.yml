@@ -56,6 +56,11 @@ on:
         required: false
         default: ''
         type: string
+      budget_alert_email:
+        description: 'Email address for budget cost alerts (required if governance.budget is enabled)'
+        required: false
+        default: ''
+        type: string
       seed_data:
         description: 'Seed dummy data after deployment'
         required: false
@@ -251,13 +256,14 @@ jobs:
         # Pass all variable inputs through env — never interpolate user-controlled
         # values directly into the run: block (GitHub Actions injection hardening).
         env:
-          ADMIN_PASSWORD:   ${{ secrets.ADE_ADMIN_PASSWORD }}
-          ADE_PROFILE:      ${{ github.event.inputs.profile }}
-          ADE_MODE:         ${{ github.event.inputs.mode || 'default' }}
-          ADE_LOCATION:     ${{ env.INPUT_LOCATION }}
-          ADE_PREFIX:       ${{ env.INPUT_PREFIX }}
-          ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ADE_SKIP_MODULES: ${{ github.event.inputs.skip_modules }}
+          ADMIN_PASSWORD:        ${{ secrets.ADE_ADMIN_PASSWORD }}
+          ADE_PROFILE:           ${{ github.event.inputs.profile }}
+          ADE_MODE:              ${{ github.event.inputs.mode || 'default' }}
+          ADE_LOCATION:          ${{ env.INPUT_LOCATION }}
+          ADE_PREFIX:            ${{ env.INPUT_PREFIX }}
+          ADE_SUBSCRIPTION:      ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_SKIP_MODULES:      ${{ github.event.inputs.skip_modules }}
+          ADE_BUDGET_ALERT_EMAIL: ${{ github.event.inputs.budget_alert_email }}
         run: |
           $skipModules = @()
           if ($env:ADE_SKIP_MODULES) {
@@ -265,13 +271,14 @@ jobs:
           }
 
           ./scripts/deploy.ps1 `
-            -Profile        $env:ADE_PROFILE `
-            -Mode           $env:ADE_MODE `
-            -Location       $env:ADE_LOCATION `
-            -Prefix         $env:ADE_PREFIX `
-            -SubscriptionId $env:ADE_SUBSCRIPTION `
-            -AdminPassword (ConvertTo-SecureString $env:ADMIN_PASSWORD -AsPlainText -Force) `
-            -SkipModules    $skipModules `
+            -Profile          $env:ADE_PROFILE `
+            -Mode             $env:ADE_MODE `
+            -Location         $env:ADE_LOCATION `
+            -Prefix           $env:ADE_PREFIX `
+            -SubscriptionId   $env:ADE_SUBSCRIPTION `
+            -AdminPassword   (ConvertTo-SecureString $env:ADMIN_PASSWORD -AsPlainText -Force) `
+            -SkipModules      $skipModules `
+            -BudgetAlertEmail $env:ADE_BUDGET_ALERT_EMAIL `
             -Force
 
       - name: Seed dummy data
