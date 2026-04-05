@@ -338,9 +338,9 @@ Describe 'Test-AdeSubscription' -Tag 'unit' {
 
     BeforeEach {
         $global:LASTEXITCODE = 0
-        $global:AzSubCalls = @()
+        $script:AzSubCalls = @()
         Mock az {
-            $global:AzSubCalls += ($args -join ' ')
+            $script:AzSubCalls += ($args -join ' ')
             $global:LASTEXITCODE = 0
             # Return different JSON depending on the subcommand called
             if ($args -contains 'show') {
@@ -364,7 +364,7 @@ Describe 'Test-AdeSubscription' -Tag 'unit' {
 
     It 'Calls az account show with the given subscription ID' {
         Test-AdeSubscription -SubscriptionId 'sub-abc'
-        $showCall = $global:AzSubCalls | Where-Object { $_ -match 'account show' }
+        $showCall = $script:AzSubCalls | Where-Object { $_ -match 'account show' }
         $showCall | Should -Not -BeNullOrEmpty
         $showCall | Should -Match 'sub-abc'
     }
@@ -400,7 +400,7 @@ Describe 'Test-AdeSubscription' -Tag 'unit' {
 
     It 'Queries role assignments at the subscription scope' {
         Test-AdeSubscription -SubscriptionId 'sub-abc'
-        $roleCall = $global:AzSubCalls | Where-Object { $_ -match 'role assignment list' }
+        $roleCall = $script:AzSubCalls | Where-Object { $_ -match 'role assignment list' }
         $roleCall | Should -Not -BeNullOrEmpty
         $roleCall | Should -Match 'sub-abc'
     }
