@@ -90,7 +90,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-02-01-preview' = if (deploySql) {
     administratorLoginPassword: sqlAdminPassword
     // Public network access enabled (default — no hardening)
     publicNetworkAccess: 'Enabled'
-    minimalTlsVersion: '1.0'
+    minimalTlsVersion: '1.2'
   }
 }
 
@@ -302,7 +302,7 @@ resource redisCache 'Microsoft.Cache/redis@2023-08-01' = if (deployRedis) {
       capacity: 0
     }
     enableNonSslPort: true
-    minimumTlsVersion: '1.0'
+    minimumTlsVersion: '1.2'
     publicNetworkAccess: 'Enabled'
   }
 }
