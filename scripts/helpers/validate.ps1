@@ -181,22 +181,27 @@ function Confirm-AdeDeployment {
         Where-Object { $_.Value.enabled -eq $true }).Name
 
     # Governance features (v2 schema)
-    $govFeatures   = if ($Profile.modules.governance.PSObject.Properties['features']) { $Profile.modules.governance.features } else { $null }
-    $budgetAmount  = if ($govFeatures -and $null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
-    $autoShutdown  = if ($govFeatures -and $govFeatures.automationAccount -eq $true) { '19:00 UTC (weekdays)' } else { 'disabled' }
+    $govFeatProp   = $Profile.modules.PSObject.Properties['governance']
+    $govFeatures   = if ($null -ne $govFeatProp -and $null -ne $govFeatProp.Value.PSObject.Properties['features']) { $govFeatProp.Value.features } else { $null }
+    $budgetAmount  = Get-FeatureFlag -Features $govFeatures -Name 'budgetAmount' -Default 300
+    $autoShutdown  = if ((Get-FeatureFlag -Features $govFeatures -Name 'automationAccount') -eq $true) { '19:00 UTC (weekdays)' } else { 'disabled' }
     $expensiveOn   = @()
-    $netFeatures   = if ($Profile.modules.networking.PSObject.Properties['features']) { $Profile.modules.networking.features } else { $null }
+    $netModProp    = $Profile.modules.PSObject.Properties['networking']
+    $netFeatures   = if ($null -ne $netModProp -and $null -ne $netModProp.Value.PSObject.Properties['features']) { $netModProp.Value.features } else { $null }
     if ($netFeatures) {
-        if ($netFeatures.enableFirewall -and $netFeatures.enableFirewall -ne 'None') { $expensiveOn += "Firewall ($($netFeatures.enableFirewall))" }
-        if ($netFeatures.enableAppGateway -eq $true) { $expensiveOn += 'AppGateway' }
-        if ($netFeatures.enableVpnGateway -eq $true) { $expensiveOn += 'VpnGateway' }
-        if ($netFeatures.enableDdos -eq $true)        { $expensiveOn += 'DDoS ⚠️' }
+        $fwValue = Get-FeatureFlag -Features $netFeatures -Name 'enableFirewall' -Default 'None'
+        if ($fwValue -ne 'None') { $expensiveOn += "Firewall ($fwValue)" }
+        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableAppGateway') -eq $true) { $expensiveOn += 'AppGateway' }
+        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableVpnGateway') -eq $true) { $expensiveOn += 'VpnGateway' }
+        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableDdos') -eq $true)       { $expensiveOn += 'DDoS ⚠️' }
     }
-    $secFeatures = if ($Profile.modules.security.PSObject.Properties['features']) { $Profile.modules.security.features } else { $null }
-    if ($secFeatures -and $secFeatures.defenderForCloud -eq $true) { $expensiveOn += 'Defender' }
-    if ($secFeatures -and $secFeatures.sentinel -eq $true)          { $expensiveOn += 'Sentinel ⚠️' }
-    $intFeatures = if ($Profile.modules.integration.PSObject.Properties['features']) { $Profile.modules.integration.features } else { $null }
-    if ($intFeatures -and $intFeatures.apiManagement -eq $true)     { $expensiveOn += 'APIM' }
+    $secModProp  = $Profile.modules.PSObject.Properties['security']
+    $secFeatures = if ($null -ne $secModProp -and $null -ne $secModProp.Value.PSObject.Properties['features']) { $secModProp.Value.features } else { $null }
+    if ((Get-FeatureFlag -Features $secFeatures -Name 'defenderForCloud') -eq $true) { $expensiveOn += 'Defender' }
+    if ((Get-FeatureFlag -Features $secFeatures -Name 'sentinel') -eq $true)         { $expensiveOn += 'Sentinel ⚠️' }
+    $intModProp  = $Profile.modules.PSObject.Properties['integration']
+    $intFeatures = if ($null -ne $intModProp -and $null -ne $intModProp.Value.PSObject.Properties['features']) { $intModProp.Value.features } else { $null }
+    if ((Get-FeatureFlag -Features $intFeatures -Name 'apiManagement') -eq $true)    { $expensiveOn += 'APIM' }
 
     Write-AdeSection "Deployment Summary"
     Write-Host "  Profile          : " -NoNewline; Write-Host $Profile.profileName -ForegroundColor Cyan

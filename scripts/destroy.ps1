@@ -146,7 +146,7 @@ foreach ($rg in $ordered) {
 }
 
 if ($NoWait) {
-    Write-AdeLog "Deletions running in background. Check status with: az group list --query \"[?starts_with(name,'$Prefix-')]\"" -Level Info
+    Write-AdeLog "Deletions running in background. Check status with: az group list --query '[?starts_with(name,''$Prefix-'')]'" -Level Info
 } else {
     Write-AdeLog "All resource groups deleted." -Level Success
 }

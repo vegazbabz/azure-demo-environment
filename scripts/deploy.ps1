@@ -147,20 +147,6 @@ $scriptRoot = $PSScriptRoot
 . "$scriptRoot\helpers\common.ps1"
 . "$scriptRoot\helpers\validate.ps1"
 
-# Safe feature flag accessor — works under Set-StrictMode -Version Latest.
-# Returns $Default when the property doesn't exist on the object (avoids PropertyNotFoundException).
-function Get-FeatureFlag {
-    param(
-        [object]$Features,
-        [string]$Name,
-        $Default = $false
-    )
-    if ($null -eq $Features) { return $Default }
-    $prop = $Features.PSObject.Properties[$Name]
-    if ($null -eq $prop) { return $Default }
-    return $prop.Value
-}
-
 # Honour the standard -Verbose switch: enables Debug-level console output
 $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 $startTime = Get-Date
@@ -349,7 +335,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── MONITORING ──────────────────────────────────────────────────
             'monitoring' {
                 $bicep = Join-Path $bicepRoot 'monitoring\monitoring.bicep'
-                $monFeatures = if ($null -ne $deployProfile.modules.monitoring.features) { $deployProfile.modules.monitoring.features } else { [pscustomobject]@{} }
+                $monFeatProp = $deployProfile.modules.monitoring.PSObject.Properties['features']
+                $monFeatures = if ($null -ne $monFeatProp) { $monFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix   = $Prefix
                     location = $Location
@@ -368,13 +355,14 @@ foreach ($moduleName in $deploymentOrder) {
             # ── NETWORKING ──────────────────────────────────────────────────
             'networking' {
                 $bicep = Join-Path $bicepRoot 'networking\networking.bicep'
-                $netFeatures = if ($null -ne $deployProfile.modules.networking.features) { $deployProfile.modules.networking.features } else { [pscustomobject]@{} }
+                $netFeatProp = $deployProfile.modules.networking.PSObject.Properties['features']
+                $netFeatures = if ($null -ne $netFeatProp) { $netFeatProp.Value } else { [pscustomobject]@{} }
                 # Guard: compute may be disabled (no features key) on profiles like databases-only, networking-only.
                 # Accessing compute.features directly throws with Set-StrictMode when the key is absent.
                 $computeModProp   = $deployProfile.modules.PSObject.Properties['compute']
                 $computeFeatures  = if ($null -ne $computeModProp -and
                                         $null -ne $computeModProp.Value.PSObject.Properties['features']) {
-                                        $deployProfile.modules.compute.features
+                                        $computeModProp.Value.features
                                     } else {
                                         [pscustomobject]@{}
                                     }
@@ -463,7 +451,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── COMPUTE ─────────────────────────────────────────────────────
             'compute' {
                 $bicep = Join-Path $bicepRoot 'compute\compute.bicep'
-                $compFeatures = if ($null -ne $deployProfile.modules.compute.features) { $deployProfile.modules.compute.features } else { [pscustomobject]@{} }
+                $compFeatProp = $deployProfile.modules.compute.PSObject.Properties['features']
+                $compFeatures = if ($null -ne $compFeatProp) { $compFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
@@ -477,7 +466,7 @@ foreach ($moduleName in $deploymentOrder) {
                     vmSize              = Get-FeatureFlag -Features $compFeatures -Name 'vmSku' -Default 'Standard_B2s'
                     deployDomainController = (Get-FeatureFlag -Features $compFeatures -Name 'domainController').ToString().ToLower()
                     dcSubnetId          = if ($state.dcSubnetId) { $state.dcSubnetId } else { '' }
-                    domainName          = Get-FeatureFlag -Features $compFeatures -Name 'domainName' "${Prefix}.local"
+                    domainName          = Get-FeatureFlag -Features $compFeatures -Name 'domainName' -Default "${Prefix}.local"
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId']       = $state.logAnalyticsId
@@ -512,7 +501,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── DATABASES ───────────────────────────────────────────────────
             'databases' {
                 $bicep = Join-Path $bicepRoot 'databases\databases.bicep'
-                $dbFeatures = if ($null -ne $deployProfile.modules.databases.features) { $deployProfile.modules.databases.features } else { [pscustomobject]@{} }
+                $dbFeatProp = $deployProfile.modules.databases.PSObject.Properties['features']
+                $dbFeatures = if ($null -ne $dbFeatProp) { $dbFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location
@@ -543,7 +533,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── APP SERVICES ────────────────────────────────────────────────
             'appservices' {
                 $bicep = Join-Path $bicepRoot 'appservices\appservices.bicep'
-                $appFeatures = if ($null -ne $deployProfile.modules.appservices.features) { $deployProfile.modules.appservices.features } else { [pscustomobject]@{} }
+                $appFeatProp = $deployProfile.modules.appservices.PSObject.Properties['features']
+                $appFeatures = if ($null -ne $appFeatProp) { $appFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
@@ -560,7 +551,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── CONTAINERS ──────────────────────────────────────────────────
             'containers' {
                 $bicep = Join-Path $bicepRoot 'containers\containers.bicep'
-                $ctFeatures = if ($null -ne $deployProfile.modules.containers.features) { $deployProfile.modules.containers.features } else { [pscustomobject]@{} }
+                $ctFeatProp = $deployProfile.modules.containers.PSObject.Properties['features']
+                $ctFeatures = if ($null -ne $ctFeatProp) { $ctFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
@@ -581,7 +573,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── INTEGRATION ─────────────────────────────────────────────────
             'integration' {
                 $bicep = Join-Path $bicepRoot 'integration\integration.bicep'
-                $intFeatures = if ($null -ne $deployProfile.modules.integration.features) { $deployProfile.modules.integration.features } else { [pscustomobject]@{} }
+                $intFeatProp = $deployProfile.modules.integration.PSObject.Properties['features']
+                $intFeatures = if ($null -ne $intFeatProp) { $intFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
@@ -605,9 +598,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── AI ──────────────────────────────────────────────────────────
             'ai' {
                 $bicep = Join-Path $bicepRoot 'ai\ai.bicep'
-                $aiFeatures = $deployProfile.modules.ai.features
-                # Guard: profile may have ai.enabled=true but no features object
-                if ($null -eq $aiFeatures) { $aiFeatures = [pscustomobject]@{} }
+                $aiFeatProp = $deployProfile.modules.ai.PSObject.Properties['features']
+                $aiFeatures = if ($null -ne $aiFeatProp) { $aiFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
@@ -622,7 +614,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── DATA ────────────────────────────────────────────────────────
             'data' {
                 $bicep = Join-Path $bicepRoot 'data\data.bicep'
-                $dataFeatures = if ($null -ne $deployProfile.modules.data.features) { $deployProfile.modules.data.features } else { [pscustomobject]@{} }
+                $dataFeatProp = $deployProfile.modules.data.PSObject.Properties['features']
+                $dataFeatures = if ($null -ne $dataFeatProp) { $dataFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
@@ -642,7 +635,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── GOVERNANCE ──────────────────────────────────────────────────
             'governance' {
                 $bicep = Join-Path $bicepRoot 'governance\governance.bicep'
-                $govFeatures = if ($null -ne $deployProfile.modules.governance.features) { $deployProfile.modules.governance.features } else { [pscustomobject]@{} }
+                $govFeatProp = $deployProfile.modules.governance.PSObject.Properties['features']
+                $govFeatures = if ($null -ne $govFeatProp) { $govFeatProp.Value } else { [pscustomobject]@{} }
 
                 # Budget requires a notification email — silently downgrade to disabled if not set.
                 # -BudgetAlertEmail (workflow input) takes precedence over the profile value.
