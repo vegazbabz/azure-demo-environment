@@ -17,6 +17,15 @@ BeforeAll {
     function Write-AdeLog   { param([string]$Message, $Level, [switch]$NoNewline) }
     function Write-AdeSection { param([string]$Title) }
 
+    # Stub Get-FeatureFlag (defined in common.ps1, used by Confirm-AdeDeployment in validate.ps1)
+    function Get-FeatureFlag {
+        param([object]$Features, [string]$Name, $Default = $false)
+        if ($null -eq $Features) { return $Default }
+        $prop = $Features.PSObject.Properties[$Name]
+        if ($null -eq $prop) { return $Default }
+        return $prop.Value
+    }
+
     # Stub az as a PS function so Pester can mock it even when Azure CLI is not installed
     if (-not (Get-Command 'az' -ErrorAction SilentlyContinue)) {
         function script:az {}

@@ -418,4 +418,23 @@ function Get-AdeDeploymentOutput {
     return $val.value
 }
 
+# ─── Feature flag accessor ───────────────────────────────────────────────────
+
+function Get-FeatureFlag {
+    <#
+    .SYNOPSIS
+        Safe feature flag accessor — works under Set-StrictMode -Version Latest.
+        Returns $Default when the property doesn't exist on the object (avoids PropertyNotFoundException).
+    #>
+    param(
+        [object]$Features,
+        [string]$Name,
+        $Default = $false
+    )
+    if ($null -eq $Features) { return $Default }
+    $prop = $Features.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $Default }
+    return $prop.Value
+}
+
 Write-AdeLog "common.ps1 loaded" -Level Debug
