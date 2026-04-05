@@ -147,20 +147,6 @@ $scriptRoot = $PSScriptRoot
 . "$scriptRoot\helpers\common.ps1"
 . "$scriptRoot\helpers\validate.ps1"
 
-# Safe feature flag accessor — works under Set-StrictMode -Version Latest.
-# Returns $Default when the property doesn't exist on the object (avoids PropertyNotFoundException).
-function Get-FeatureFlag {
-    param(
-        [object]$Features,
-        [string]$Name,
-        $Default = $false
-    )
-    if ($null -eq $Features) { return $Default }
-    $prop = $Features.PSObject.Properties[$Name]
-    if ($null -eq $prop) { return $Default }
-    return $prop.Value
-}
-
 # Honour the standard -Verbose switch: enables Debug-level console output
 $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 $startTime = Get-Date
