@@ -605,26 +605,30 @@ foreach ($moduleName in $deploymentOrder) {
             'governance' {
                 $bicep = Join-Path $bicepRoot 'governance\governance.bicep'
                 $govFeatures = $deployProfile.modules.governance.features
+
+                # Budget requires a notification email — silently downgrade to disabled if not set.
+                $budgetEmailSet = -not [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)
+                $budgetEnabled  = $govFeatures.budget -eq $true -and $budgetEmailSet
+                if ($govFeatures.budget -eq $true -and -not $budgetEmailSet) {
+                    Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                }
+
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
                     logAnalyticsId          = $state.logAnalyticsId
                     enableAutomation        = ($govFeatures.automationAccount -eq $true).ToString().ToLower()
-                    enableBudget            = ($govFeatures.budget -eq $true).ToString().ToLower()
+                    enableBudget            = $budgetEnabled.ToString().ToLower()
                     budgetAmount            = if ($null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
                     enableResourceLocks     = ($govFeatures.resourceLocks -eq $true).ToString().ToLower()
                     enablePolicyAssignments = ($govFeatures.policyAssignments -eq $true).ToString().ToLower()
                     computeResourceGroupName = "$Prefix-compute-rg"
                     runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
                 }
-                # Always pass budgetAlertEmail — empty string overrides the Bicep default (which was 'ops@example.com').
-                $params['budgetAlertEmail'] = if ($govFeatures.budgetAlertEmail) { $govFeatures.budgetAlertEmail } else { '' }
+                if ($budgetEmailSet) { $params['budgetAlertEmail'] = $govFeatures.budgetAlertEmail }
 
                 $params['enableAutomationRoleAssignment'] = ($adeCanAssignRoles).ToString().ToLower()
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
-                if ($govFeatures.budget -eq $true -and [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)) {
-                    Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is empty — budget was NOT deployed. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
-                }
                 $state.automationAccountId   = Get-AdeDeploymentOutput $outputs 'automationAccountId'
                 $state.automationAccountName = Get-AdeDeploymentOutput $outputs 'automationAccountName'
             }
