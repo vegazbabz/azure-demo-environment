@@ -50,8 +50,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
     accessTier: 'Hot'
     // Default settings — no hardening applied
     // supportsHttpsTrafficOnly: false (Azure default is true for new accounts — left as-is)
-    // minimumTlsVersion: TLS1_0 (Azure default for benchmark testing)
-    minimumTlsVersion: 'TLS1_0'
+    minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: false
     allowBlobPublicAccess: true
     allowSharedKeyAccess: true
@@ -138,7 +137,7 @@ resource dataLakeAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = if (en
   properties: {
     isHnsEnabled: true
     accessTier: 'Hot'
-    minimumTlsVersion: 'TLS1_0'
+    minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: false
     allowBlobPublicAccess: true
     allowSharedKeyAccess: true

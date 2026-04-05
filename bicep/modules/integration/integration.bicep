@@ -68,7 +68,7 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
     tier: 'Standard'
   }
   properties: {
-    minimumTlsVersion: '1.0'
+    minimumTlsVersion: '1.2'
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: false
   }
@@ -130,7 +130,7 @@ resource eventHubNamespace 'Microsoft.EventHub/namespaces@2023-01-01-preview' = 
     capacity: 1
   }
   properties: {
-    minimumTlsVersion: '1.0'
+    minimumTlsVersion: '1.2'
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: false
   }
