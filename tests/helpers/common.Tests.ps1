@@ -422,8 +422,12 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         $global:LASTEXITCODE = 0
     }
 
-    It 'Calls az group create with the correct name and location' {
-        Mock az { $global:LASTEXITCODE = 0 }
+    It 'Calls az group create when the resource group does not yet exist' {
+        Mock az {
+            # group show returns non-zero (RG not found)
+            if ($args -contains 'show') { $global:LASTEXITCODE = 1; return $null }
+            $global:LASTEXITCODE = 0
+        }
 
         $tags = @{ project = 'ade'; env = 'test' }
         New-AdeResourceGroup -Name 'ade-test-rg' -Location 'westeurope' -Tags $tags
@@ -431,8 +435,40 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         Should -Invoke az -Times 1 -ParameterFilter { $args -contains 'create' -and $args -contains 'ade-test-rg' }
     }
 
+    It 'Re-uses an existing RG in the same location without calling az group create' {
+        Mock az {
+            if ($args -contains 'show') {
+                $global:LASTEXITCODE = 0
+                return '{"name":"ade-test-rg","location":"westeurope"}'
+            }
+            $global:LASTEXITCODE = 0
+        }
+
+        $tags = @{ project = 'ade' }
+        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'westeurope' -Tags $tags } | Should -Not -Throw
+
+        Should -Invoke az -Times 0 -ParameterFilter { $args -contains 'create' }
+    }
+
+    It 'Throws a descriptive error when the existing RG is in a different location' {
+        Mock az {
+            if ($args -contains 'show') {
+                $global:LASTEXITCODE = 0
+                return '{"name":"ade-test-rg","location":"westeurope"}'
+            }
+            $global:LASTEXITCODE = 0
+        }
+
+        $tags = @{ project = 'ade' }
+        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'northeurope' -Tags $tags } |
+            Should -Throw -ExpectedMessage "*already exists in 'westeurope'*"
+    }
+
     It 'Throws when az group create exits non-zero' {
-        Mock az { $global:LASTEXITCODE = 1 }
+        Mock az {
+            if ($args -contains 'show') { $global:LASTEXITCODE = 1; return $null }
+            $global:LASTEXITCODE = 1
+        }
 
         $tags = @{ project = 'ade' }
         { New-AdeResourceGroup -Name 'bad-rg' -Location 'westeurope' -Tags $tags } |
@@ -440,8 +476,8 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
     }
 
     It 'Filters out null or empty tag values before passing to az' {
-        $capturedArgs = @()
         Mock az {
+            if ($args -contains 'show') { $global:LASTEXITCODE = 1; return $null }
             $script:capturedAzArgs = $args
             $global:LASTEXITCODE = 0
         }
