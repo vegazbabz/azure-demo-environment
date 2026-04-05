@@ -186,13 +186,13 @@ Describe 'Deploy-AdePolicies.ps1' {
 
         BeforeAll {
             $script:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $capturedCalls  = $script:AzCalls   # reference captured by the closure below
 
-            Mock az {
-                $cmd = $args -join ' '
-                $script:AzCalls.Add($cmd)
+            Mock az ({
+                $capturedCalls.Add($args -join ' ')
                 $global:LASTEXITCODE = 0
                 return $null
-            }
+            }.GetNewClosure())
 
             & $script:scriptPath `
                 -SubscriptionId 'xxxxxxxx-0000-0000-0000-xxxxxxxxxxxx' `
@@ -224,13 +224,13 @@ Describe 'Deploy-AdePolicies.ps1' {
 
         BeforeAll {
             $script:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $capturedCalls  = $script:AzCalls   # reference captured by the closure below
 
-            Mock az {
-                $cmd = $args -join ' '
-                $script:AzCalls.Add($cmd)
+            Mock az ({
+                $capturedCalls.Add($args -join ' ')
                 $global:LASTEXITCODE = 0
                 return $null
-            }
+            }.GetNewClosure())
 
             & $script:scriptPath `
                 -SubscriptionId 'xxxxxxxx-0000-0000-0000-xxxxxxxxxxxx' `
