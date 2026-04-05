@@ -442,7 +442,7 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
     It 'Filters out null or empty tag values before passing to az' {
         $capturedArgs = @()
         Mock az {
-            $global:capturedAzArgs = $args
+            $script:capturedAzArgs = $args
             $global:LASTEXITCODE = 0
         }
 
@@ -450,7 +450,7 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         New-AdeResourceGroup -Name 'ade-rg' -Location 'westeurope' -Tags $tags
 
         # The tag args passed to az should not include null/empty values
-        $tagArgs = $global:capturedAzArgs | Where-Object { $_ -match '=' -and $_ -notmatch '^--' }
+        $tagArgs = $script:capturedAzArgs | Where-Object { $_ -match '=' -and $_ -notmatch '^--' }
         $tagArgs | Should -Not -Contain { $_ -match 'nullTag' }
         $tagArgs | Should -Not -Contain { $_ -match 'emptyTag' }
     }

@@ -87,8 +87,9 @@ if ($SubscriptionId) {
 }
 
 # Find all resource groups that belong to this ADE prefix
+$rgQuery  = -join ('[', "?tags.managedBy=='ade' && starts_with(name, '", $Prefix, "-')].name")
 $allGroups = az group list `
-    --query "[?tags.managedBy=='ade' && starts_with(name, '$Prefix-')].name" `
+    --query $rgQuery `
     -o tsv 2>$null
 
 if (-not $allGroups) {
@@ -146,7 +147,7 @@ foreach ($rg in $ordered) {
 }
 
 if ($NoWait) {
-    Write-AdeLog "Deletions running in background. Check status with: az group list --query '[?starts_with(name,''$Prefix-'')]'" -Level Info
+    Write-AdeLog "Deletions running in background. Check status in the Azure Portal or run: az group list -o table" -Level Info
 } else {
     Write-AdeLog "All resource groups deleted." -Level Success
 }

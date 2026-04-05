@@ -95,9 +95,9 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
 
     BeforeEach {
         $global:LASTEXITCODE = 0
-        $global:AdeRmAzCalls = @()
+        $script:AdeRmAzCalls = @()
         Mock az {
-            $global:AdeRmAzCalls += ($args -join ' ')
+            $script:AdeRmAzCalls += ($args -join ' ')
             $global:LASTEXITCODE = 0
             ''   # empty lock list
         }
@@ -105,34 +105,34 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
 
     It 'Calls az group delete with --yes' {
         Remove-AdeResourceGroup -Name 'ade-test-rg'
-        $deleteCall = $global:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
+        $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
         $deleteCall | Should -Not -BeNullOrEmpty
         $deleteCall | Should -Match '--yes'
     }
 
     It 'Passes --no-wait when -NoWait is set' {
         Remove-AdeResourceGroup -Name 'ade-test-rg' -NoWait
-        $deleteCall = $global:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
+        $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
         $deleteCall | Should -Match '--no-wait'
     }
 
     It 'Does not pass --no-wait when -NoWait is not set' {
         Remove-AdeResourceGroup -Name 'ade-test-rg'
-        $deleteCall = $global:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
+        $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
         $deleteCall | Should -Not -Match '--no-wait'
     }
 
     It 'Attempts to remove resource locks before deleting the group' {
         Remove-AdeResourceGroup -Name 'ade-test-rg'
-        $lockCall = $global:AdeRmAzCalls | Where-Object { $_ -match 'lock list' }
+        $lockCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'lock list' }
         $lockCall | Should -Not -BeNullOrEmpty
     }
 
     It 'Calls az lock delete once per lock when resource locks exist' {
-        $global:AdeRmAzCalls = @()
+        $script:AdeRmAzCalls = @()
         Mock az {
             $args_str = $args -join ' '
-            $global:AdeRmAzCalls += $args_str
+            $script:AdeRmAzCalls += $args_str
             $global:LASTEXITCODE = 0
             if ($args_str -match 'lock list') {
                 return @(
@@ -142,7 +142,7 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
             }
         }
         Remove-AdeResourceGroup -Name 'ade-test-rg'
-        $deleteCalls = $global:AdeRmAzCalls | Where-Object { $_ -match 'lock delete' }
+        $deleteCalls = $script:AdeRmAzCalls | Where-Object { $_ -match 'lock delete' }
         $deleteCalls.Count | Should -Be 2
     }
 }
