@@ -214,6 +214,25 @@ function New-AdeResourceGroup {
         ForEach-Object { "$($_.Key)=$($_.Value)" })
 
     Write-AdeLog "Ensuring resource group: $Name" -Level Info
+
+    # Check whether the RG already exists so we can detect a location conflict
+    # before `az group create` emits an opaque API error.
+    $existing = az group show --name $Name --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $existing) {
+        $existingLocation = ($existing | ConvertFrom-Json).location
+        if ($existingLocation -ne $Location) {
+            throw "Resource group '$Name' already exists in '$existingLocation' but deployment is targeting '$Location'. " +
+                  "Either run 'destroy.ps1' first to remove the old environment, or re-run with -Location '$existingLocation'."
+        }
+        Write-AdeLog "Resource group already exists: $Name ($existingLocation)" -Level Info
+        # Update tags on the existing RG without touching its location.
+        az group update --name $Name --tags @tagArgs --output none
+        if ($LASTEXITCODE -ne 0) {
+            Write-AdeLog "Could not update tags on $Name (non-fatal)." -Level Warning
+        }
+        return
+    }
+
     az group create `
         --name $Name `
         --location $Location `
