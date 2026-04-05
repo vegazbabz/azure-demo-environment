@@ -137,13 +137,20 @@ foreach ($rg in $targetGroups) {
     if ($rg -notin $ordered) { $ordered += $rg }
 }
 
+$failedRgs = @()
 foreach ($rg in $ordered) {
     try {
         Remove-AdeResourceGroup -Name $rg -NoWait:$NoWait
         Write-AdeLog "Deletion initiated: $rg" -Level Success
     } catch {
         Write-AdeLog "Failed to delete '$rg': $_" -Level Error
+        $failedRgs += $rg
     }
+}
+
+if ($failedRgs.Count -gt 0) {
+    Write-AdeLog "The following resource groups could NOT be deleted: $($failedRgs -join ', ')" -Level Error
+    exit 1
 }
 
 if ($NoWait) {
