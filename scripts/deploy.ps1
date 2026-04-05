@@ -146,6 +146,21 @@ $ErrorActionPreference = 'Stop'
 $scriptRoot = $PSScriptRoot
 . "$scriptRoot\helpers\common.ps1"
 . "$scriptRoot\helpers\validate.ps1"
+
+# Safe feature flag accessor — works under Set-StrictMode -Version Latest.
+# Returns $Default when the property doesn't exist on the object (avoids PropertyNotFoundException).
+function Get-FeatureFlag {
+    param(
+        [object]$Features,
+        [string]$Name,
+        $Default = $false
+    )
+    if ($null -eq $Features) { return $Default }
+    $prop = $Features.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $Default }
+    return $prop.Value
+}
+
 # Honour the standard -Verbose switch: enables Debug-level console output
 $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 $startTime = Get-Date
@@ -206,10 +221,11 @@ Test-AdeProfile -Profile $deployProfile
 # Check UAA/Owner up front when the Automation Account role assignment will run.
 # Fails early so the caller gets a clear error before any resources are created.
 $adeCanAssignRoles = $false
-$govModPre       = $deployProfile.modules.PSObject.Properties['governance']
-$automationWanted = $null -ne $govModPre -and
+$govModPre         = $deployProfile.modules.PSObject.Properties['governance']
+$govFeatPre        = if ($null -ne $govModPre -and $null -ne $govModPre.Value.PSObject.Properties['features']) { $govModPre.Value.features } else { $null }
+$automationWanted  = $null -ne $govModPre -and
                    $govModPre.Value.enabled -eq $true -and
-                   $govModPre.Value.features.automationAccount -eq $true
+                   (Get-FeatureFlag -Features $govFeatPre -Name 'automationAccount') -eq $true
 if ($automationWanted) {
     $null = Test-AdePermissions -SubscriptionId $SubscriptionId -StopOnError
     $adeCanAssignRoles = $true
@@ -338,10 +354,9 @@ foreach ($moduleName in $deploymentOrder) {
                     prefix   = $Prefix
                     location = $Location
                 }
-                # Pass alertEmailAddress only when explicitly configured in the profile.
-                # An empty string causes ARM to reject the Action Group email receiver.
-                if (-not [string]::IsNullOrEmpty($monFeatures.alertEmail)) {
-                    $params['alertEmailAddress'] = $monFeatures.alertEmail
+                $monAlertEmail = Get-FeatureFlag -Features $monFeatures -Name 'alertEmail' -Default ''
+                if (-not [string]::IsNullOrEmpty($monAlertEmail)) {
+                    $params['alertEmailAddress'] = $monAlertEmail
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'monitoring' -BicepFile $bicep -Parameters $params
                 $state.logAnalyticsId       = Get-AdeDeploymentOutput $outputs 'logAnalyticsId'
@@ -366,14 +381,14 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                 = $Prefix
                     location               = $Location
-                    bastionSku             = if ($null -ne $netFeatures.bastionSku) { $netFeatures.bastionSku } else { 'Developer' }
-                    enableAppGateway       = ($netFeatures.enableAppGateway -eq $true).ToString().ToLower()
-                    enableFirewall         = if ($null -ne $netFeatures.enableFirewall) { $netFeatures.enableFirewall } else { 'None' }
-                    enableVpnGateway       = ($netFeatures.enableVpnGateway -eq $true).ToString().ToLower()
-                    enableNatGateway       = ($netFeatures.enableNatGateway -eq $true).ToString().ToLower()
-                    enableDdos             = ($netFeatures.enableDdos -eq $true).ToString().ToLower()
-                    enablePrivateDnsZones  = ($netFeatures.enablePrivateDnsZones -eq $true).ToString().ToLower()
-                    deployDomainController = ($computeFeatures.domainController -eq $true).ToString().ToLower()
+                    bastionSku             = Get-FeatureFlag -Features $netFeatures -Name 'bastionSku' -Default 'Developer'
+                    enableAppGateway       = (Get-FeatureFlag -Features $netFeatures -Name 'enableAppGateway').ToString().ToLower()
+                    enableFirewall         = Get-FeatureFlag -Features $netFeatures -Name 'enableFirewall' -Default 'None'
+                    enableVpnGateway       = (Get-FeatureFlag -Features $netFeatures -Name 'enableVpnGateway').ToString().ToLower()
+                    enableNatGateway       = (Get-FeatureFlag -Features $netFeatures -Name 'enableNatGateway').ToString().ToLower()
+                    enableDdos             = (Get-FeatureFlag -Features $netFeatures -Name 'enableDdos').ToString().ToLower()
+                    enablePrivateDnsZones  = (Get-FeatureFlag -Features $netFeatures -Name 'enablePrivateDnsZones').ToString().ToLower()
+                    deployDomainController = (Get-FeatureFlag -Features $computeFeatures -Name 'domainController').ToString().ToLower()
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'
@@ -404,6 +419,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── SECURITY ────────────────────────────────────────────────────
             'security' {
                 $bicep = Join-Path $bicepRoot 'security\security.bicep'
+                $secFeatures = if ($null -ne $deployProfile.modules.security.PSObject.Properties['features']) { $deployProfile.modules.security.features } else { [pscustomobject]@{} }
                 # Resolve deployer object ID so KV Secrets Officer role can be granted for seed-data.ps1.
                 # signed-in-user only works for interactive logins; OIDC/CI falls back to sp show.
                 # Track principal type so the Bicep role assignment is valid for both users and SPs.
@@ -420,8 +436,8 @@ foreach ($moduleName in $deploymentOrder) {
                     prefix            = $Prefix
                     location          = $Location
                     logAnalyticsId    = $state.logAnalyticsId
-                    enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
-                    enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
+                    enableDefender    = (Get-FeatureFlag -Features $secFeatures -Name 'defenderForCloud').ToString().ToLower()
+                    enableSentinel    = (Get-FeatureFlag -Features $secFeatures -Name 'sentinel').ToString().ToLower()
                 }
                 if ($deployerOid) {
                     $params['deployerPrincipalId']   = $deployerOid
@@ -433,7 +449,7 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['privateEndpointSubnetId'] = $state.privateEndpointSubnetId
                     $params['keyVaultDnsZoneId']       = $state.keyVaultDnsZoneId
                     # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
-                    $kvCidrs = $deployProfile.modules.security.features.allowedCidrRanges
+                    $kvCidrs = Get-FeatureFlag -Features $secFeatures -Name 'allowedCidrRanges' -Default $null
                     if ($kvCidrs -and $kvCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $kvCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
@@ -454,14 +470,14 @@ foreach ($moduleName in $deploymentOrder) {
                     subnetId            = $state.computeSubnetId
                     adminUsername       = $state.adminUsername
                     adminPassword       = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
-                    deployWindowsVm     = ($compFeatures.windowsVm -eq $true).ToString().ToLower()
-                    deployLinuxVm       = ($compFeatures.linuxVm -eq $true).ToString().ToLower()
-                    deployVmss          = ($compFeatures.vmss -eq $true).ToString().ToLower()
-                    enableAutoShutdown  = ($compFeatures.enableAutoShutdown -eq $true).ToString().ToLower()
-                    vmSize              = if ($null -ne $compFeatures.vmSku) { $compFeatures.vmSku } else { 'Standard_B2s' }
-                    deployDomainController = ($compFeatures.domainController -eq $true).ToString().ToLower()
+                    deployWindowsVm     = (Get-FeatureFlag -Features $compFeatures -Name 'windowsVm').ToString().ToLower()
+                    deployLinuxVm       = (Get-FeatureFlag -Features $compFeatures -Name 'linuxVm').ToString().ToLower()
+                    deployVmss          = (Get-FeatureFlag -Features $compFeatures -Name 'vmss').ToString().ToLower()
+                    enableAutoShutdown  = (Get-FeatureFlag -Features $compFeatures -Name 'enableAutoShutdown').ToString().ToLower()
+                    vmSize              = Get-FeatureFlag -Features $compFeatures -Name 'vmSku' -Default 'Standard_B2s'
+                    deployDomainController = (Get-FeatureFlag -Features $compFeatures -Name 'domainController').ToString().ToLower()
                     dcSubnetId          = if ($state.dcSubnetId) { $state.dcSubnetId } else { '' }
-                    domainName          = if ($compFeatures.domainName) { $compFeatures.domainName } else { "${Prefix}.local" }
+                    domainName          = Get-FeatureFlag -Features $compFeatures -Name 'domainName' "${Prefix}.local"
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId']       = $state.logAnalyticsId
@@ -473,11 +489,12 @@ foreach ($moduleName in $deploymentOrder) {
             # ── STORAGE ─────────────────────────────────────────────────────
             'storage' {
                 $bicep = Join-Path $bicepRoot 'storage\storage.bicep'
+                $stFeatures = if ($null -ne $deployProfile.modules.storage.PSObject.Properties['features']) { $deployProfile.modules.storage.features } else { [pscustomobject]@{} }
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location
-                    enableDataLake    = ($deployProfile.modules.storage.features.dataLakeGen2 -eq $true).ToString().ToLower()
-                    enableSoftDelete  = ($deployProfile.modules.storage.features.enableSoftDelete -eq $true).ToString().ToLower()
+                    enableDataLake    = (Get-FeatureFlag -Features $stFeatures -Name 'dataLakeGen2').ToString().ToLower()
+                    enableSoftDelete  = (Get-FeatureFlag -Features $stFeatures -Name 'enableSoftDelete').ToString().ToLower()
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     blobDnsZoneId           = $state.blobDnsZoneId
                     fileDnsZoneId           = $state.fileDnsZoneId
@@ -485,7 +502,7 @@ foreach ($moduleName in $deploymentOrder) {
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                     # allowedCidrRanges: public IPs (CIDR) permitted through Storage network ACLs
-                    $stCidrs = $deployProfile.modules.storage.features.allowedCidrRanges
+                    $stCidrs = Get-FeatureFlag -Features $stFeatures -Name 'allowedCidrRanges' -Default $null
                     if ($stCidrs -and $stCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $stCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
@@ -504,14 +521,14 @@ foreach ($moduleName in $deploymentOrder) {
                     sqlAdminPassword  = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     pgAdminLogin      = $state.adminUsername
                     pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
-                    deploySql         = ($dbFeatures.sqlDatabase -eq $true).ToString().ToLower()
-                    deployCosmos      = ($dbFeatures.cosmosDb -eq $true).ToString().ToLower()
-                    deployPostgresql  = ($dbFeatures.postgresql -eq $true).ToString().ToLower()
+                    deploySql         = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase').ToString().ToLower()
+                    deployCosmos      = (Get-FeatureFlag -Features $dbFeatures -Name 'cosmosDb').ToString().ToLower()
+                    deployPostgresql  = (Get-FeatureFlag -Features $dbFeatures -Name 'postgresql').ToString().ToLower()
                     postgresDnsZoneId = $state.postgresDnsZoneId
-                    deployMysql       = ($dbFeatures.mysql -eq $true).ToString().ToLower()
+                    deployMysql       = (Get-FeatureFlag -Features $dbFeatures -Name 'mysql').ToString().ToLower()
                     mysqlSubnetId     = $state.mysqlSubnetId
                     mysqlDnsZoneId    = $state.mysqlDnsZoneId
-                    deployRedis       = ($dbFeatures.redis -eq $true).ToString().ToLower()
+                    deployRedis       = (Get-FeatureFlag -Features $dbFeatures -Name 'redis').ToString().ToLower()
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     sqlDnsZoneId      = $state.sqlDnsZoneId
                     cosmosDnsZoneId   = $state.cosmosDnsZoneId
@@ -531,11 +548,11 @@ foreach ($moduleName in $deploymentOrder) {
                     prefix                = $Prefix
                     location              = $Location
                     appServiceSubnetId    = $state.appServicesSubnetId
-                    deployWindowsApp      = ($appFeatures.windowsWebApp -eq $true).ToString().ToLower()
-                    deployLinuxApp        = ($appFeatures.linuxWebApp -eq $true).ToString().ToLower()
-                    deployFunctionApp     = ($appFeatures.functionApp -eq $true).ToString().ToLower()
-                    deployStaticWebApp    = ($appFeatures.staticWebApp -eq $true).ToString().ToLower()
-                    deployLogicApp        = ($appFeatures.logicApp -eq $true).ToString().ToLower()
+                    deployWindowsApp      = (Get-FeatureFlag -Features $appFeatures -Name 'windowsWebApp').ToString().ToLower()
+                    deployLinuxApp        = (Get-FeatureFlag -Features $appFeatures -Name 'linuxWebApp').ToString().ToLower()
+                    deployFunctionApp     = (Get-FeatureFlag -Features $appFeatures -Name 'functionApp').ToString().ToLower()
+                    deployStaticWebApp    = (Get-FeatureFlag -Features $appFeatures -Name 'staticWebApp').ToString().ToLower()
+                    deployLogicApp        = (Get-FeatureFlag -Features $appFeatures -Name 'logicApp').ToString().ToLower()
                 }
                 $null = Deploy-AdeModule -ModuleName 'appservices' -BicepFile $bicep -Parameters $params
             }
@@ -548,14 +565,14 @@ foreach ($moduleName in $deploymentOrder) {
                     prefix                  = $Prefix
                     location                = $Location
                     subnetId                = $state.containerSubnetId
-                    deployAcr               = ($ctFeatures.containerRegistry -eq $true).ToString().ToLower()
-                    deployAks               = ($ctFeatures.kubernetesService -eq $true).ToString().ToLower()
-                    deployContainerApps     = ($ctFeatures.containerApps -eq $true).ToString().ToLower()
-                    deployContainerInstances = ($ctFeatures.containerInstances -eq $true).ToString().ToLower()
+                    deployAcr               = (Get-FeatureFlag -Features $ctFeatures -Name 'containerRegistry').ToString().ToLower()
+                    deployAks               = (Get-FeatureFlag -Features $ctFeatures -Name 'kubernetesService').ToString().ToLower()
+                    deployContainerApps     = (Get-FeatureFlag -Features $ctFeatures -Name 'containerApps').ToString().ToLower()
+                    deployContainerInstances = (Get-FeatureFlag -Features $ctFeatures -Name 'containerInstances').ToString().ToLower()
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
-                    $aksIpRanges = if ($null -ne $ctFeatures) { $ctFeatures.aksAuthorizedIpRanges } else { $null }
+                    $aksIpRanges = Get-FeatureFlag -Features $ctFeatures -Name 'aksAuthorizedIpRanges' -Default $null
                     if ($null -ne $aksIpRanges) { $params['aksAuthorizedIpRanges'] = $aksIpRanges }
                 }
                 $null = Deploy-AdeModule -ModuleName 'containers' -BicepFile $bicep -Parameters $params
@@ -568,14 +585,14 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
-                    deployServiceBus    = ($intFeatures.serviceBus -eq $true).ToString().ToLower()
-                    deployEventHub      = ($intFeatures.eventHub -eq $true).ToString().ToLower()
-                    deployEventGrid     = ($intFeatures.eventGrid -eq $true).ToString().ToLower()
-                    deploySignalR       = ($intFeatures.signalR -eq $true).ToString().ToLower()
-                    deployApim          = ($intFeatures.apiManagement -eq $true).ToString().ToLower()
-                    apimSku             = if ($null -ne $intFeatures.apimSku) { $intFeatures.apimSku } else { 'Developer' }
-                    apimPublisherEmail  = if ($null -ne $intFeatures.apimPublisherEmail -and $intFeatures.apimPublisherEmail -ne '') { $intFeatures.apimPublisherEmail } else { 'admin@example.com' }
-                    apimPublisherName   = if ($null -ne $intFeatures.apimPublisherName  -and $intFeatures.apimPublisherName  -ne '') { $intFeatures.apimPublisherName  } else { 'ADE Demo' }
+                    deployServiceBus    = (Get-FeatureFlag -Features $intFeatures -Name 'serviceBus').ToString().ToLower()
+                    deployEventHub      = (Get-FeatureFlag -Features $intFeatures -Name 'eventHub').ToString().ToLower()
+                    deployEventGrid     = (Get-FeatureFlag -Features $intFeatures -Name 'eventGrid').ToString().ToLower()
+                    deploySignalR       = (Get-FeatureFlag -Features $intFeatures -Name 'signalR').ToString().ToLower()
+                    deployApim          = (Get-FeatureFlag -Features $intFeatures -Name 'apiManagement').ToString().ToLower()
+                    apimSku             = Get-FeatureFlag -Features $intFeatures -Name 'apimSku' -Default 'Developer'
+                    apimPublisherEmail  = Get-FeatureFlag -Features $intFeatures -Name 'apimPublisherEmail' -Default 'admin@example.com'
+                    apimPublisherName   = Get-FeatureFlag -Features $intFeatures -Name 'apimPublisherName' -Default 'ADE Demo'
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     serviceBusDnsZoneId     = $state.serviceBusDnsZoneId
                     eventHubDnsZoneId       = $state.eventHubDnsZoneId
@@ -594,10 +611,10 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
-                    deployAiServices        = ($aiFeatures.aiServices -eq $true).ToString().ToLower()
-                    deployOpenAi            = ($aiFeatures.openAi -eq $true).ToString().ToLower()
-                    deployCognitiveSearch   = ($aiFeatures.cognitiveSearch -eq $true).ToString().ToLower()
-                    deployMachineLearning   = ($aiFeatures.machineLearning -eq $true).ToString().ToLower()
+                    deployAiServices        = (Get-FeatureFlag -Features $aiFeatures -Name 'aiServices').ToString().ToLower()
+                    deployOpenAi            = (Get-FeatureFlag -Features $aiFeatures -Name 'openAi').ToString().ToLower()
+                    deployCognitiveSearch   = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearch').ToString().ToLower()
+                    deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
             }
@@ -609,10 +626,10 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
-                    deployDataFactory   = ($dataFeatures.dataFactory -eq $true).ToString().ToLower()
-                    deploySynapse       = ($dataFeatures.synapse -eq $true).ToString().ToLower()
-                    deployDatabricks    = ($dataFeatures.databricks -eq $true).ToString().ToLower()
-                    deployPurview       = ($dataFeatures.purview -eq $true).ToString().ToLower()
+                    deployDataFactory   = (Get-FeatureFlag -Features $dataFeatures -Name 'dataFactory').ToString().ToLower()
+                    deploySynapse       = (Get-FeatureFlag -Features $dataFeatures -Name 'synapse').ToString().ToLower()
+                    deployDatabricks    = (Get-FeatureFlag -Features $dataFeatures -Name 'databricks').ToString().ToLower()
+                    deployPurview       = (Get-FeatureFlag -Features $dataFeatures -Name 'purview').ToString().ToLower()
                     storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
                 }
                 if ($Mode -eq 'hardened') {
@@ -629,10 +646,10 @@ foreach ($moduleName in $deploymentOrder) {
 
                 # Budget requires a notification email — silently downgrade to disabled if not set.
                 # -BudgetAlertEmail (workflow input) takes precedence over the profile value.
-                $effectiveBudgetEmail = if (-not [string]::IsNullOrEmpty($BudgetAlertEmail)) { $BudgetAlertEmail } else { $govFeatures.budgetAlertEmail }
+                $effectiveBudgetEmail = if (-not [string]::IsNullOrEmpty($BudgetAlertEmail)) { $BudgetAlertEmail } else { Get-FeatureFlag -Features $govFeatures -Name 'budgetAlertEmail' -Default '' }
                 $budgetEmailSet = -not [string]::IsNullOrEmpty($effectiveBudgetEmail)
-                $budgetEnabled  = $govFeatures.budget -eq $true -and $budgetEmailSet
-                if ($govFeatures.budget -eq $true -and -not $budgetEmailSet) {
+                $budgetEnabled  = (Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and $budgetEmailSet
+                if ((Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and -not $budgetEmailSet) {
                     Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
                 }
 
@@ -640,11 +657,11 @@ foreach ($moduleName in $deploymentOrder) {
                     prefix                  = $Prefix
                     location                = $Location
                     logAnalyticsId          = $state.logAnalyticsId
-                    enableAutomation        = ($govFeatures.automationAccount -eq $true).ToString().ToLower()
+                    enableAutomation        = (Get-FeatureFlag -Features $govFeatures -Name 'automationAccount').ToString().ToLower()
                     enableBudget            = $budgetEnabled.ToString().ToLower()
-                    budgetAmount            = if ($null -ne $govFeatures.budgetAmount) { $govFeatures.budgetAmount } else { 300 }
-                    enableResourceLocks     = ($govFeatures.resourceLocks -eq $true).ToString().ToLower()
-                    enablePolicyAssignments = ($govFeatures.policyAssignments -eq $true).ToString().ToLower()
+                    budgetAmount            = Get-FeatureFlag -Features $govFeatures -Name 'budgetAmount' -Default 300
+                    enableResourceLocks     = (Get-FeatureFlag -Features $govFeatures -Name 'resourceLocks').ToString().ToLower()
+                    enablePolicyAssignments = (Get-FeatureFlag -Features $govFeatures -Name 'policyAssignments').ToString().ToLower()
                     computeResourceGroupName = "$Prefix-compute-rg"
                     runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
                 }
