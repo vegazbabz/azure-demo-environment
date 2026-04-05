@@ -91,19 +91,31 @@ function Test-AdeSubscription {
         throw "Subscription '$SubscriptionId' not found or not accessible."
     }
 
-    # Check caller has at least Contributor at subscription scope
-    $callerId = (az ad signed-in-user show --query id -o tsv 2>$null)
-    $assignments = az role assignment list `
-        --assignee $callerId `
-        --subscription $SubscriptionId `
-        --include-inherited `
-        --query "[?roleDefinitionName == 'Owner' || roleDefinitionName == 'Contributor'].roleDefinitionName" `
-        -o tsv 2>$null
+    # Check caller has at least Contributor at subscription scope.
+    # az ad signed-in-user show only works for interactive users; fall back to
+    # SP object ID lookup when running under OIDC (e.g. GitHub Actions).
+    $callerId = az ad signed-in-user show --query id -o tsv 2>$null
+    if (-not $callerId) {
+        $appId    = az account show --query 'user.name' -o tsv 2>$null
+        $callerId = az ad sp show --id $appId --query id -o tsv 2>$null
+    }
+    if ($callerId) { $callerId = $callerId.Trim().Trim('"') }
 
-    if (-not $assignments) {
-        Write-AdeLog "WARNING: Could not confirm Contributor/Owner role on subscription. Deployment may fail." -Level Warning
+    if (-not $callerId) {
+        Write-AdeLog "Could not resolve caller object ID — skipping Contributor check." -Level Warning
     } else {
-        Write-AdeLog "Role confirmed: $($assignments | Select-Object -First 1) on $($sub.name)" -Level Success
+        $assignments = az role assignment list `
+            --assignee $callerId `
+            --subscription $SubscriptionId `
+            --include-inherited `
+            --query "[?roleDefinitionName == 'Owner' || roleDefinitionName == 'Contributor'].roleDefinitionName" `
+            -o tsv 2>$null
+
+        if (-not $assignments) {
+            Write-AdeLog "WARNING: Could not confirm Contributor/Owner role on subscription '$SubscriptionId'. Deployment may fail." -Level Warning
+        } else {
+            Write-AdeLog "Role confirmed: $($assignments -split "`n" | Select-Object -First 1) on $($sub.name)" -Level Success
+        }
     }
 
     return $sub
