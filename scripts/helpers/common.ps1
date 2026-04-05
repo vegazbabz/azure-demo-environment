@@ -307,7 +307,7 @@ function Invoke-AdeBicepDeployment {
         '--no-wait'
     )
     if ($paramArgs.Count -gt 0) { $argList += '--parameters'; $argList += $paramArgs }
-    Invoke-AzCmd -ArgumentList $argList
+    $null = Invoke-AzCmd -ArgumentList $argList
 
     # Stream per-resource progress by polling deployment operations via Invoke-AzCmd
     # so unit tests can mock all az calls through a single seam.
