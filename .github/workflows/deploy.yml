@@ -165,7 +165,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-monitoring-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/modules/monitoring/monitoring.bicep \
@@ -179,7 +179,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-networking-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/modules/networking/networking.bicep \
@@ -193,7 +193,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-security-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/modules/security/security.bicep \
@@ -208,7 +208,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-monitoring-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/hardened/monitoring/monitoring.bicep \
@@ -222,7 +222,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-networking-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/hardened/networking/networking.bicep \
@@ -236,7 +236,7 @@ jobs:
           PREFIX="${{ env.INPUT_PREFIX }}"
           LOCATION="${{ env.INPUT_LOCATION }}"
           RG="${PREFIX}-security-rg"
-          az group create --name "$RG" --location "$LOCATION" --output none 2>/dev/null || true
+          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
           az deployment group what-if \
             --resource-group "$RG" \
             --template-file  bicep/hardened/security/security.bicep \

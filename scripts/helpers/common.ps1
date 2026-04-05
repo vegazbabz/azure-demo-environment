@@ -264,6 +264,10 @@ function Remove-AdeResourceGroup {
     Write-AdeLog "Deleting resource group: $Name" -Level Warning
     if ($NoWait) { az group delete --name $Name --yes --no-wait --output none }
     else         { az group delete --name $Name --yes --output none }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "az group delete failed for '$Name' (exit $LASTEXITCODE). The resource group may still exist."
+    }
 }
 
 # ─── Bicep deployment helpers ─────────────────────────────────────────────────
