@@ -89,7 +89,6 @@ module automationContributorRole 'automation-role.bicep' = if (enableAutomation 
   scope: subscription()
   params: {
     automationPrincipalId: automationAccount!.identity.principalId
-    automationAccountId: automationAccount!.id
   }
 }
 
