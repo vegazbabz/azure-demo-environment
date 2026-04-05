@@ -10,7 +10,7 @@
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: ADE — Destroy 🗑️
+name: ADE — Destroy
 
 on:
   workflow_dispatch:
