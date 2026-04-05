@@ -469,6 +469,21 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         # Create a real temp .bicep file so Test-Path passes
         $script:fakeBicep = Join-Path $TestDrive 'test.bicep'
         Set-Content $script:fakeBicep 'param prefix string'
+
+        # Suppress actual sleeping in the poll loop
+        Mock Start-Sleep {}
+    }
+
+    # Helper mock: returns Succeeded for 'show', null for everything else.
+    # Each test that exercises the polling path uses this as its base mock.
+    function New-SucceededShowMock ([psobject]$Outputs = $null) {
+        $props = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $Outputs; error = $null }
+        return { param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = $props }
+            }
+            return $null
+        }.GetNewClosure()
     }
 
     BeforeEach {
@@ -481,14 +496,21 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
     }
 
     It 'Calls Invoke-AzCmd with deployment group create' {
-        Mock Invoke-AzCmd { return $null }
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            return $null
+        }
 
         Invoke-AdeBicepDeployment `
             -ResourceGroup  'ade-rg' `
             -TemplatePath   $script:fakeBicep `
-            -DeploymentName 'ade-test-deploy'
+            -DeploymentName 'ade-test-deploy' `
+            -PollIntervalSeconds 0
 
-        Should -Invoke Invoke-AzCmd -Times 1 -ParameterFilter {
+        Should -Invoke Invoke-AzCmd -ParameterFilter {
             $ArgumentList -contains 'create' -and $ArgumentList -contains 'group'
         }
     }
@@ -508,17 +530,25 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
     }
 
     It 'Passes each parameter key=value to az' {
-        $capturedArgs = $null
-        Mock Invoke-AzCmd { param($ArgumentList) $script:capturedArgs = $ArgumentList; return $null }
+        $script:capturedCreateArgs = $null
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'create') { $script:capturedCreateArgs = $ArgumentList }
+            return $null
+        }
 
         Invoke-AdeBicepDeployment `
             -ResourceGroup  'ade-rg' `
             -TemplatePath   $script:fakeBicep `
             -DeploymentName 'ade-params-test' `
-            -Parameters     @{ prefix = 'ade'; location = 'westeurope' }
+            -Parameters     @{ prefix = 'ade'; location = 'westeurope' } `
+            -PollIntervalSeconds 0
 
-        ($script:capturedArgs -join ' ') | Should -Match 'prefix=ade'
-        ($script:capturedArgs -join ' ') | Should -Match 'location=westeurope'
+        ($script:capturedCreateArgs -join ' ') | Should -Match 'prefix=ade'
+        ($script:capturedCreateArgs -join ' ') | Should -Match 'location=westeurope'
     }
 
     It 'Handles template paths containing spaces without splitting them' {
@@ -526,39 +556,59 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         $null      = New-Item -ItemType Directory -Path $spacyDir -Force
         $spacyBicep = Join-Path $spacyDir 'my template.bicep'
         Set-Content $spacyBicep 'param prefix string'
-        Mock Invoke-AzCmd { return $null }
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            return $null
+        }
 
-        { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $spacyBicep -DeploymentName 'dep' } |
+        { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $spacyBicep -DeploymentName 'dep' -PollIntervalSeconds 0 } |
             Should -Not -Throw
-        Should -Invoke Invoke-AzCmd -Times 1 -ParameterFilter {
-            # Path passed as a single ArgumentList element — not split on spaces
+        Should -Invoke Invoke-AzCmd -ParameterFilter {
             $ArgumentList -contains $spacyBicep
         }
     }
 
     It 'Returns the outputs object from a successful deployment' {
-        $fakeResult = [pscustomobject]@{
-            properties = [pscustomobject]@{
-                outputs = [pscustomobject]@{ logAnalyticsId = [pscustomobject]@{ value = '/subscriptions/x/workspaces/y' } }
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{
+                    properties = [pscustomobject]@{
+                        provisioningState = 'Succeeded'
+                        outputs           = [pscustomobject]@{ logAnalyticsId = [pscustomobject]@{ value = '/subscriptions/x/workspaces/y' } }
+                        error             = $null
+                    }
+                }
             }
+            return $null
         }
-        Mock Invoke-AzCmd { return $fakeResult }
 
         $result = Invoke-AdeBicepDeployment `
             -ResourceGroup  'ade-rg' `
             -TemplatePath   $script:fakeBicep `
-            -DeploymentName 'ade-out-test'
+            -DeploymentName 'ade-out-test' `
+            -PollIntervalSeconds 0
 
         $result.logAnalyticsId.value | Should -Be '/subscriptions/x/workspaces/y'
     }
 
     It 'Returns null when deployment produces no outputs' {
-        Mock Invoke-AzCmd { return $null }
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            return $null
+        }
 
         $result = Invoke-AdeBicepDeployment `
             -ResourceGroup  'ade-rg' `
             -TemplatePath   $script:fakeBicep `
-            -DeploymentName 'ade-noout'
+            -DeploymentName 'ade-noout' `
+            -PollIntervalSeconds 0
 
         $result | Should -BeNullOrEmpty
     }

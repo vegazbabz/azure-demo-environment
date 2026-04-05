@@ -260,7 +260,8 @@ function Invoke-AdeBicepDeployment {
         [Parameter(Mandatory)][string]$ResourceGroup,
         [Parameter(Mandatory)][string]$TemplatePath,
         [Parameter(Mandatory)][string]$DeploymentName,
-        [hashtable]$Parameters = @{}
+        [hashtable]$Parameters = @{},
+        [int]$PollIntervalSeconds = 5
     )
 
     if (-not (Test-Path $TemplatePath)) {
@@ -308,21 +309,25 @@ function Invoke-AdeBicepDeployment {
     if ($paramArgs.Count -gt 0) { $argList += '--parameters'; $argList += $paramArgs }
     Invoke-AzCmd -ArgumentList $argList
 
-    # Stream per-resource progress by polling deployment operations
-    $seenOps      = @{}
-    $showableOps  = @('Create', 'Delete', 'Deploy')
+    # Stream per-resource progress by polling deployment operations via Invoke-AzCmd
+    # so unit tests can mock all az calls through a single seam.
+    $seenOps        = @{}
+    $showableOps    = @('Create', 'Delete', 'Deploy')
     $terminalStates = @('Succeeded', 'Failed', 'Canceled')
-    $depState     = 'Running'
+    $depState       = 'Running'
+    $showResult     = $null
 
     do {
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds $PollIntervalSeconds
 
-        $rawOps = az deployment group operation list `
-            --resource-group $ResourceGroup `
-            --name $DeploymentName `
-            --output json 2>$null
-        if ($rawOps) {
-            try { $ops = $rawOps | ConvertFrom-Json -Depth 10 } catch { $ops = @() }
+        $ops = Invoke-AzCmd -ArgumentList @(
+            'deployment', 'group', 'operation', 'list',
+            '--resource-group', $ResourceGroup,
+            '--name',           $DeploymentName,
+            '--output',         'json'
+        ) -Silent -AllowFailure
+
+        if ($ops) {
             foreach ($op in $ops) {
                 $opId    = $op.operationId
                 $state   = $op.properties.provisioningState
@@ -347,31 +352,28 @@ function Invoke-AdeBicepDeployment {
             }
         }
 
-        $rawState = az deployment group show `
-            --resource-group $ResourceGroup `
-            --name $DeploymentName `
-            --query 'properties.provisioningState' `
-            --output tsv 2>$null
-        if ($rawState) { $depState = ($rawState | Out-String).Trim() }
+        $showResult = Invoke-AzCmd -ArgumentList @(
+            'deployment', 'group', 'show',
+            '--resource-group', $ResourceGroup,
+            '--name',           $DeploymentName,
+            '--output',         'json'
+        ) -Silent -AllowFailure
+
+        if ($showResult -and $showResult.properties) {
+            $depState = $showResult.properties.provisioningState
+        }
 
     } while ($depState -notin $terminalStates)
 
     if ($depState -ne 'Succeeded') {
-        $detail = az deployment group show `
-            --resource-group $ResourceGroup `
-            --name $DeploymentName `
-            --output json 2>$null | ConvertFrom-Json -Depth 20
-        $errMsg = if ($detail.properties.error.message) { $detail.properties.error.message } else { $depState }
+        $errMsg = if ($showResult -and $showResult.properties.error.message) {
+            $showResult.properties.error.message
+        } else { $depState }
         throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }
 
-    # Fetch outputs from the completed deployment
-    $result = az deployment group show `
-        --resource-group $ResourceGroup `
-        --name $DeploymentName `
-        --output json 2>$null | ConvertFrom-Json -Depth 20
-    if ($result -and $result.properties) {
-        return $result.properties.outputs
+    if ($showResult -and $showResult.properties) {
+        return $showResult.properties.outputs
     }
     return $null
 }
