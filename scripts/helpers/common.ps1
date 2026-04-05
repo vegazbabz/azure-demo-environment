@@ -254,12 +254,14 @@ function Invoke-AdeBicepDeployment {
     <#
     .SYNOPSIS
         Deploys a Bicep module to a specific resource group. Returns the outputs object.
+        Streams per-resource progress to the console while the deployment runs.
     #>
     param(
         [Parameter(Mandatory)][string]$ResourceGroup,
         [Parameter(Mandatory)][string]$TemplatePath,
         [Parameter(Mandatory)][string]$DeploymentName,
-        [hashtable]$Parameters = @{}
+        [hashtable]$Parameters = @{},
+        [int]$PollIntervalSeconds = 5
     )
 
     if (-not (Test-Path $TemplatePath)) {
@@ -271,37 +273,107 @@ function Invoke-AdeBicepDeployment {
     foreach ($key in $Parameters.Keys) {
         $val = $Parameters[$key]
         if ($val -is [hashtable] -or $val -is [System.Collections.Hashtable] -or $val -is [pscustomobject]) {
-            # Encode objects as JSON for ARM parameter inline syntax
             $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
             $paramArgs += "$key=$jsonVal"
         } elseif ($val -is [array] -or $val -is [System.Collections.ArrayList]) {
-            # Encode arrays as JSON — az CLI accepts key=["a","b"] for array params
             $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
             $paramArgs += "$key=$jsonVal"
         } else {
-            # Pass value directly; array ArgumentList elements are not whitespace-split
             $paramArgs += "$key=$val"
         }
     }
 
-    $subcommand = if ([bool]$WhatIfPreference) { 'what-if' } else { 'create' }
-    $outputFmt  = if ([bool]$WhatIfPreference) { 'table'   } else { 'json'   }
+    # What-if: run synchronously and return immediately
+    if ([bool]$WhatIfPreference) {
+        $argList = @(
+            'deployment', 'group', 'what-if',
+            '--resource-group', $ResourceGroup,
+            '--name',           $DeploymentName,
+            '--template-file',  $TemplatePath,
+            '--output',         'table'
+        )
+        if ($paramArgs.Count -gt 0) { $argList += '--parameters'; $argList += $paramArgs }
+        Invoke-AzCmd -ArgumentList $argList
+        return $null
+    }
 
+    # Submit deployment asynchronously so we can stream per-resource progress
     $argList = @(
-        'deployment', 'group', $subcommand,
+        'deployment', 'group', 'create',
         '--resource-group', $ResourceGroup,
         '--name',           $DeploymentName,
         '--template-file',  $TemplatePath,
-        '--output',         $outputFmt
+        '--output',         'none',
+        '--no-wait'
     )
-    if ($paramArgs.Count -gt 0) {
-        $argList += '--parameters'
-        $argList += $paramArgs
+    if ($paramArgs.Count -gt 0) { $argList += '--parameters'; $argList += $paramArgs }
+    $null = Invoke-AzCmd -ArgumentList $argList
+
+    # Stream per-resource progress by polling deployment operations via Invoke-AzCmd
+    # so unit tests can mock all az calls through a single seam.
+    $seenOps        = @{}
+    $showableOps    = @('Create', 'Delete', 'Deploy')
+    $terminalStates = @('Succeeded', 'Failed', 'Canceled')
+    $depState       = 'Running'
+    $showResult     = $null
+
+    do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        $ops = Invoke-AzCmd -ArgumentList @(
+            'deployment', 'group', 'operation', 'list',
+            '--resource-group', $ResourceGroup,
+            '--name',           $DeploymentName,
+            '--output',         'json'
+        ) -Silent -AllowFailure
+
+        if ($ops) {
+            foreach ($op in $ops) {
+                $opId    = $op.operationId
+                $state   = $op.properties.provisioningState
+                $opType  = $op.properties.provisioningOperation
+                $resName = $op.properties.targetResource.resourceName
+                $resType = ($op.properties.targetResource.resourceType -split '/')[-1]
+
+                # Only show meaningful resource operations, skip ARM internals
+                if ($opType -notin $showableOps -or -not $resName) { continue }
+
+                if (-not $seenOps.ContainsKey($opId)) {
+                    $seenOps[$opId] = $state
+                    if ($state -ne 'Waiting') {
+                        Write-AdeLog "  $resType '$resName'" -Level Info
+                    }
+                } elseif ($seenOps[$opId] -ne $state) {
+                    $seenOps[$opId] = $state
+                    if ($state -in @('Failed', 'Canceled')) {
+                        Write-AdeLog "  $resType '$resName' — $state" -Level Error
+                    }
+                }
+            }
+        }
+
+        $showResult = Invoke-AzCmd -ArgumentList @(
+            'deployment', 'group', 'show',
+            '--resource-group', $ResourceGroup,
+            '--name',           $DeploymentName,
+            '--output',         'json'
+        ) -Silent -AllowFailure
+
+        if ($showResult -and $showResult.properties) {
+            $depState = $showResult.properties.provisioningState
+        }
+
+    } while ($depState -notin $terminalStates)
+
+    if ($depState -ne 'Succeeded') {
+        $errMsg = if ($showResult -and $showResult.properties.error.message) {
+            $showResult.properties.error.message
+        } else { $depState }
+        throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }
 
-    $result = Invoke-AzCmd -ArgumentList $argList
-    if (-not [bool]$WhatIfPreference -and $result -and $result.properties) {
-        return $result.properties.outputs
+    if ($showResult -and $showResult.properties) {
+        return $showResult.properties.outputs
     }
     return $null
 }
