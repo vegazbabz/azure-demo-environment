@@ -621,6 +621,7 @@ var privateDnsZoneNames = [
   'privatelink.azurecr.io'
   'privatelink.servicebus.windows.net'
   'privatelink.eventhub.windows.net'
+  'privatelink.redis.cache.windows.net'
   'privatelink.cognitiveservices.azure.com'
   'privatelink.openai.azure.com'
   'privatelink.search.windows.net'
@@ -662,10 +663,21 @@ output managementSubnetId string = '${vnet.id}/subnets/management'
 output privateEndpointSubnetId string = '${vnet.id}/subnets/privateendpoints'
 output mysqlSubnetId string = '${vnet.id}/subnets/mysql'
 output dcSubnetId string = '${vnet.id}/subnets/dc'
-// Private DNS zone IDs for Flexible Server VNet injection (non-empty only when enablePrivateDnsZones = true)
+// Private DNS zone IDs (non-empty only when enablePrivateDnsZones = true)
+#disable-next-line no-hardcoded-env-urls
+output blobDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.blob.core.windows.net') : ''
+#disable-next-line no-hardcoded-env-urls
+output fileDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.file.core.windows.net') : ''
+#disable-next-line no-hardcoded-env-urls
+output sqlDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.database.windows.net') : ''
+output cosmosDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com') : ''
 #disable-next-line no-hardcoded-env-urls
 output postgresDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.postgres.database.azure.com') : ''
 output mysqlDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.mysql.database.azure.com') : ''
+output keyVaultDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net') : ''
+output serviceBusDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.servicebus.windows.net') : ''
+output eventHubDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.eventhub.windows.net') : ''
+output redisDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Network/privateDnsZones', 'privatelink.redis.cache.windows.net') : ''
 output appGwSubnetId string = '${vnet.id}/subnets/AppGatewaySubnet'
 output firewallSubnetId string = '${vnet.id}/subnets/AzureFirewallSubnet'
 output gatewaySubnetId string = '${vnet.id}/subnets/GatewaySubnet'

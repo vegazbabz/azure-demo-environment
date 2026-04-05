@@ -34,6 +34,10 @@ param tags object = {}
 @description('Object ID of the deployer principal (SP or user). When provided, grants Key Vault Secrets Officer so seed-data.ps1 can write secrets post-deploy.')
 param deployerPrincipalId string = ''
 
+@description('Principal type of the deployer. Use "User" for interactive deployments and "ServicePrincipal" for OIDC/CI pipelines. Affects RBAC assignment validity.')
+@allowed(['User', 'ServicePrincipal', 'Group'])
+param deployerPrincipalType string = 'ServicePrincipal'
+
 // ─── Key Vault ────────────────────────────────────────────────────────────────
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
@@ -85,7 +89,7 @@ resource kvSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     // Key Vault Secrets Officer
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
     principalId: deployerPrincipalId
-    principalType: 'ServicePrincipal'
+    principalType: deployerPrincipalType
   }
 }
 

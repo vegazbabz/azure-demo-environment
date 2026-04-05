@@ -27,8 +27,11 @@ param deployDatabricks bool = false
 param deployPurview bool = false
 
 @description('Storage account name from the storage module output, used as the linked service for Data Factory.')
-#disable-next-line no-unused-params
 param storageAccountName string = ''
+
+@description('Synapse Analytics SQL administrator password. Required when deploySynapse = true.')
+@secure()
+param synapseAdminPassword string = ''
 
 @description('Data subnet resource ID for future VNet-integration of data services.')
 #disable-next-line no-unused-params
@@ -49,15 +52,14 @@ resource dataFactory 'Microsoft.DataFactory/factories@2018-06-01' = if (deployDa
   }
 }
 
-// Sample linked service — Azure Blob Storage (uses managed identity)
-resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@2018-06-01' = if (deployDataFactory) {
+// Sample linked service — Azure Blob Storage (uses storage account from deployment state)
+resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@2018-06-01' = if (deployDataFactory && !empty(storageAccountName)) {
   parent: dataFactory
   name: 'AzureBlobStorage_Demo'
   properties: {
     type: 'AzureBlobStorage'
     typeProperties: {
-      #disable-next-line no-hardcoded-env-urls
-      serviceEndpoint: 'https://demo.blob.core.windows.net'
+      serviceEndpoint: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
       accountKind: 'StorageV2'
     }
     connectVia: {
@@ -91,7 +93,7 @@ resource synapseWorkspace 'Microsoft.Synapse/workspaces@2021-06-01' = if (deploy
       filesystem: 'synapse'
     }
     sqlAdministratorLogin: 'synapseadmin'
-    sqlAdministratorLoginPassword: 'SynapseDemo123!'
+    sqlAdministratorLoginPassword: !empty(synapseAdminPassword) ? synapseAdminPassword : 'SynapseDemo#${uniqueString(resourceGroup().id)}'
     publicNetworkAccess: 'Enabled'
     managedVirtualNetwork: 'default'
   }
