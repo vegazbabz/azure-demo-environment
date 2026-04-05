@@ -185,14 +185,14 @@ Describe 'Deploy-AdePolicies.ps1' {
     Context 'Successful run without assignment' {
 
         BeforeAll {
-            $global:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $script:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $capturedCalls  = $script:AzCalls   # reference captured by the closure below
 
-            Mock az {
-                $cmd = $args -join ' '
-                $global:AzCalls.Add($cmd)
+            Mock az ({
+                $capturedCalls.Add($args -join ' ')
                 $global:LASTEXITCODE = 0
                 return $null
-            }
+            }.GetNewClosure())
 
             & $script:scriptPath `
                 -SubscriptionId 'xxxxxxxx-0000-0000-0000-xxxxxxxxxxxx' `
@@ -200,22 +200,22 @@ Describe 'Deploy-AdePolicies.ps1' {
         }
 
         It 'Calls az account set' {
-            (@($global:AzCalls | Where-Object { $_ -match 'account set' })).Count | Should -BeGreaterThan 0
+            (@($script:AzCalls | Where-Object { $_ -match 'account set' })).Count | Should -BeGreaterThan 0
         }
 
         It 'Calls az policy definition create for each definition file' {
             $definitionCount = (Get-ChildItem (Join-Path $script:repoRoot 'policies\definitions') -Filter '*.json').Count
-            $definitionCalls = $global:AzCalls | Where-Object { $_ -match 'policy definition create' }
+            $definitionCalls = $script:AzCalls | Where-Object { $_ -match 'policy definition create' }
             $definitionCalls.Count | Should -Be $definitionCount
         }
 
         It 'Calls az policy set-definition create for the initiative' {
-            $setCalls = @($global:AzCalls | Where-Object { $_ -match 'policy set-definition create' })
+            $setCalls = @($script:AzCalls | Where-Object { $_ -match 'policy set-definition create' })
             $setCalls.Count | Should -Be 1
         }
 
         It 'Does NOT call az policy assignment create when -Assign is not passed' {
-            $assignCalls = @($global:AzCalls | Where-Object { $_ -match 'policy assignment create' })
+            $assignCalls = @($script:AzCalls | Where-Object { $_ -match 'policy assignment create' })
             $assignCalls.Count | Should -Be 0
         }
     }
@@ -223,14 +223,14 @@ Describe 'Deploy-AdePolicies.ps1' {
     Context 'Successful run with -Assign' {
 
         BeforeAll {
-            $global:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $script:AzCalls = [System.Collections.Generic.List[string]]::new()
+            $capturedCalls  = $script:AzCalls   # reference captured by the closure below
 
-            Mock az {
-                $cmd = $args -join ' '
-                $global:AzCalls.Add($cmd)
+            Mock az ({
+                $capturedCalls.Add($args -join ' ')
                 $global:LASTEXITCODE = 0
                 return $null
-            }
+            }.GetNewClosure())
 
             & $script:scriptPath `
                 -SubscriptionId 'xxxxxxxx-0000-0000-0000-xxxxxxxxxxxx' `
@@ -239,7 +239,7 @@ Describe 'Deploy-AdePolicies.ps1' {
         }
 
         It 'Calls az policy assignment create exactly once' {
-            $assignCalls = @($global:AzCalls | Where-Object { $_ -match 'policy assignment create' })
+            $assignCalls = @($script:AzCalls | Where-Object { $_ -match 'policy assignment create' })
             $assignCalls.Count | Should -Be 1
         }
     }
