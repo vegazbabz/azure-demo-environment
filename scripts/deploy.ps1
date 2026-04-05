@@ -167,7 +167,7 @@ Write-AdeSection "Azure Demo Environment — Deployment ($Mode mode)"
 Write-AdeLog "Started at $($startTime.ToString('yyyy-MM-dd HH:mm:ss UTC'))" -Level Info
 
 # ─── Pre-flight ───────────────────────────────────────────────────────────────
-Test-AdePrerequisites -StopOnError
+$null = Test-AdePrerequisites -StopOnError
 
 # ─── Subscription ─────────────────────────────────────────────────────────────
 if ($SubscriptionId) {
@@ -211,7 +211,7 @@ $automationWanted = $null -ne $govModPre -and
                    $govModPre.Value.enabled -eq $true -and
                    $govModPre.Value.features.automationAccount -eq $true
 if ($automationWanted) {
-    Test-AdePermissions -SubscriptionId $SubscriptionId -StopOnError
+    $null = Test-AdePermissions -SubscriptionId $SubscriptionId -StopOnError
     $adeCanAssignRoles = $true
 }
 
