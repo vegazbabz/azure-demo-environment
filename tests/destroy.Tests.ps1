@@ -128,6 +128,19 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
         $lockCall | Should -Not -BeNullOrEmpty
     }
 
+    It 'Throws when az group delete exits non-zero' {
+        Mock az {
+            $args_str = $args -join ' '
+            if ($args_str -match 'group delete') {
+                $global:LASTEXITCODE = 1
+                return $null
+            }
+            $global:LASTEXITCODE = 0
+        }
+        { Remove-AdeResourceGroup -Name 'ade-fail-rg' } |
+            Should -Throw -ExpectedMessage '*az group delete failed*'
+    }
+
     It 'Calls az lock delete once per lock when resource locks exist' {
         $script:AdeRmAzCalls = @()
         Mock az {
