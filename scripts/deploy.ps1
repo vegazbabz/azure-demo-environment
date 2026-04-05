@@ -133,7 +133,10 @@ param(
     [string]$Mode = 'default',
 
     [Parameter(Mandatory = $false)]
-    [string]$LogFile = ''
+    [string]$LogFile = '',
+
+    [Parameter(Mandatory = $false)]
+    [string]$BudgetAlertEmail = ''
 )
 
 Set-StrictMode -Version Latest
@@ -607,7 +610,9 @@ foreach ($moduleName in $deploymentOrder) {
                 $govFeatures = $deployProfile.modules.governance.features
 
                 # Budget requires a notification email — silently downgrade to disabled if not set.
-                $budgetEmailSet = -not [string]::IsNullOrEmpty($govFeatures.budgetAlertEmail)
+                # -BudgetAlertEmail (workflow input) takes precedence over the profile value.
+                $effectiveBudgetEmail = if (-not [string]::IsNullOrEmpty($BudgetAlertEmail)) { $BudgetAlertEmail } else { $govFeatures.budgetAlertEmail }
+                $budgetEmailSet = -not [string]::IsNullOrEmpty($effectiveBudgetEmail)
                 $budgetEnabled  = $govFeatures.budget -eq $true -and $budgetEmailSet
                 if ($govFeatures.budget -eq $true -and -not $budgetEmailSet) {
                     Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
@@ -625,7 +630,7 @@ foreach ($moduleName in $deploymentOrder) {
                     computeResourceGroupName = "$Prefix-compute-rg"
                     runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
                 }
-                if ($budgetEmailSet) { $params['budgetAlertEmail'] = $govFeatures.budgetAlertEmail }
+                if ($budgetEmailSet) { $params['budgetAlertEmail'] = $effectiveBudgetEmail }
 
                 $params['enableAutomationRoleAssignment'] = ($adeCanAssignRoles).ToString().ToLower()
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
