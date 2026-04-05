@@ -50,7 +50,7 @@
 .EXAMPLE
     ./seed-data.ps1 -Prefix ade -Modules storage,cosmosdb,redis -Force
 #>
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
     [ValidatePattern('(?-i)^[a-z0-9]{2,8}$')]
@@ -115,6 +115,7 @@ function Get-AdeResource {
 
 # Opens a TcpClient to a Redis host. Extracted so unit tests can mock it.
 function Get-RedisTcpClient {
+    [OutputType([System.Net.Sockets.TcpClient])]
     param([string]$Host, [int]$Port)
     return [System.Net.Sockets.TcpClient]::new($Host, $Port)
 }
