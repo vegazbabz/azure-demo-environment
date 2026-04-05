@@ -3,7 +3,6 @@
 #
 # Triggers:
 #   - Manual (workflow_dispatch): choose profile, region, prefix
-#   - Push to main: validates templates only (no deploy)
 #
 # Required secrets:
 #   AZURE_CLIENT_ID        — Service principal / managed identity client ID
@@ -65,14 +64,6 @@ on:
         options:
           - 'true'
           - 'false'
-
-  push:
-    branches:
-      - main
-    paths:
-      - 'bicep/**'
-      - 'config/**'
-      - 'scripts/**'
 
 # Prevent concurrent deployments to the same prefix — a new run waits for any
 # in-progress run with the same prefix to finish before proceeding.
