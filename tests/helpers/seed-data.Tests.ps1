@@ -290,6 +290,12 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
     Context 'Redis seeding' {
 
         BeforeAll {
+            # Stub must exist before Mock can intercept it (defined in seed-data.ps1 at dot-source time)
+            function New-RedisTcpClient {
+                [CmdletBinding(SupportsShouldProcess)]
+                param([string]$Host, [int]$Port)
+            }
+            Mock New-RedisTcpClient { throw 'Redis TCP mocked — no real connection' }
             $script:azCallCount = 0
             Mock az {
                 $script:azCallCount++
@@ -298,7 +304,6 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 elseif ($script:azCallCount -eq 2) {
                     '{"primaryKey":"test-primary-key","secondaryKey":"test-secondary-key"}'
                 }
-                # TCP/TLS RESP is not an az call; connection will fail gracefully in tests
             }
         }
 
@@ -306,7 +311,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules redis -Force
-            # 1 (resource list) + 1 (az redis list-keys); TLS RESP is not an az call
+            # 1 (resource list) + 1 (az redis list-keys); TCP mock throws — caught by the try/catch in seed-data.ps1
             Should -Invoke az -Times 2 -Exactly
         }
     }
