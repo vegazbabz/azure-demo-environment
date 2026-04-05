@@ -23,8 +23,7 @@ param enablePolicyAssignments bool = false
 @description('Enable monthly budget with email alerts.')
 param enableBudget bool = true
 
-@description('Enable ReadOnly resource lock on the networking resource group.')
-#disable-next-line no-unused-params
+@description('Enable CanNotDelete resource lock on the networking resource group.')
 param enableResourceLocks bool = false
 
 @description('Monthly budget amount in USD.')
@@ -52,8 +51,7 @@ param autoStartEnabled bool = false
 #disable-next-line no-unused-params
 param computeResourceGroupName string = '${prefix}-compute-rg'
 
-@description('Base URL for runbook script content (hardened mode).')
-#disable-next-line no-unused-params
+@description('Base URL for runbook script content (hardened mode). When provided, runbooks are published from this URL and schedule links are created automatically.')
 param runbooksBaseUrl string = ''
 
 @description('Allow the role assignment for the Automation Account managed identity. Requires Owner or User Access Administrator on the subscription. Set to false when deploying with Contributor-only credentials.')
@@ -114,7 +112,6 @@ resource automationDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
 }
 
 // ─── Stop Runbook ─────────────────────────────────────────────────────────────
-// Content uploaded post-deployment via deploy.ps1 from scripts/runbooks/Stop-AdeResources.ps1
 
 resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (enableAutomation) {
   parent: automationAccount
@@ -126,6 +123,9 @@ resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-0
     description: 'Deallocates all ADE VMs, VMSS, and AKS clusters to minimize costs outside working hours.'
     logProgress: true
     logVerbose: false
+    publishContentLink: !empty(runbooksBaseUrl) ? {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Stop-AdeResources.ps1'
+    } : null
   }
 }
 
@@ -141,6 +141,9 @@ resource startRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-
     description: 'Starts all ADE VMs, VMSS, and AKS clusters at the start of the working day.'
     logProgress: true
     logVerbose: false
+    publishContentLink: !empty(runbooksBaseUrl) ? {
+      uri: '${runbooksBaseUrl}/scripts/runbooks/Start-AdeResources.ps1'
+    } : null
   }
 }
 
@@ -183,8 +186,26 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
   }
 }
 
-// Schedule links are created by deploy.ps1 after runbooks are published
-// (Azure Automation does not allow linking schedules to draft/unpublished runbooks)
+// ─── Job Schedules ────────────────────────────────────────────────────────────
+// Only linked when runbooksBaseUrl is provided (runbooks must be published first).
+
+resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(resourceGroup().id, prefix, 'stop-schedule')
+  properties: {
+    schedule: { name: stopSchedule!.name }
+    runbook: { name: stopRunbook!.name }
+  }
+}
+
+resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled && !empty(runbooksBaseUrl)) {
+  parent: automationAccount
+  name: guid(resourceGroup().id, prefix, 'start-schedule')
+  properties: {
+    schedule: { name: startSchedule!.name }
+    runbook: { name: startRunbook!.name }
+  }
+}
 
 // ─── Budget Alert ─────────────────────────────────────────────────────────────
 // Deployed at subscription scope via nested module
@@ -206,6 +227,16 @@ module budgetModule 'budget.bicep' = if (enableBudget) {
 module policyModule 'policy-assignments.bicep' = if (enablePolicyAssignments) {
   name: 'ade-policy-assignments'
   scope: subscription()
+  params: {
+    prefix: prefix
+  }
+}
+
+// ─── Resource Locks ───────────────────────────────────────────────────────────
+
+module networkingRgLock 'network-lock.bicep' = if (enableResourceLocks) {
+  name: '${prefix}-networking-rg-lock'
+  scope: resourceGroup('${prefix}-networking-rg')
   params: {
     prefix: prefix
   }

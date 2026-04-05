@@ -48,8 +48,8 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
   location: location
   tags: tags
   sku: {
-    name: appServicePlanSku
-    tier: 'Basic'
+    name: effectiveSku
+    tier: effectiveTier
   }
   properties: {
     reserved: false
@@ -65,10 +65,12 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: false
+    virtualNetworkSubnetId: vnetEnabled ? appServiceSubnetId : null
     siteConfig: {
       minTlsVersion: '1.0'
       ftpsState: 'AllAllowed'
       netFrameworkVersion: 'v8.0'
+      vnetRouteAllEnabled: vnetEnabled
     }
   }
 }
