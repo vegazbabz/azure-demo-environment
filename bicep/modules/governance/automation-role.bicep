@@ -9,11 +9,11 @@ targetScope = 'subscription'
 @description('Principal ID of the Automation Account managed identity.')
 param automationPrincipalId string
 
-@description('Resource ID of the Automation Account (used as deduplication seed for the role assignment GUID).')
-param automationAccountId string
-
 resource automationContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().subscriptionId, automationAccountId, 'contributor')
+  // Seed on principalId (not accountId) so a new system-assigned MI after
+  // resource recreation produces a new GUID instead of colliding with the
+  // orphaned assignment from the previous MI.
+  name: guid(subscription().subscriptionId, automationPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c') // Contributor
     principalId: automationPrincipalId
