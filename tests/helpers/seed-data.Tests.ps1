@@ -291,7 +291,10 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
 
         BeforeAll {
             # Stub must exist before Mock can intercept it (defined in seed-data.ps1 at dot-source time)
-            function New-RedisTcpClient { param([string]$Host, [int]$Port) }
+            function New-RedisTcpClient {
+                [CmdletBinding(SupportsShouldProcess)]
+                param([string]$Host, [int]$Port)
+            }
             Mock New-RedisTcpClient { throw 'Redis TCP mocked — no real connection' }
             $script:azCallCount = 0
             Mock az {
