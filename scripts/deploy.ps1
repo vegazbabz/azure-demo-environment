@@ -354,6 +354,15 @@ foreach ($moduleName in $deploymentOrder) {
             'networking' {
                 $bicep = Join-Path $bicepRoot 'networking\networking.bicep'
                 $netFeatures = if ($null -ne $deployProfile.modules.networking.features) { $deployProfile.modules.networking.features } else { [pscustomobject]@{} }
+                # Guard: compute may be disabled (no features key) on profiles like databases-only, networking-only.
+                # Accessing compute.features directly throws with Set-StrictMode when the key is absent.
+                $computeModProp   = $deployProfile.modules.PSObject.Properties['compute']
+                $computeFeatures  = if ($null -ne $computeModProp -and
+                                        $null -ne $computeModProp.Value.PSObject.Properties['features']) {
+                                        $deployProfile.modules.compute.features
+                                    } else {
+                                        [pscustomobject]@{}
+                                    }
                 $params = @{
                     prefix                 = $Prefix
                     location               = $Location
@@ -364,7 +373,7 @@ foreach ($moduleName in $deploymentOrder) {
                     enableNatGateway       = ($netFeatures.enableNatGateway -eq $true).ToString().ToLower()
                     enableDdos             = ($netFeatures.enableDdos -eq $true).ToString().ToLower()
                     enablePrivateDnsZones  = ($netFeatures.enablePrivateDnsZones -eq $true).ToString().ToLower()
-                    deployDomainController = (($null -ne $deployProfile.modules.compute.features) -and ($deployProfile.modules.compute.features.domainController -eq $true)).ToString().ToLower()
+                    deployDomainController = ($computeFeatures.domainController -eq $true).ToString().ToLower()
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'
@@ -395,11 +404,15 @@ foreach ($moduleName in $deploymentOrder) {
             # ── SECURITY ────────────────────────────────────────────────────
             'security' {
                 $bicep = Join-Path $bicepRoot 'security\security.bicep'
-                # Resolve deployer object ID so KV Secrets Officer role can be granted for seed-data.ps1
-                $deployerOid = az ad signed-in-user show --query id -o tsv 2>$null
+                # Resolve deployer object ID so KV Secrets Officer role can be granted for seed-data.ps1.
+                # signed-in-user only works for interactive logins; OIDC/CI falls back to sp show.
+                # Track principal type so the Bicep role assignment is valid for both users and SPs.
+                $deployerOid  = az ad signed-in-user show --query id -o tsv 2>$null
+                $deployerType = 'User'
                 if (-not $deployerOid) {
-                    $callerAppId = az account show --query 'user.name' -o tsv 2>$null
-                    $deployerOid = az ad sp show --id $callerAppId --query id -o tsv 2>$null
+                    $callerAppId  = az account show --query 'user.name' -o tsv 2>$null
+                    $deployerOid  = az ad sp show --id $callerAppId --query id -o tsv 2>$null
+                    $deployerType = 'ServicePrincipal'
                 }
                 # Some az CLI versions return the GUID wrapped in double-quotes (e.g. "abc-..."); strip them.
                 if ($deployerOid) { $deployerOid = $deployerOid.Trim().Trim('"') }
@@ -410,7 +423,10 @@ foreach ($moduleName in $deploymentOrder) {
                     enableDefender    = ($deployProfile.modules.security.features.defenderForCloud -eq $true).ToString().ToLower()
                     enableSentinel    = ($deployProfile.modules.security.features.sentinel -eq $true).ToString().ToLower()
                 }
-                if ($deployerOid) { $params['deployerPrincipalId'] = $deployerOid }
+                if ($deployerOid) {
+                    $params['deployerPrincipalId']   = $deployerOid
+                    $params['deployerPrincipalType'] = $deployerType
+                }
                 # privateEndpointSubnetId, keyVaultDnsZoneId, and allowedCidrRanges are only
                 # declared in the hardened security module — do not pass them to the default one.
                 if ($Mode -eq 'hardened') {
@@ -558,6 +574,8 @@ foreach ($moduleName in $deploymentOrder) {
                     deploySignalR       = ($intFeatures.signalR -eq $true).ToString().ToLower()
                     deployApim          = ($intFeatures.apiManagement -eq $true).ToString().ToLower()
                     apimSku             = if ($null -ne $intFeatures.apimSku) { $intFeatures.apimSku } else { 'Developer' }
+                    apimPublisherEmail  = if ($null -ne $intFeatures.apimPublisherEmail -and $intFeatures.apimPublisherEmail -ne '') { $intFeatures.apimPublisherEmail } else { 'admin@example.com' }
+                    apimPublisherName   = if ($null -ne $intFeatures.apimPublisherName  -and $intFeatures.apimPublisherName  -ne '') { $intFeatures.apimPublisherName  } else { 'ADE Demo' }
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     serviceBusDnsZoneId     = $state.serviceBusDnsZoneId
                     eventHubDnsZoneId       = $state.eventHubDnsZoneId
