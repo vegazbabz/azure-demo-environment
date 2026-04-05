@@ -141,7 +141,7 @@ $failedRgs = @()
 foreach ($rg in $ordered) {
     try {
         Remove-AdeResourceGroup -Name $rg -NoWait:$NoWait
-        Write-AdeLog "Deletion initiated: $rg" -Level Success
+        Write-AdeLog "Deletion completed: $rg" -Level Success
     } catch {
         Write-AdeLog "Failed to delete '$rg': $_" -Level Error
         $failedRgs += $rg
