@@ -147,6 +147,7 @@ jobs:
     needs: validate
     if: github.event_name == 'workflow_dispatch'
     environment: demo
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -167,13 +168,14 @@ jobs:
           sudo apt-get install -y -qq powershell
 
       - name: What-if — all enabled modules
+        id: whatif
         # Runs deploy.ps1 -WhatIf so the preview is:
         #   • profile-aware  — only modules enabled in the selected profile are previewed
         #   • skip_modules-aware — modules in -SkipModules are excluded
         #   • mode-correct   — uses hardened/ or modules/ Bicep path to match the real deploy
         #   • complete       — covers all 12 modules, not just monitoring/networking/security
-        # Non-fatal: failures are warnings only (|| true) so a what-if ARM error
-        # doesn't block the actual deployment.
+        # Non-fatal: failures are warnings only so a what-if ARM error
+        # doesn't block the actual deployment — but the failure IS surfaced in the job summary.
         continue-on-error: true
         shell: pwsh
         env:
@@ -280,3 +282,8 @@ jobs:
             -o tsv | sort | while IFS= read -r rg; do
               echo "- \`${rg}\`" >> "$GITHUB_STEP_SUMMARY"
             done
+          if [ "${{ steps.whatif.outcome }}" = "failure" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> [!WARNING]" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **What-if preview failed** — the deployment may encounter the same issue. Review the what-if step logs above." >> "$GITHUB_STEP_SUMMARY"
+          fi
