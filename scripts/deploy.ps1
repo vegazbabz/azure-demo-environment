@@ -708,6 +708,42 @@ foreach ($moduleName in $deploymentOrder) {
                             }
                         }
                     }
+
+                    # Link published runbooks to their schedules.
+                    # ARM requires a published runbook to create a jobSchedule — cannot
+                    # be done in Bicep where the runbooks have no published version yet.
+                    $listUrl    = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/jobSchedules?api-version=$apiVer"
+                    $jsListJson = az rest --method GET --url $listUrl | ConvertFrom-Json
+                    $existingLinks = @($jsListJson.value | ForEach-Object { $_.properties.runbook.name })
+
+                    $autoShutdownTime = Get-FeatureFlag -Features $govFeatures -Name 'autoShutdownTime' -Default '1900'
+                    $autoStartEnabled = (Get-FeatureFlag -Features $govFeatures -Name 'autoStartEnabled') -eq $true
+                    $scheduleLinks = @(
+                        @{ Schedule = "Daily-Stop-$autoShutdownTime"; Runbook = 'Stop-AdeResources'; Enabled = $true }
+                        @{ Schedule = 'Daily-Start-0800';             Runbook = 'Start-AdeResources'; Enabled = $autoStartEnabled }
+                    )
+                    foreach ($link in ($scheduleLinks | Where-Object { $_.Enabled })) {
+                        if ($existingLinks -contains $link.Runbook) {
+                            Write-AdeLog "Job schedule already linked: $($link.Runbook) \u2192 $($link.Schedule)" -Level Info
+                            continue
+                        }
+                        $seed   = [System.Text.Encoding]::UTF8.GetBytes("$($state.automationAccountName)-$($link.Schedule)")
+                        $hash   = [System.Security.Cryptography.MD5]::Create().ComputeHash($seed)
+                        $jsGuid = [System.Guid]::new($hash).ToString()
+                        $jsUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/jobSchedules/$($jsGuid)?api-version=$apiVer"
+                        $jsBody = @{
+                            properties = @{
+                                schedule = @{ name = $link.Schedule }
+                                runbook  = @{ name = $link.Runbook }
+                            }
+                        } | ConvertTo-Json -Compress
+                        az rest --method PUT --url $jsUrl --body $jsBody --headers 'Content-Type=application/json' --output none
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-AdeLog "Job schedule linked: $($link.Runbook) \u2192 $($link.Schedule)" -Level Success
+                        } else {
+                            Write-AdeLog "Job schedule link failed ($($link.Runbook) \u2192 $($link.Schedule)) — non-fatal." -Level Warning
+                        }
+                    }
                 }
 
             }

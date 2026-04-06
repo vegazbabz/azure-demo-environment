@@ -280,4 +280,3 @@ jobs:
             -o tsv | sort | while IFS= read -r rg; do
               echo "- \`${rg}\`" >> "$GITHUB_STEP_SUMMARY"
             done
-            done
