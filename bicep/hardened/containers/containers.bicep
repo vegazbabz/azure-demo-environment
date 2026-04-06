@@ -112,11 +112,14 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
       }
     ]
     // Hardened: Azure CNI for full VNet IP visibility (required for network policy)
+    // serviceCidr must not overlap the VNet address space (10.0.0.0/16).
     networkProfile: {
       networkPlugin: 'azure'
       networkPolicy: 'azure'    // Hardened: Azure network policy (CIS 5.4.x)
       loadBalancerSku: 'standard'
       outboundType: 'loadBalancer'
+      serviceCidr: '10.96.0.0/16'
+      dnsServiceIP: '10.96.0.10'
     }
     // Hardened: OIDC issuer enabled (pre-requisite for workload identity)
     oidcIssuerProfile: {
