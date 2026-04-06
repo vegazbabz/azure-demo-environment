@@ -671,7 +671,6 @@ foreach ($moduleName in $deploymentOrder) {
                     enableResourceLocks     = (Get-FeatureFlag -Features $govFeatures -Name 'resourceLocks').ToString().ToLower()
                     enablePolicyAssignments = (Get-FeatureFlag -Features $govFeatures -Name 'policyAssignments').ToString().ToLower()
                     computeResourceGroupName = "$Prefix-compute-rg"
-                    runbooksBaseUrl         = 'https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main'
                 }
                 if ($budgetEmailSet) { $params['budgetAlertEmail'] = $effectiveBudgetEmail }
 
@@ -679,6 +678,38 @@ foreach ($moduleName in $deploymentOrder) {
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
                 $state.automationAccountId   = Get-AdeDeploymentOutput $outputs 'automationAccountId'
                 $state.automationAccountName = Get-AdeDeploymentOutput $outputs 'automationAccountName'
+
+                # Upload runbook content from local files and publish.
+                # This avoids publishContentLink, which requires ARM to synchronously
+                # fetch the content from GitHub raw at deploy time — an unreliable
+                # network dependency that causes intermittent Bicep failures.
+                if ($state.automationAccountName) {
+                    $govRg  = "$Prefix-governance-rg"
+                    $apiVer = '2023-11-01'
+                    foreach ($rbName in @('Stop-AdeResources', 'Start-AdeResources')) {
+                        $rbFile = Join-Path $scriptRoot "runbooks\$rbName.ps1"
+                        if (Test-Path $rbFile) {
+                            Write-AdeLog "Publishing runbook: $rbName" -Level Info
+                            $contentUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/runbooks/$rbName/draft/content?api-version=$apiVer"
+                            az rest --method PUT --url $contentUri --body "@$rbFile" --headers 'Content-Type=text/powershell' --output none 2>&1 | Out-Null
+                            if ($LASTEXITCODE -eq 0) {
+                                az automation runbook publish `
+                                    --resource-group $govRg `
+                                    --automation-account-name $state.automationAccountName `
+                                    --name $rbName `
+                                    --output none
+                                if ($LASTEXITCODE -eq 0) {
+                                    Write-AdeLog "Runbook '$rbName' published." -Level Success
+                                } else {
+                                    Write-AdeLog "Runbook '$rbName' uploaded but publish step failed (non-fatal)." -Level Warning
+                                }
+                            } else {
+                                Write-AdeLog "Could not upload content for '$rbName' — registered as draft (non-fatal)." -Level Warning
+                            }
+                        }
+                    }
+                }
+
             }
 
         }

@@ -51,9 +51,6 @@ param autoStartEnabled bool = false
 #disable-next-line no-unused-params
 param computeResourceGroupName string = '${prefix}-compute-rg'
 
-@description('Base URL for runbook script content (hardened mode). When provided, runbooks are published from this URL and schedule links are created automatically.')
-param runbooksBaseUrl string = ''
-
 @description('Allow the role assignment for the Automation Account managed identity. Requires Owner or User Access Administrator on the subscription. Set to false when deploying with Contributor-only credentials.')
 param enableAutomationRoleAssignment bool = false
 
@@ -83,7 +80,10 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 // is resource-group scoped and subscription-scoped resources require a separate module.
 // Guarded by enableAutomationRoleAssignment — requires Owner or User Access Administrator.
 module automationContributorRole 'automation-role.bicep' = if (enableAutomation && enableAutomationRoleAssignment) {
-  name: '${prefix}-automation-role'
+  // Include location in the deployment name so re-deploys to a different region
+  // don't collide with the prior subscription-scoped deployment (ARM stores each
+  // subscription-scoped deployment keyed by name + location and rejects mismatches).
+  name: '${prefix}-automation-role-${location}'
   scope: subscription()
   params: {
     automationPrincipalId: automationAccount!.identity.principalId
@@ -123,9 +123,6 @@ resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-0
     description: 'Deallocates all ADE VMs, VMSS, and AKS clusters to minimize costs outside working hours.'
     logProgress: true
     logVerbose: false
-    publishContentLink: !empty(runbooksBaseUrl) ? {
-      uri: '${runbooksBaseUrl}/scripts/runbooks/Stop-AdeResources.ps1'
-    } : null
   }
 }
 
@@ -141,9 +138,6 @@ resource startRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-
     description: 'Starts all ADE VMs, VMSS, and AKS clusters at the start of the working day.'
     logProgress: true
     logVerbose: false
-    publishContentLink: !empty(runbooksBaseUrl) ? {
-      uri: '${runbooksBaseUrl}/scripts/runbooks/Start-AdeResources.ps1'
-    } : null
   }
 }
 
@@ -187,9 +181,11 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
 }
 
 // ─── Job Schedules ────────────────────────────────────────────────────────────
-// Only linked when runbooksBaseUrl is provided (runbooks must be published first).
+// Always linked. Runbook content is uploaded and published by deploy.ps1 after
+// the Bicep deployment completes, so schedules will have live runbooks by the
+// time the first trigger fires.
 
-resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && !empty(runbooksBaseUrl)) {
+resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation) {
   parent: automationAccount
   name: guid(resourceGroup().id, prefix, 'stop-schedule')
   properties: {
@@ -198,7 +194,7 @@ resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2
   }
 }
 
-resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled && !empty(runbooksBaseUrl)) {
+resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled) {
   parent: automationAccount
   name: guid(resourceGroup().id, prefix, 'start-schedule')
   properties: {
@@ -211,7 +207,7 @@ resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@
 // Deployed at subscription scope via nested module
 
 module budgetModule 'budget.bicep' = if (enableBudget) {
-  name: 'ade-budget'
+  name: '${prefix}-budget-${location}'
   scope: subscription()
   params: {
     prefix: prefix
@@ -225,7 +221,7 @@ module budgetModule 'budget.bicep' = if (enableBudget) {
 // Assigns the built-in CIS Microsoft Azure Foundations Benchmark initiative
 
 module policyModule 'policy-assignments.bicep' = if (enablePolicyAssignments) {
-  name: 'ade-policy-assignments'
+  name: '${prefix}-policy-${location}'
   scope: subscription()
   params: {
     prefix: prefix
