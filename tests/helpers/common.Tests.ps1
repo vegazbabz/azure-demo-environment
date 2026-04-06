@@ -450,7 +450,7 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         Should -Invoke az -Times 0 -ParameterFilter { $args -contains 'create' }
     }
 
-    It 'Throws a descriptive error when the existing RG is in a different location' {
+    It 'Logs a warning and continues when the existing RG is in a different location' {
         Mock az {
             if ($args -contains 'show') {
                 $global:LASTEXITCODE = 0
@@ -460,8 +460,10 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         }
 
         $tags = @{ project = 'ade' }
-        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'northeurope' -Tags $tags } |
-            Should -Throw -ExpectedMessage "*already exists in 'westeurope'*"
+        # Should NOT throw — location mismatch is now a warning, not a hard failure
+        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'northeurope' -Tags $tags } | Should -Not -Throw
+        # And must NOT call az group create (it reuses the existing RG)
+        Should -Invoke az -Times 0 -ParameterFilter { $args -contains 'create' }
     }
 
     It 'Throws when az group create exits non-zero' {
