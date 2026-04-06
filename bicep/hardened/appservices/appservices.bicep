@@ -1,6 +1,10 @@
 // ─── hardened/appservices/appservices.bicep ───────────────────────────────────
-// Deploys: App Service Plan (B1), Windows Web App, Linux Web App,
+// Deploys: App Service Plan (B1), Windows Web App,
 //          Function App (Consumption), Static Web App, Logic App (Standard).
+//
+// NOTE: Linux App Service Plan is intentionally absent — Microsoft.Web/serverfarms
+// with reserved:true is unavailable in several Azure regions (including swedencentral).
+// The Windows plan + Function App cover the benchmark scope.
 //
 // HARDENED MODE: HTTPS-only, TLS 1.2, FTPS disabled, system-assigned managed
 //               identity on all apps, client certificate mode optional,
@@ -17,9 +21,6 @@ param location string = resourceGroup().location
 
 @description('Deploy Windows Web App.')
 param deployWindowsApp bool = true
-
-@description('Deploy Linux Web App.')
-param deployLinuxApp bool = true
 
 @description('Deploy Function App (Consumption plan).')
 param deployFunctionApp bool = true
@@ -95,46 +96,6 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
     siteConfig: union(hardenedSiteConfig, {
       netFrameworkVersion: 'v8.0'
       // Route all outbound traffic through the VNet (reaches private endpoints)
-      vnetRouteAllEnabled: !empty(subnetId)
-    })
-  }
-}
-
-// ─── Linux App Service Plan ───────────────────────────────────────────────────
-
-resource linuxAppServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = if (deployLinuxApp) {
-  name: '${prefix}-linux-asp'
-  location: location
-  tags: tags
-  sku: {
-    name: appServicePlanSku
-    tier: 'Basic'
-  }
-  properties: {
-    reserved: true
-  }
-}
-
-// ─── Linux Web App ────────────────────────────────────────────────────────────
-
-resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
-  name: '${prefix}-linux-app'
-  location: location
-  tags: tags
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: linuxAppServicePlan.id
-    httpsOnly: true
-    // NOTE: A private endpoint (group ID 'sites') is required to set publicNetworkAccess to 'Disabled'.
-    // Keeping Enabled for demo deployability; add privateEndpointSubnetId param + PE resource for full hardening.
-    publicNetworkAccess: 'Enabled'
-    clientCertEnabled: true
-    clientCertMode: 'Optional'
-    virtualNetworkSubnetId: !empty(subnetId) ? subnetId : null
-    siteConfig: union(hardenedSiteConfig, {
-      linuxFxVersion: 'NODE|20-lts'
       vnetRouteAllEnabled: !empty(subnetId)
     })
   }
@@ -378,8 +339,6 @@ resource logicStorageTableContributor 'Microsoft.Authorization/roleAssignments@2
 
 output windowsWebAppId string = deployWindowsApp ? windowsWebApp.id : ''
 output windowsWebAppHostname string = deployWindowsApp ? windowsWebApp!.properties.defaultHostName : ''
-output linuxWebAppId string = deployLinuxApp ? linuxWebApp.id : ''
-output linuxWebAppHostname string = deployLinuxApp ? linuxWebApp!.properties.defaultHostName : ''
 output functionAppId string = deployFunctionApp ? functionApp.id : ''
 output functionAppHostname string = deployFunctionApp ? functionApp!.properties.defaultHostName : ''
 output logicAppId string = deployLogicApp ? logicApp.id : ''

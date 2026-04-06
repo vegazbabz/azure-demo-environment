@@ -1,6 +1,10 @@
 ﻿// ─── appservices.bicep ───────────────────────────────────────────────────────
-// Deploys: App Service Plan (B1), Windows Web App, Linux Web App,
+// Deploys: App Service Plan (B1), Windows Web App,
 //          Function App (Consumption), Logic App (Standard).
+//
+// NOTE: Linux App Service Plan is intentionally absent — Microsoft.Web/serverfarms
+// with reserved:true is unavailable in several Azure regions (including swedencentral).
+// The Windows plan + Function App cover the benchmark scope.
 //
 // DEFAULT MODE: No forced HTTPS, no TLS minimum, no managed identity,
 //               no diagnostic settings. Out-of-the-box Azure defaults.
@@ -14,9 +18,6 @@ param location string = resourceGroup().location
 
 @description('Deploy Windows Web App.')
 param deployWindowsApp bool = true
-
-@description('Deploy Linux Web App.')
-param deployLinuxApp bool = true
 
 @description('Deploy Function App (Consumption plan).')
 param deployFunctionApp bool = true
@@ -67,40 +68,6 @@ resource windowsWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployWindowsApp) 
       minTlsVersion: '1.0'
       ftpsState: 'AllAllowed'
       netFrameworkVersion: 'v8.0'
-      vnetRouteAllEnabled: vnetEnabled
-    }
-  }
-}
-
-// ─── Linux App Service Plan ───────────────────────────────────────────────────
-
-resource linuxAppServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = if (deployLinuxApp) {
-  name: '${prefix}-linux-asp'
-  location: location
-  tags: tags
-  sku: {
-    name: effectiveSku
-    tier: effectiveTier
-  }
-  properties: {
-    reserved: true
-  }
-}
-
-// ─── Linux Web App ────────────────────────────────────────────────────────────
-
-resource linuxWebApp 'Microsoft.Web/sites@2023-01-01' = if (deployLinuxApp) {
-  name: '${prefix}-linux-app'
-  location: location
-  tags: tags
-  properties: {
-    serverFarmId: linuxAppServicePlan.id
-    httpsOnly: false
-    virtualNetworkSubnetId: vnetEnabled ? appServiceSubnetId : null
-    siteConfig: {
-      minTlsVersion: '1.0'
-      ftpsState: 'AllAllowed'
-      linuxFxVersion: 'NODE|20-lts'
       vnetRouteAllEnabled: vnetEnabled
     }
   }
@@ -222,8 +189,6 @@ resource logicApp 'Microsoft.Web/sites@2023-01-01' = if (deployLogicApp) {
 
 output windowsWebAppId string = deployWindowsApp ? windowsWebApp.id : ''
 output windowsWebAppHostname string = deployWindowsApp ? windowsWebApp!.properties.defaultHostName : ''
-output linuxWebAppId string = deployLinuxApp ? linuxWebApp.id : ''
-output linuxWebAppHostname string = deployLinuxApp ? linuxWebApp!.properties.defaultHostName : ''
 output functionAppId string = deployFunctionApp ? functionApp.id : ''
 output functionAppHostname string = deployFunctionApp ? functionApp!.properties.defaultHostName : ''
 output logicAppId string = deployLogicApp ? logicApp.id : ''
