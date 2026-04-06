@@ -225,8 +225,11 @@ function New-AdeResourceGroup {
     if ($LASTEXITCODE -eq 0 -and $existing) {
         $existingLocation = ($existing | ConvertFrom-Json).location
         if ($existingLocation -ne $Location) {
-            throw "Resource group '$Name' already exists in '$existingLocation' but deployment is targeting '$Location'. " +
-                  "Either run 'destroy.ps1' first to remove the old environment, or re-run with -Location '$existingLocation'."
+            # deploy.ps1 auto-detects and corrects $Location before reaching here.
+            # This warning fires only if New-AdeResourceGroup is called directly
+            # with a mismatched location (e.g. from a custom script).
+            Write-AdeLog "Resource group '$Name' exists in '$existingLocation'; ignoring requested location '$Location' and reusing '$existingLocation'." -Level Warning
+            $Location = $existingLocation
         }
         Write-AdeLog "Resource group already exists: $Name ($existingLocation)" -Level Info
         # Update tags on the existing RG without touching its location.
