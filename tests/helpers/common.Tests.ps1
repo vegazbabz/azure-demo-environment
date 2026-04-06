@@ -651,13 +651,15 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         $result | Should -BeNullOrEmpty
     }
 
-    It 'Calls az resource list after a successful deployment for the resource summary' {
+    It 'Calls az resource list before and after deployment for the new/existing diff' {
+        $script:listCallCount = 0
         Mock Invoke-AzCmd {
             param($ArgumentList)
             if ($ArgumentList -contains 'show') {
                 return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
             }
             if ($ArgumentList -contains 'list' -and $ArgumentList -contains 'resource') {
+                $script:listCallCount++
                 return @(
                     [pscustomobject]@{ name = 'ade-law'; type = 'Microsoft.OperationalInsights/workspaces' }
                     [pscustomobject]@{ name = 'ade-ag';  type = 'Microsoft.Insights/actionGroups' }
@@ -672,9 +674,43 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
             -DeploymentName 'ade-res-summary' `
             -PollIntervalSeconds 0
 
-        Should -Invoke Invoke-AzCmd -ParameterFilter {
-            $ArgumentList -contains 'list' -and $ArgumentList -contains 'resource'
+        # Once before deployment (snapshot) and once after (diff)
+        $script:listCallCount | Should -Be 2
+    }
+
+    It 'Labels newly created resources as [new] and pre-existing resources as [existing]' {
+        $script:listCall = 0
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'list' -and $ArgumentList -contains 'resource') {
+                $script:listCall++
+                if ($script:listCall -eq 1) {
+                    # Pre-deploy: only ade-law exists
+                    return @([pscustomobject]@{ name = 'ade-law'; type = 'Microsoft.OperationalInsights/workspaces' })
+                }
+                # Post-deploy: ade-law still there + ade-ag is new
+                return @(
+                    [pscustomobject]@{ name = 'ade-law'; type = 'Microsoft.OperationalInsights/workspaces' }
+                    [pscustomobject]@{ name = 'ade-ag';  type = 'Microsoft.Insights/actionGroups' }
+                )
+            }
+            return $null
         }
+
+        $logOutput = [System.Collections.Generic.List[string]]::new()
+        Mock Write-AdeLog { $logOutput.Add("$args") }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-diff-test' `
+            -PollIntervalSeconds 0
+
+        $logOutput | Where-Object { $_ -match 'ade-ag.*\[new\]' }      | Should -Not -BeNullOrEmpty
+        $logOutput | Where-Object { $_ -match 'ade-law.*\[existing\]' } | Should -Not -BeNullOrEmpty
     }
 
     It 'Throws with details.message when deployment fails and details are present' {

@@ -199,14 +199,13 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
 
     It 'Uses --no-wait on purge to avoid az CLI timeouts' {
         $source = Get-Content $script:destroyPs -Raw
-        $source | Should -Match 'keyvault.*purge.*--no-wait'
+        # Purge is now synchronous (no --no-wait) so the CLI blocks until complete
+        $source | Should -Not -Match 'keyvault purge.*--no-wait'
     }
 
-    It 'Polls keyvault list-deleted until vault is released after purge' {
+    It 'Logs success after purge completes' {
         $source = Get-Content $script:destroyPs -Raw
-        # A polling loop must re-check list-deleted so we know the name is truly free
-        $source | Should -Match 'stillPurging'
-        $source | Should -Match 'kvTimeout'
+        $source | Should -Match 'Safe to re-deploy immediately'
     }
 
     It 'Passes --location to az keyvault purge' {
