@@ -450,7 +450,7 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         Should -Invoke az -Times 0 -ParameterFilter { $args -contains 'create' }
     }
 
-    It 'Throws a descriptive error when the existing RG is in a different location' {
+    It 'Logs a warning and continues when the existing RG is in a different location' {
         Mock az {
             if ($args -contains 'show') {
                 $global:LASTEXITCODE = 0
@@ -460,8 +460,10 @@ Describe 'New-AdeResourceGroup' -Tag 'unit' {
         }
 
         $tags = @{ project = 'ade' }
-        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'northeurope' -Tags $tags } |
-            Should -Throw -ExpectedMessage "*already exists in 'westeurope'*"
+        # Should NOT throw — location mismatch is now a warning, not a hard failure
+        { New-AdeResourceGroup -Name 'ade-test-rg' -Location 'northeurope' -Tags $tags } | Should -Not -Throw
+        # And must NOT call az group create (it reuses the existing RG)
+        Should -Invoke az -Times 0 -ParameterFilter { $args -contains 'create' }
     }
 
     It 'Throws when az group create exits non-zero' {
@@ -673,5 +675,53 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         Should -Invoke Invoke-AzCmd -ParameterFilter {
             $ArgumentList -contains 'list' -and $ArgumentList -contains 'resource'
         }
+    }
+
+    It 'Throws with details.message when deployment fails and details are present' {
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{
+                    properties = [pscustomobject]@{
+                        provisioningState = 'Failed'
+                        outputs           = $null
+                        error             = [pscustomobject]@{
+                            code    = 'DeploymentFailed'
+                            message = 'At least one resource deployment operation failed.'
+                            details = @(
+                                [pscustomobject]@{ code = 'VaultAlreadyExists'; message = "The vault name 'ade-kv-abc' is already in use." }
+                            )
+                        }
+                    }
+                }
+            }
+            return $null
+        }
+
+        { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $script:fakeBicep -DeploymentName 'dep' -PollIntervalSeconds 0 } |
+            Should -Throw -ExpectedMessage "*VaultAlreadyExists*"
+    }
+
+    It 'Throws with outer message when deployment fails and no details are present' {
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{
+                    properties = [pscustomobject]@{
+                        provisioningState = 'Failed'
+                        outputs           = $null
+                        error             = [pscustomobject]@{
+                            code    = 'DeploymentFailed'
+                            message = 'Generic deployment failure.'
+                            details = @()
+                        }
+                    }
+                }
+            }
+            return $null
+        }
+
+        { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $script:fakeBicep -DeploymentName 'dep' -PollIntervalSeconds 0 } |
+            Should -Throw -ExpectedMessage "*Generic deployment failure*"
     }
 }

@@ -216,6 +216,20 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $fnBody  = $script:source.Substring($fnStart, $fnEnd - $fnStart)
         $fnBody | Should -Match 'Build-AdeTags.*-Module'
     }
+
+    It 'Queries az group list to auto-detect an existing environment location' {
+        $script:source | Should -Match 'group list'
+        $script:source | Should -Match 'starts_with.*-rg'
+        $script:source | Should -Match 'existingRgLocation'
+    }
+
+    It 'Overrides -Location with the detected existing region when they differ' {
+        $script:source | Should -Match '\$Location\s*=\s*\$existingRgLocation'
+    }
+
+    It 'Logs a Warning when the location is overridden by auto-detection' {
+        $script:source | Should -Match 'Overriding.*Location.*to match'
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
