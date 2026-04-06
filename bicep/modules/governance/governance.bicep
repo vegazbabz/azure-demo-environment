@@ -181,27 +181,10 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
 }
 
 // ─── Job Schedules ────────────────────────────────────────────────────────────
-// Always linked. Runbook content is uploaded and published by deploy.ps1 after
-// the Bicep deployment completes, so schedules will have live runbooks by the
-// time the first trigger fires.
-
-resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation) {
-  parent: automationAccount
-  name: guid(resourceGroup().id, prefix, 'stop-schedule')
-  properties: {
-    schedule: { name: stopSchedule!.name }
-    runbook: { name: stopRunbook!.name }
-  }
-}
-
-resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled) {
-  parent: automationAccount
-  name: guid(resourceGroup().id, prefix, 'start-schedule')
-  properties: {
-    schedule: { name: startSchedule!.name }
-    runbook: { name: startRunbook!.name }
-  }
-}
+// Not deployed from Bicep. ARM requires a published runbook to create a
+// jobSchedule, but runbook content is only uploaded and published by deploy.ps1
+// after this Bicep deployment finishes. Job schedules are therefore created by
+// deploy.ps1 immediately after the publish step.
 
 // ─── Budget Alert ─────────────────────────────────────────────────────────────
 // Deployed at subscription scope via nested module
