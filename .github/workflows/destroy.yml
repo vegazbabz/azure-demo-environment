@@ -78,6 +78,22 @@ jobs:
           fi
           echo "✓ prefix='$ADE_PREFIX' — format OK"
 
+      - name: Validate modules input
+        if: ${{ github.event.inputs.modules != '' }}
+        env:
+          ADE_MODULES: ${{ github.event.inputs.modules }}
+        run: |
+          VALID="monitoring networking security compute storage databases appservices containers integration ai data governance"
+          IFS=',' read -ra MODS <<< "$ADE_MODULES"
+          for mod in "${MODS[@]}"; do
+            mod="${mod// /}"
+            if [[ ! " $VALID " =~ " $mod " ]]; then
+              echo "::error::Unknown module '$mod'. Valid modules: $VALID"
+              exit 1
+            fi
+          done
+          echo "✓ modules='$ADE_MODULES' — all valid"
+
       - name: List targeted resource groups (dry run)
         env:
           ADE_PREFIX: ${{ github.event.inputs.prefix }}
