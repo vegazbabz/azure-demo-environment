@@ -203,6 +203,18 @@ foreach ($mod in $EnableModules) {
 
 Test-AdeProfile -Profile $deployProfile
 
+# ─── Location auto-detection ────────────────────────────────────────────────
+# If resource groups with this prefix already exist (incremental profile stack-up
+# e.g. minimal → databases-only) use their location automatically so the caller
+# does not need to remember or re-specify the original region.
+$existingRgLocation = az group list `
+    --query "[?starts_with(name, '${Prefix}-') && ends_with(name, '-rg')].location | [0]" `
+    -o tsv 2>$null
+if ($existingRgLocation -and $existingRgLocation -ne $Location) {
+    Write-AdeLog "Existing '$Prefix' environment detected in '$existingRgLocation'. Overriding -Location '$Location' → '$existingRgLocation' to match." -Level Warning
+    $Location = $existingRgLocation
+}
+
 # ─── Permission preflight ────────────────────────────────────────────────────
 # Check UAA/Owner up front when the Automation Account role assignment will run.
 # Fails early so the caller gets a clear error before any resources are created.
