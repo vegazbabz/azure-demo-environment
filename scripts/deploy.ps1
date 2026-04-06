@@ -694,7 +694,6 @@ foreach ($moduleName in $deploymentOrder) {
                     location              = $Location
                     appServiceSubnetId    = $state.appServicesSubnetId
                     deployWindowsApp      = (Get-FeatureFlag -Features $appFeatures -Name 'windowsWebApp').ToString().ToLower()
-                    deployLinuxApp        = (Get-FeatureFlag -Features $appFeatures -Name 'linuxWebApp').ToString().ToLower()
                     deployFunctionApp     = (Get-FeatureFlag -Features $appFeatures -Name 'functionApp').ToString().ToLower()
                     deployLogicApp        = (Get-FeatureFlag -Features $appFeatures -Name 'logicApp').ToString().ToLower()
                 }

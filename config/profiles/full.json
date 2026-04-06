@@ -73,7 +73,7 @@
       "enabled": true,
       "features": {
         "windowsWebApp": true,
-        "linuxWebApp": true,
+        "linuxWebApp": false,
         "functionApp": true,
         "logicApp": true
       }
