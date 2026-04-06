@@ -49,6 +49,9 @@ jobs:
     name: Destroy — prefix=${{ github.event.inputs.prefix }}
     runs-on: ubuntu-latest
     environment: demo        # <-- add required reviewers here for extra safety
+    # Key Vault soft-delete purge is synchronous and can take up to 10-15 minutes.
+    # Set a generous timeout so the job is never killed mid-purge.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -88,7 +91,7 @@ jobs:
               echo "  → $rg"
             done
 
-      - name: Destroy ADE environment
+      - name: Destroy ADE environment (KV purge may take 10-15 min)
         shell: pwsh
         # Pass all user-provided inputs through env vars — never interpolate
         # string inputs directly into the run: block (injection hardening).
