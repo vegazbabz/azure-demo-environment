@@ -75,8 +75,33 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
   }
 }
 
-// Grant Automation Account Contributor role at subscription scope so runbooks can
-// manage VMs in any resource group. Deployed via a sub-module because this file
+// ─── Az PowerShell Modules ──────────────────────────────────────────────────────────
+// Az modules are not pre-installed in Automation Account sandboxes.
+// Az.Compute depends on Az.Accounts so it must be imported second.
+
+resource azAccountsModule 'Microsoft.Automation/automationAccounts/modules@2023-11-01' = if (enableAutomation) {
+  parent: automationAccount
+  name: 'Az.Accounts'
+  properties: {
+    contentLink: {
+      uri: 'https://www.powershellgallery.com/api/v2/package/Az.Accounts'
+    }
+  }
+}
+
+resource azComputeModule 'Microsoft.Automation/automationAccounts/modules@2023-11-01' = if (enableAutomation) {
+  parent: automationAccount
+  name: 'Az.Compute'
+  dependsOn: [azAccountsModule]
+  properties: {
+    contentLink: {
+      uri: 'https://www.powershellgallery.com/api/v2/package/Az.Compute'
+    }
+  }
+}
+
+// Grant Automation Account VM Contributor role at subscription scope so runbooks can
+// manage VMs/VMSS in any resource group. Deployed via a sub-module because this file
 // is resource-group scoped and subscription-scoped resources require a separate module.
 // Guarded by enableAutomationRoleAssignment — requires Owner or User Access Administrator.
 module automationContributorRole 'automation-role.bicep' = if (enableAutomation && enableAutomationRoleAssignment) {

@@ -33,9 +33,11 @@ param deployApim bool = false
 param apimSku string = 'Developer'
 
 @description('API Management publisher email.')
+@minLength(1)
 param apimPublisherEmail string = 'admin@example.com'
 
 @description('API Management publisher name.')
+@minLength(1)
 param apimPublisherName string = 'ADE Demo'
 
 @description('Integration subnet resource ID for future VNet-integration of PaaS messaging services.')
@@ -165,7 +167,7 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2023-12-15-preview' = if (de
 
 // ─── SignalR Service ──────────────────────────────────────────────────────────
 
-resource signalR 'Microsoft.SignalRService/signalR@2023-08-01-preview' = if (deploySignalR) {
+resource signalR 'Microsoft.SignalRService/signalR@2023-02-01' = if (deploySignalR) {
   name: '${prefix}-signalr'
   location: location
   tags: tags

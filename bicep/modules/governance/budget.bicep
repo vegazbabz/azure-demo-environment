@@ -28,7 +28,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
     timeGrain: 'Monthly'
     timePeriod: {
       startDate: budgetStartDate
-      endDate: '2030-12-31'
+      endDate: '9999-12-31'
     }
     filter: {
       tags: {

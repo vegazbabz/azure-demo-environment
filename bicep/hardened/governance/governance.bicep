@@ -28,7 +28,7 @@ param enablePolicyAssignments bool = true     // Hardened: on by default
 @description('Enable monthly budget with email alerts.')
 param enableBudget bool = true
 
-@description('Enable ReadOnly resource lock on the networking resource group.')
+@description('Enable CanNotDelete resource lock on the networking resource group.')
 param enableResourceLocks bool = true    // Hardened: on by default
 
 @description('Monthly budget amount in USD.')
@@ -78,6 +78,31 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
     disableLocalAuth: true
     encryption: {
       keySource: 'Microsoft.Automation'
+    }
+  }
+}
+
+// ─── Az PowerShell Modules ──────────────────────────────────────────────────────────
+// Az modules are not pre-installed in Automation Account sandboxes.
+// Az.Compute depends on Az.Accounts so it must be imported second.
+
+resource azAccountsModule 'Microsoft.Automation/automationAccounts/modules@2023-11-01' = if (enableAutomation) {
+  parent: automationAccount
+  name: 'Az.Accounts'
+  properties: {
+    contentLink: {
+      uri: 'https://www.powershellgallery.com/api/v2/package/Az.Accounts'
+    }
+  }
+}
+
+resource azComputeModule 'Microsoft.Automation/automationAccounts/modules@2023-11-01' = if (enableAutomation) {
+  parent: automationAccount
+  name: 'Az.Compute'
+  dependsOn: [azAccountsModule]
+  properties: {
+    contentLink: {
+      uri: 'https://www.powershellgallery.com/api/v2/package/Az.Compute'
     }
   }
 }
