@@ -327,6 +327,19 @@ function Invoke-AdeBicepDeployment {
         return $null
     }
 
+    # Snapshot resources already in the RG before deployment so we can distinguish
+    # newly created resources from those that were already present (updated/no-op).
+    $preDeployNames = @{}
+    $preList = Invoke-AzCmd -ArgumentList @(
+        'resource', 'list',
+        '--resource-group', $ResourceGroup,
+        '--query', '[].{name:name,type:type}',
+        '--output', 'json'
+    ) -Silent -AllowFailure
+    if ($preList) {
+        foreach ($r in @($preList)) { $preDeployNames["$($r.type)/$($r.name)"] = $true }
+    }
+
     # Submit deployment asynchronously so we can stream per-resource progress
     $argList = @(
         'deployment', 'group', 'create',
@@ -406,9 +419,7 @@ function Invoke-AdeBicepDeployment {
         throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }
 
-    # Post-deployment resource summary — list every resource now in the RG.
-    # This is the reliable fallback; the per-resource polling above shows progress
-    # during long deployments but can miss resources on fast or idempotent runs.
+    # Post-deployment resource summary — diff against pre-deploy snapshot.
     $deployedList = Invoke-AzCmd -ArgumentList @(
         'resource', 'list',
         '--resource-group', $ResourceGroup,
@@ -416,10 +427,19 @@ function Invoke-AdeBicepDeployment {
         '--output', 'json'
     ) -Silent -AllowFailure
     if ($deployedList) {
+        $newResources      = @()
+        $existingResources = @()
         foreach ($r in @($deployedList)) {
             $shortType = ($r.type -split '/')[-1]
-            Write-AdeLog "  $shortType '$($r.name)'" -Level Info
+            $key = "$($r.type)/$($r.name)"
+            if ($preDeployNames.ContainsKey($key)) {
+                $existingResources += "  $shortType '$($r.name)'"
+            } else {
+                $newResources += "  $shortType '$($r.name)'"
+            }
         }
+        foreach ($line in $newResources)      { Write-AdeLog "$line [new]"      -Level Success }
+        foreach ($line in $existingResources) { Write-AdeLog "$line [existing]" -Level Info }
     }
 
     if ($showResult -and $showResult.properties) {
