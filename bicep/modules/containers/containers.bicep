@@ -78,9 +78,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
       }
     ]
     // Default network plugin (kubenet) — no CNI/Calico by default
+    // serviceCidr must not overlap the VNet address space (10.0.0.0/16).
     networkProfile: {
       networkPlugin: 'kubenet'
       loadBalancerSku: 'standard'
+      serviceCidr: '10.96.0.0/16'
+      dnsServiceIP: '10.96.0.10'
     }
     // No OIDC/Workload Identity by default
     oidcIssuerProfile: {
