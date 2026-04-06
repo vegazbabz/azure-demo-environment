@@ -686,6 +686,9 @@ foreach ($moduleName in $deploymentOrder) {
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
+                    # Static Web Apps are only available in westus2/centralus/eastus2/westeurope/eastasia.
+                    # Default to westeurope so deployments in unsupported regions (e.g. swedencentral) succeed.
+                    staticWebAppLocation  = 'westeurope'
                     appServiceSubnetId    = $state.appServicesSubnetId
                     deployWindowsApp      = (Get-FeatureFlag -Features $appFeatures -Name 'windowsWebApp').ToString().ToLower()
                     deployLinuxApp        = (Get-FeatureFlag -Features $appFeatures -Name 'linuxWebApp').ToString().ToLower()
