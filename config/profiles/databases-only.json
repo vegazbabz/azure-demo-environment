@@ -19,7 +19,7 @@
     "storage": { "enabled": false },
     "databases": {
       "enabled": true,
-      "features": { "sqlDatabase": true, "sqlVm": false, "cosmosDb": true, "postgresql": true, "mysql": true, "redis": false }
+      "features": { "sqlDatabase": true, "sqlVm": false, "cosmosDb": true, "postgresql": true, "mysql": false, "redis": false }
     },
     "appservices": { "enabled": false },
     "containers": { "enabled": false },
