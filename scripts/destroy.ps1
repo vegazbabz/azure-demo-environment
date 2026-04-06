@@ -175,12 +175,12 @@ if (-not $NoWait -and $failedRgs.Count -eq 0) {
             $parts = ($line.Trim() -split '\t')
             $vaultName     = $parts[0]
             $vaultLocation = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName" -Level Warning
-            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--output', 'none')
+            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName (no-wait)" -Level Warning
+            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--no-wait', '--output', 'none')
             if ($vaultLocation) { $purgeArgs += '--location'; $purgeArgs += $vaultLocation }
             az $purgeArgs 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "Purged: $vaultName" -Level Success
+                Write-AdeLog "Purge initiated: $vaultName (completes in background; re-deploy in ~30s)" -Level Success
             } else {
                 Write-AdeLog "Could not purge '$vaultName' (non-fatal — may already be purging or location required)." -Level Warning
             }
