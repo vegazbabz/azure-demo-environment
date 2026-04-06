@@ -395,6 +395,22 @@ function Invoke-AdeBicepDeployment {
         throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }
 
+    # Post-deployment resource summary — list every resource now in the RG.
+    # This is the reliable fallback; the per-resource polling above shows progress
+    # during long deployments but can miss resources on fast or idempotent runs.
+    $deployedList = Invoke-AzCmd -ArgumentList @(
+        'resource', 'list',
+        '--resource-group', $ResourceGroup,
+        '--query', '[].{name:name,type:type}',
+        '--output', 'json'
+    ) -Silent -AllowFailure
+    if ($deployedList) {
+        foreach ($r in @($deployedList)) {
+            $shortType = ($r.type -split '/')[-1]
+            Write-AdeLog "  $shortType '$($r.name)'" -Level Info
+        }
+    }
+
     if ($showResult -and $showResult.properties) {
         return $showResult.properties.outputs
     }
