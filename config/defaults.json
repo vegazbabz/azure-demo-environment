@@ -11,7 +11,8 @@
         "logAnalyticsWorkspace": true,
         "applicationInsights": true,
         "actionGroup": true,
-        "alertRules": false
+        "alertRules": false,
+        "alertEmail": ""
       }
     },
     "networking": {
@@ -164,6 +165,7 @@
         "automationAccount": true,
         "budget": true,
         "budgetAmount": 300,
+        "budgetAlertEmail": "",
         "resourceLocks": false,
         "policyAssignments": false
       }

@@ -14,7 +14,7 @@ param automationAccountId string
 resource vmContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(automationAccountId, 'vmcontributor')
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9980e02c-c515-11e4-8731-1281d0574441')
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9980e02c-c2be-4d73-94e8-173b1dc7cf3c')
     principalId: automationPrincipalId
     principalType: 'ServicePrincipal'
   }
