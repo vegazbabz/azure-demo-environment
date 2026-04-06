@@ -51,12 +51,16 @@ function Write-AdeLog {
         return
     }
 
-    $params = @{
-        Object          = "[$timestamp] [$prefix] $Message"
-        ForegroundColor = $color
+    # Write the timestamp in default terminal color so it is always visible
+    # regardless of the user's color scheme (cyan on cyan, etc.).
+    # The level bracket + message get the semantic color.
+    if ($NoNewline) {
+        Write-Host -NoNewline "[$timestamp] "
+        Write-Host -NoNewline "[$prefix] $Message" -ForegroundColor $color
+    } else {
+        Write-Host -NoNewline "[$timestamp] "
+        Write-Host "[$prefix] $Message" -ForegroundColor $color
     }
-    if ($NoNewline) { $params['NoNewline'] = $true }
-    Write-Host @params
 
     if ($script:AdeLogFile) {
         $plain = "[$timestamp] [$prefix] $Message"
