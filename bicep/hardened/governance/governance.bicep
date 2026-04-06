@@ -55,9 +55,6 @@ param autoStartEnabled bool = false
 @description('Name of the compute resource group. Automation Account MI gets VM Contributor on this RG.')
 param computeResourceGroupName string = '${prefix}-compute-rg'
 
-@description('Base URL for raw runbook content (e.g. https://raw.githubusercontent.com/org/repo/main). Leave empty to skip publishContentLink.')
-param runbooksBaseUrl string = ''
-
 @description('Allow the role assignment for the Automation Account managed identity. Requires Owner or User Access Administrator on the subscription. Set to false when deploying with Contributor-only credentials.')
 param enableAutomationRoleAssignment bool = false
 
@@ -129,16 +126,12 @@ resource stopRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-0
   name: 'Stop-AdeResources'
   location: location
   tags: tags
-  properties: union({
+  properties: {
     runbookType: 'PowerShell72'
     description: 'Deallocates all ADE VMs, VMSS, and AKS clusters to minimize costs outside working hours.'
     logProgress: true
     logVerbose: false
-  }, empty(runbooksBaseUrl) ? {} : {
-    publishContentLink: {
-      uri: '${runbooksBaseUrl}/scripts/runbooks/Stop-AdeResources.ps1'
-    }
-  })
+  }
 }
 
 // ─── Start Runbook ────────────────────────────────────────────────────────────
@@ -148,16 +141,12 @@ resource startRunbook 'Microsoft.Automation/automationAccounts/runbooks@2023-11-
   name: 'Start-AdeResources'
   location: location
   tags: tags
-  properties: union({
+  properties: {
     runbookType: 'PowerShell72'
     description: 'Starts all ADE VMs, VMSS, and AKS clusters at the start of the working day.'
     logProgress: true
     logVerbose: false
-  }, empty(runbooksBaseUrl) ? {} : {
-    publishContentLink: {
-      uri: '${runbooksBaseUrl}/scripts/runbooks/Start-AdeResources.ps1'
-    }
-  })
+  }
 }
 
 // ─── Schedules ────────────────────────────────────────────────────────────────
@@ -199,9 +188,9 @@ resource startSchedule 'Microsoft.Automation/automationAccounts/schedules@2023-1
 }
 
 // Schedule links — connect each schedule to its runbook so triggers actually fire.
-// Conditional on runbooksBaseUrl being set (runbooks must have content before they can be scheduled).
+// Runbook content is uploaded and published by deploy.ps1 after Bicep completes.
 
-resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && !empty(runbooksBaseUrl)) {
+resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation) {
   parent: automationAccount
   name: guid(automationAccount.id, stopRunbook.name, stopSchedule.name)
   properties: {
@@ -210,7 +199,7 @@ resource stopJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2
   }
 }
 
-resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled && !empty(runbooksBaseUrl)) {
+resource startJobSchedule 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (enableAutomation && autoStartEnabled) {
   parent: automationAccount
   name: guid(automationAccount.id, startRunbook.name, startSchedule.name)
   properties: {
@@ -239,7 +228,7 @@ resource governanceLock 'Microsoft.Authorization/locks@2020-05-01' = if (enableR
 // Skip budget deployment entirely when no alert email is provided to avoid ARM validation failure
 // (Consumption Budgets API requires a valid email in contactEmails — an empty string is rejected).
 module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget && !empty(budgetAlertEmail)) {
-  name: 'ade-budget'
+  name: '${prefix}-budget-${location}'
   scope: subscription()
   params: {
     prefix: prefix
@@ -253,7 +242,7 @@ module budgetModule '../../modules/governance/budget.bicep' = if (enableBudget &
 // Hardened: enforcement mode Default (deny effects applied)
 
 module policyModule 'policy-assignments.bicep' = if (enablePolicyAssignments) {
-  name: 'ade-policy-assignments'
+  name: '${prefix}-policy-${location}'
   scope: subscription()
   params: {
     prefix: prefix
