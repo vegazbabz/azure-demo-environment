@@ -448,6 +448,8 @@ function Deploy-AdeModule {
 
     $rgName = "$Prefix-$($ModuleName.ToLower())-rg"
     $moduleTags = Build-AdeTags -Profile $deployProfile -Module $ModuleName
+    # Resource group must exist for 'az deployment group what-if' to run against it.
+    # New-AdeResourceGroup is idempotent — safe to call in both modes.
     New-AdeResourceGroup -Name $rgName -Location $Location -Tags $moduleTags
 
     # Inject module-specific tags into every deployment so all resources carry the module tag
