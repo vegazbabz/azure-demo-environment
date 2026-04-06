@@ -218,7 +218,9 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
     }
 
     It 'Queries az group list to auto-detect an existing environment location' {
-        $script:source | Should -Match 'group list.*starts_with.*-rg.*location'
+        $script:source | Should -Match 'group list'
+        $script:source | Should -Match 'starts_with.*-rg'
+        $script:source | Should -Match 'existingRgLocation'
     }
 
     It 'Overrides -Location with the detected existing region when they differ' {
