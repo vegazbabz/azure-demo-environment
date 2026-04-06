@@ -13,8 +13,8 @@ param prefix string
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('Email address to receive alert notifications.')
-param alertEmailAddress string = 'admin@example.com'
+@description('Email address to receive alert notifications. Leave empty to skip email notifications.')
+param alertEmailAddress string = ''
 
 @description('Log Analytics Workspace retention in days.')
 param retentionDays int = 30
@@ -65,7 +65,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
   properties: {
     groupShortName: 'ade-alerts'
     enabled: true
-    emailReceivers: [
+    emailReceivers: empty(alertEmailAddress) ? [] : [
       {
         name: 'admin-email'
         emailAddress: alertEmailAddress

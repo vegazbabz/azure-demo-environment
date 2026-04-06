@@ -607,6 +607,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployOpenAi            = (Get-FeatureFlag -Features $aiFeatures -Name 'openAi').ToString().ToLower()
                     deployCognitiveSearch   = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearch').ToString().ToLower()
                     deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
+                    subnetId                = $state.aiSubnetId
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
             }
@@ -624,6 +625,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployDatabricks    = (Get-FeatureFlag -Features $dataFeatures -Name 'databricks').ToString().ToLower()
                     deployPurview       = (Get-FeatureFlag -Features $dataFeatures -Name 'purview').ToString().ToLower()
                     storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
+                    subnetId            = $state.dataSubnetId
                 }
                 if ($Mode -eq 'hardened') {
                     $params['synapseAdminPassword'] = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
