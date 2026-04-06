@@ -75,7 +75,6 @@
         "windowsWebApp": true,
         "linuxWebApp": true,
         "functionApp": true,
-        "staticWebApp": true,
         "logicApp": true
       }
     },
