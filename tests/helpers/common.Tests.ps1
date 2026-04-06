@@ -648,4 +648,30 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
 
         $result | Should -BeNullOrEmpty
     }
+
+    It 'Calls az resource list after a successful deployment for the resource summary' {
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'list' -and $ArgumentList -contains 'resource') {
+                return @(
+                    [pscustomobject]@{ name = 'ade-law'; type = 'Microsoft.OperationalInsights/workspaces' }
+                    [pscustomobject]@{ name = 'ade-ag';  type = 'Microsoft.Insights/actionGroups' }
+                )
+            }
+            return $null
+        }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-res-summary' `
+            -PollIntervalSeconds 0
+
+        Should -Invoke Invoke-AzCmd -ParameterFilter {
+            $ArgumentList -contains 'list' -and $ArgumentList -contains 'resource'
+        }
+    }
 }
