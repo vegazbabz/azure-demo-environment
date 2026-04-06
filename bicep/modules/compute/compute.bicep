@@ -56,7 +56,7 @@ var dcStaticIp     = '10.0.15.4'
 
 // ─── Availability Set ─────────────────────────────────────────────────────────
 
-resource availabilitySet 'Microsoft.Compute/availabilitySets@2023-09-01' = {
+resource availabilitySet 'Microsoft.Compute/availabilitySets@2023-09-01' = if (deployWindowsVm || deployLinuxVm || deployVmss) {
   name: '${prefix}-avset'
   location: location
   tags: tags
