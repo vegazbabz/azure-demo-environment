@@ -80,7 +80,7 @@ param tags object = {}
 //           auditing + threat detection enabled.
 
 resource sqlServer 'Microsoft.Sql/servers@2023-02-01-preview' = if (deploySql) {
-  name: '${prefix}-sqlserver'
+  name: '${prefix}-sql-${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   properties: {
