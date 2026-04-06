@@ -96,7 +96,7 @@
       "description": "App Service Plan (B1), Windows Web App, Linux Web App, Function App (Consumption), Logic App. Default settings — no forced HTTPS, no TLS minimum.",
       "features": {
         "windowsWebApp": true,
-        "linuxWebApp": true,
+        "linuxWebApp": false,
         "functionApp": true,
         "logicApp": true
       }
