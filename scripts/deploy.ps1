@@ -299,6 +299,140 @@ $state = @{
     fileDnsZoneId           = ''
 }
 
+# ─── State hydration (best-effort) ───────────────────────────────────────────
+# Recover cross-module output values from any resources already in Azure.
+# This makes partial re-deploys (e.g. databases-only → full, or a retry after
+# a mid-run failure) work correctly — downstream modules receive real IDs
+# instead of empty strings, exactly as they would in a single full deploy.
+# Every query is non-fatal: a missing resource leaves the value as '' and the
+# module will create it on this run as normal.
+function Initialize-AdeState {
+    param([hashtable]$AdeState, [string]$Prefix, [string]$SubscriptionId)
+
+    Write-AdeLog 'Hydrating state from existing Azure resources (best-effort)...' -Level Info
+    $recovered = 0
+
+    # ── Monitoring ────────────────────────────────────────────────────────────
+    if (-not $AdeState.logAnalyticsId) {
+        $v = az monitor log-analytics workspace show `
+                 --name "${Prefix}-law" `
+                 --resource-group "${Prefix}-monitoring-rg" `
+                 --query id -o tsv 2>$null
+        if ($v) { $AdeState.logAnalyticsId = $v.Trim(); $recovered++ }
+    }
+    if (-not $AdeState.appInsightsId) {
+        $v = az monitor app-insights component show `
+                 --app "${Prefix}-appi" `
+                 --resource-group "${Prefix}-monitoring-rg" `
+                 --query id -o tsv 2>$null
+        if ($v) { $AdeState.appInsightsId = $v.Trim(); $recovered++ }
+    }
+    if (-not $AdeState.appInsightsKey) {
+        $v = az monitor app-insights component show `
+                 --app "${Prefix}-appi" `
+                 --resource-group "${Prefix}-monitoring-rg" `
+                 --query instrumentationKey -o tsv 2>$null
+        if ($v) { $AdeState.appInsightsKey = $v.Trim() }
+    }
+
+    # ── Networking — single VNet call; derive all subnet IDs from its resource ID ──
+    # Subnet resource IDs are always <vnetId>/subnets/<name> — no extra API calls needed.
+    if (-not $AdeState.vnetId) {
+        $v = az network vnet show `
+                 --name "${Prefix}-vnet" `
+                 --resource-group "${Prefix}-networking-rg" `
+                 --query id -o tsv 2>$null
+        if ($v) {
+            $vId = $v.Trim()
+            $AdeState.vnetId                  = $vId
+            $AdeState.computeSubnetId         = "$vId/subnets/compute"
+            $AdeState.appServicesSubnetId     = "$vId/subnets/appservices"
+            $AdeState.databaseSubnetId        = "$vId/subnets/databases"
+            $AdeState.containerSubnetId       = "$vId/subnets/containers"
+            $AdeState.integrationSubnetId     = "$vId/subnets/integration"
+            $AdeState.aiSubnetId              = "$vId/subnets/ai"
+            $AdeState.dataSubnetId            = "$vId/subnets/data"
+            $AdeState.privateEndpointSubnetId = "$vId/subnets/privateendpoints"
+            $AdeState.mysqlSubnetId           = "$vId/subnets/mysql"
+            $AdeState.dcSubnetId              = "$vId/subnets/dc"
+            $recovered++
+        }
+    }
+
+    # ── Private DNS zones — one probe determines whether all zones were deployed ──
+    # All ADE private DNS zones live in the same networking RG, so if blob exists
+    # the others do too (they're all created together by networking.bicep).
+    if (-not $AdeState.blobDnsZoneId) {
+        $probe = az network private-dns zone show `
+                     --name 'privatelink.blob.core.windows.net' `
+                     --resource-group "${Prefix}-networking-rg" `
+                     --query id -o tsv 2>$null
+        if ($probe) {
+            $zBase = "/subscriptions/$SubscriptionId/resourceGroups/${Prefix}-networking-rg" +
+                     '/providers/Microsoft.Network/privateDnsZones'
+            $AdeState.blobDnsZoneId       = "$zBase/privatelink.blob.core.windows.net"
+            $AdeState.fileDnsZoneId       = "$zBase/privatelink.file.core.windows.net"
+            $AdeState.sqlDnsZoneId        = "$zBase/privatelink.database.windows.net"
+            $AdeState.cosmosDnsZoneId     = "$zBase/privatelink.documents.azure.com"
+            $AdeState.postgresDnsZoneId   = "$zBase/privatelink.postgres.database.azure.com"
+            $AdeState.mysqlDnsZoneId      = "$zBase/privatelink.mysql.database.azure.com"
+            $AdeState.keyVaultDnsZoneId   = "$zBase/privatelink.vaultcore.azure.net"
+            $AdeState.serviceBusDnsZoneId = "$zBase/privatelink.servicebus.windows.net"
+            $AdeState.eventHubDnsZoneId   = "$zBase/privatelink.eventhub.windows.net"
+            $AdeState.redisDnsZoneId      = "$zBase/privatelink.redis.cache.windows.net"
+            $recovered++
+        }
+    }
+
+    # ── Security ──────────────────────────────────────────────────────────────
+    # KV name includes uniqueString(RG.id) — query by RG rather than constructing.
+    if (-not $AdeState.keyVaultName) {
+        $v = az keyvault list `
+                 --resource-group "${Prefix}-security-rg" `
+                 --query '[0].name' -o tsv 2>$null
+        if ($v) {
+            $AdeState.keyVaultName = $v.Trim()
+            $vId = az keyvault show `
+                       --name $AdeState.keyVaultName `
+                       --resource-group "${Prefix}-security-rg" `
+                       --query id -o tsv 2>$null
+            if ($vId) { $AdeState.keyVaultId = $vId.Trim() }
+            $recovered++
+        }
+    }
+    if (-not $AdeState.managedIdentityId) {
+        $v = az identity show `
+                 --name "${Prefix}-identity" `
+                 --resource-group "${Prefix}-security-rg" `
+                 --query id -o tsv 2>$null
+        if ($v) {
+            $AdeState.managedIdentityId = $v.Trim()
+            $cId = az identity show `
+                       --name "${Prefix}-identity" `
+                       --resource-group "${Prefix}-security-rg" `
+                       --query clientId -o tsv 2>$null
+            if ($cId) { $AdeState.managedIdentityClientId = $cId.Trim() }
+            $recovered++
+        }
+    }
+
+    # ── Storage — account name has uniqueString suffix, query by RG ──────────
+    if (-not $AdeState.storageAccountName) {
+        $v = az storage account list `
+                 --resource-group "${Prefix}-storage-rg" `
+                 --query '[0].name' -o tsv 2>$null
+        if ($v) { $AdeState.storageAccountName = $v.Trim(); $recovered++ }
+    }
+
+    if ($recovered -gt 0) {
+        Write-AdeLog "State hydration: $recovered resource group(s) recovered from Azure." -Level Info
+    } else {
+        Write-AdeLog 'State hydration: no existing resources found — fresh deploy.' -Level Info
+    }
+}
+
+Initialize-AdeState -AdeState $state -Prefix $Prefix -SubscriptionId $SubscriptionId
+
 # ─── Module deployment ────────────────────────────────────────────────────────
 $deploymentOrder = Get-AdeDeploymentOrder -Profile $deployProfile
 $bicepRoot       = Join-Path $scriptRoot ('..\bicep\' + $(if ($Mode -eq 'hardened') { 'hardened' } else { 'modules' }))
