@@ -9,7 +9,7 @@
     },
     "networking": {
       "enabled": true,
-      "features": { "bastionSku": "Developer", "enableAppGateway": false, "enableFirewall": "None", "enableVpnGateway": false, "enableDdos": false, "enableNatGateway": false, "enablePrivateDnsZones": false }
+      "features": { "bastionSku": "None", "enableAppGateway": false, "enableFirewall": "None", "enableVpnGateway": false, "enableDdos": false, "enableNatGateway": false, "enablePrivateDnsZones": false }
     },
     "security": {
       "enabled": true,
