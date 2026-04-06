@@ -158,3 +158,34 @@ if ($NoWait) {
 } else {
     Write-AdeLog "All resource groups deleted." -Level Success
 }
+
+# ─── Purge soft-deleted Key Vaults ────────────────────────────────────────────
+# Key Vault soft-delete retains vault names in the deleted-vaults registry for
+# softDeleteRetentionInDays (default 7). Re-deploying with the same prefix hits
+# VaultAlreadyExists because the name is still reserved.
+# We list all deleted vaults matching the prefix and purge them immediately.
+# This only runs when deletions were synchronous (NoWait = false); in async mode
+# the KVs may not yet be in the deleted state when we check.
+if (-not $NoWait -and $failedRgs.Count -eq 0) {
+    Write-AdeLog "Purging any soft-deleted Key Vaults with prefix '$Prefix'..." -Level Info
+    $deletedVaults = az keyvault list-deleted --resource-type vault --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" -o tsv 2>$null
+    if ($deletedVaults) {
+        foreach ($line in $deletedVaults) {
+            if (-not $line) { continue }
+            $parts = ($line.Trim() -split '\t')
+            $vaultName     = $parts[0]
+            $vaultLocation = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName" -Level Warning
+            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--output', 'none')
+            if ($vaultLocation) { $purgeArgs += '--location'; $purgeArgs += $vaultLocation }
+            az $purgeArgs 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Purged: $vaultName" -Level Success
+            } else {
+                Write-AdeLog "Could not purge '$vaultName' (non-fatal — may already be purging or location required)." -Level Warning
+            }
+        }
+    } else {
+        Write-AdeLog "No soft-deleted Key Vaults found for prefix '$Prefix'." -Level Info
+    }
+}
