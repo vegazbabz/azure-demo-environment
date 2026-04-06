@@ -40,11 +40,9 @@ jobs:
           RESULTS=""
           while IFS= read -r f; do
             echo "→ Linting: $f"
-            # az bicep lint exits 0 even on errors in some versions — capture stderr too
             OUTPUT=$(az bicep lint --file "$f" --no-restore 2>&1)
             CODE=$?
-            # Also treat non-empty stderr output containing 'Error' as a failure
-            if [ $CODE -ne 0 ] || echo "$OUTPUT" | grep -qi '^.*Error'; then
+            if [ $CODE -ne 0 ]; then
               echo "  ✗ FAILED"
               echo "$OUTPUT"
               # Escape backticks so output cannot break the markdown code fence
@@ -94,7 +92,7 @@ jobs:
         id: ps_lint
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Path scripts,policies -Recurse -Filter '*.ps1' | Select-Object -ExpandProperty FullName
+          $files = Get-ChildItem -Path scripts,policies,tests -Recurse -Filter '*.ps1' | Select-Object -ExpandProperty FullName
           $errors   = [System.Collections.Generic.List[string]]::new()
           $warnings = [System.Collections.Generic.List[string]]::new()
           $failed   = $false

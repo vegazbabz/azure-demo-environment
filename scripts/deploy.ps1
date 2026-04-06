@@ -183,6 +183,12 @@ $sub = Test-AdeSubscription -SubscriptionId $SubscriptionId
 # ─── Profile ──────────────────────────────────────────────────────────────────
 $deployProfile = Get-AdeProfile -ProfileNameOrPath $Profile
 
+# Guard: the 'hardened' profile must always be deployed with -Mode hardened.
+# The workflow enforces this for CI runs; this check also catches local runs.
+if ($deployProfile.profileName -eq 'hardened' -and $Mode -ne 'hardened') {
+    throw "Profile 'hardened' requires -Mode hardened. Add -Mode hardened or choose a different profile."
+}
+
 # Apply overrides from -SkipModules / -EnableModules
 foreach ($mod in $SkipModules) {
     if ($deployProfile.modules.PSObject.Properties[$mod]) {
