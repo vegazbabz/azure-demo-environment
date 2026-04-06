@@ -690,7 +690,6 @@ foreach ($moduleName in $deploymentOrder) {
                     deployWindowsApp      = (Get-FeatureFlag -Features $appFeatures -Name 'windowsWebApp').ToString().ToLower()
                     deployLinuxApp        = (Get-FeatureFlag -Features $appFeatures -Name 'linuxWebApp').ToString().ToLower()
                     deployFunctionApp     = (Get-FeatureFlag -Features $appFeatures -Name 'functionApp').ToString().ToLower()
-                    deployStaticWebApp    = (Get-FeatureFlag -Features $appFeatures -Name 'staticWebApp').ToString().ToLower()
                     deployLogicApp        = (Get-FeatureFlag -Features $appFeatures -Name 'logicApp').ToString().ToLower()
                 }
                 $null = Deploy-AdeModule -ModuleName 'appservices' -BicepFile $bicep -Parameters $params

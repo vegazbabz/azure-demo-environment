@@ -1,6 +1,6 @@
 ﻿// ─── appservices.bicep ───────────────────────────────────────────────────────
 // Deploys: App Service Plan (B1), Windows Web App, Linux Web App,
-//          Function App (Consumption), Static Web App, Logic App (Standard).
+//          Function App (Consumption), Logic App (Standard).
 //
 // DEFAULT MODE: No forced HTTPS, no TLS minimum, no managed identity,
 //               no diagnostic settings. Out-of-the-box Azure defaults.
@@ -20,9 +20,6 @@ param deployLinuxApp bool = true
 
 @description('Deploy Function App (Consumption plan).')
 param deployFunctionApp bool = true
-
-@description('Deploy Static Web App.')
-param deployStaticWebApp bool = true
 
 @description('Deploy Logic App (Standard).')
 param deployLogicApp bool = true
@@ -162,19 +159,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = if (deployFunctionApp) {
   }
 }
 
-// ─── Static Web App ───────────────────────────────────────────────────────────
-
-resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = if (deployStaticWebApp) {
-  name: '${prefix}-static-app'
-  location: location
-  tags: tags
-  sku: {
-    name: 'Free'
-    tier: 'Free'
-  }
-  properties: {}
-}
-
 // ─── Logic App (Standard) ─────────────────────────────────────────────────────
 
 resource logicAppPlan 'Microsoft.Web/serverfarms@2023-01-01' = if (deployLogicApp) {
@@ -242,8 +226,6 @@ output linuxWebAppId string = deployLinuxApp ? linuxWebApp.id : ''
 output linuxWebAppHostname string = deployLinuxApp ? linuxWebApp!.properties.defaultHostName : ''
 output functionAppId string = deployFunctionApp ? functionApp.id : ''
 output functionAppHostname string = deployFunctionApp ? functionApp!.properties.defaultHostName : ''
-output staticWebAppId string = deployStaticWebApp ? staticWebApp.id : ''
-output staticWebAppHostname string = deployStaticWebApp ? staticWebApp!.properties.defaultHostname : ''
 output logicAppId string = deployLogicApp ? logicApp.id : ''
 output logicAppHostname string = deployLogicApp ? logicApp!.properties.defaultHostName : ''
 

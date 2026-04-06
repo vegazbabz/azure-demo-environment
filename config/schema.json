@@ -139,7 +139,6 @@
                 "windowsWebApp": { "type": "boolean" },
                 "linuxWebApp":   { "type": "boolean" },
                 "functionApp":   { "type": "boolean" },
-                "staticWebApp":  { "type": "boolean" },
                 "logicApp":      { "type": "boolean" }
               }
             }
