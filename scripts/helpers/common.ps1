@@ -396,8 +396,12 @@ function Invoke-AdeBicepDeployment {
     } while ($depState -notin $terminalStates)
 
     if ($depState -ne 'Succeeded') {
-        $errMsg = if ($showResult -and $showResult.properties.error.message) {
-            $showResult.properties.error.message
+        $errMsg = if ($showResult -and $showResult.properties.error) {
+            $err = $showResult.properties.error
+            # Prefer the inner details messages — they contain the actual failure reason
+            # (e.g. VaultAlreadyExists). Fall back to the outer message if no details exist.
+            $detailMsgs = @($err.details | Where-Object { $_.message } | ForEach-Object { "$($_.code): $($_.message)" })
+            if ($detailMsgs.Count -gt 0) { $detailMsgs -join ' | ' } else { $err.message }
         } else { $depState }
         throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }
