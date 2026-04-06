@@ -194,35 +194,19 @@ if (-not $NoWait -and $failedRgs.Count -eq 0) {
     Write-AdeLog "Purging any soft-deleted Key Vaults with prefix '$Prefix'..." -Level Info
     $deletedVaults = az keyvault list-deleted --resource-type vault --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" -o tsv 2>$null
     if ($deletedVaults) {
-        $purgedVaults = @()
         foreach ($line in $deletedVaults) {
             if (-not $line) { continue }
             $parts = ($line.Trim() -split '\t')
             $vaultName     = $parts[0]
             $vaultLocation = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName" -Level Warning
-            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--no-wait', '--output', 'none')
+            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName (this can take several minutes)..." -Level Warning
+            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--output', 'none')
             if ($vaultLocation) { $purgeArgs += '--location'; $purgeArgs += $vaultLocation }
             az $purgeArgs 2>$null
-            if ($LASTEXITCODE -eq 0) { $purgedVaults += $vaultName }
-            else { Write-AdeLog "Could not purge '$vaultName' (non-fatal)." -Level Warning }
-        }
-        # Poll until all initiated purges complete (name released from deleted registry)
-        if ($purgedVaults.Count -gt 0) {
-            Write-AdeLog "Waiting for Key Vault purge(s) to complete..." -Level Info
-            $kvTimeout = 120; $kvElapsed = 0
-            $stillPurging = @($purgedVaults)
-            while ($stillPurging.Count -gt 0 -and $kvElapsed -lt $kvTimeout) {
-                Start-Sleep -Seconds 10; $kvElapsed += 10
-                $stillPurging = @($stillPurging | Where-Object {
-                    $check = az keyvault list-deleted --resource-type vault --query "[?name=='$_'].name" -o tsv 2>$null
-                    -not [string]::IsNullOrWhiteSpace($check)
-                })
-            }
-            if ($stillPurging.Count -eq 0) {
-                Write-AdeLog "Key Vault name(s) released. Safe to re-deploy immediately." -Level Success
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Key Vault purged: $vaultName. Safe to re-deploy immediately." -Level Success
             } else {
-                Write-AdeLog "Purge still in progress for: $($stillPurging -join ', '). Wait 30s before re-deploying." -Level Warning
+                Write-AdeLog "Could not purge '$vaultName' (non-fatal)." -Level Warning
             }
         }
     } else {
