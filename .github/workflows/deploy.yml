@@ -105,7 +105,9 @@ jobs:
           FAILED=0
           while IFS= read -r f; do
             echo "→ Linting: $f"
-            az bicep lint --file "$f" || FAILED=1
+            # --no-restore: skip external module registry lookups (none used here).
+            # Consistent with lint.yml and avoids transient registry failures.
+            az bicep lint --file "$f" --no-restore || FAILED=1
           done < <(find bicep -name '*.bicep')
           exit $FAILED
 
@@ -159,96 +161,46 @@ jobs:
       - name: Install Bicep CLI
         run: az bicep install
 
-      - name: What-if — monitoring module (default)
-        if: ${{ github.event.inputs.mode != 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-monitoring-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/modules/monitoring/monitoring.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-            --output table || true
-
-      - name: What-if — networking module (default)
-        if: ${{ github.event.inputs.mode != 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-networking-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/modules/networking/networking.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-            --output table || true
-
-      - name: What-if — security module (default)
-        if: ${{ github.event.inputs.mode != 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-security-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/modules/security/security.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-                         logAnalyticsId="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${PREFIX}-monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/${PREFIX}-law" \
-            --output table || true
-
-      - name: What-if — monitoring module (hardened)
-        if: ${{ github.event.inputs.mode == 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-monitoring-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/hardened/monitoring/monitoring.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-            --output table || true
-
-      - name: What-if — networking module (hardened)
-        if: ${{ github.event.inputs.mode == 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-networking-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/hardened/networking/networking.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-            --output table || true
-
-      - name: What-if — security module (hardened)
-        if: ${{ github.event.inputs.mode == 'hardened' }}
-        run: |
-          PREFIX="${{ env.INPUT_PREFIX }}"
-          LOCATION="${{ env.INPUT_LOCATION }}"
-          RG="${PREFIX}-security-rg"
-          az group create --name "$RG" --location "$LOCATION" --tags managedBy=ade --output none 2>/dev/null || true
-          az deployment group what-if \
-            --resource-group "$RG" \
-            --template-file  bicep/hardened/security/security.bicep \
-            --parameters prefix="$PREFIX" \
-                         location="$LOCATION" \
-                         logAnalyticsId="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${PREFIX}-monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/${PREFIX}-law" \
-            --output table || true
-
       - name: Install PowerShell 7
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq powershell
+
+      - name: What-if — all enabled modules
+        # Runs deploy.ps1 -WhatIf so the preview is:
+        #   • profile-aware  — only modules enabled in the selected profile are previewed
+        #   • skip_modules-aware — modules in -SkipModules are excluded
+        #   • mode-correct   — uses hardened/ or modules/ Bicep path to match the real deploy
+        #   • complete       — covers all 12 modules, not just monitoring/networking/security
+        # Non-fatal: failures are warnings only (|| true) so a what-if ARM error
+        # doesn't block the actual deployment.
+        continue-on-error: true
+        shell: pwsh
+        env:
+          ADMIN_PASSWORD:         ${{ secrets.ADE_ADMIN_PASSWORD }}
+          ADE_PROFILE:            ${{ github.event.inputs.profile }}
+          ADE_MODE:               ${{ github.event.inputs.mode || 'default' }}
+          ADE_LOCATION:           ${{ env.INPUT_LOCATION }}
+          ADE_PREFIX:             ${{ env.INPUT_PREFIX }}
+          ADE_SUBSCRIPTION:       ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_SKIP_MODULES:       ${{ github.event.inputs.skip_modules }}
+          ADE_BUDGET_ALERT_EMAIL: ${{ github.event.inputs.budget_alert_email }}
+        run: |
+          $skipModules = @()
+          if ($env:ADE_SKIP_MODULES) {
+            $skipModules = $env:ADE_SKIP_MODULES -split ',' | ForEach-Object { $_.Trim() }
+          }
+          ./scripts/deploy.ps1 `
+            -Profile          $env:ADE_PROFILE `
+            -Mode             $env:ADE_MODE `
+            -Location         $env:ADE_LOCATION `
+            -Prefix           $env:ADE_PREFIX `
+            -SubscriptionId   $env:ADE_SUBSCRIPTION `
+            -AdminPassword   (ConvertTo-SecureString $env:ADMIN_PASSWORD -AsPlainText -Force) `
+            -SkipModules      $skipModules `
+            -BudgetAlertEmail $env:ADE_BUDGET_ALERT_EMAIL `
+            -Force `
+            -WhatIf
 
       - name: Deploy ADE
         id: deploy
@@ -320,7 +272,12 @@ jobs:
             echo "| Run          | [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
             echo ""
             echo "### Resource Groups"
-            for mod in monitoring networking security compute storage databases appservices containers integration ai data governance; do
-              echo "- \`${ADE_PREFIX}-${mod}-rg\`"
-            done
+            # Query actual existing RGs for this prefix — accurate for partial profiles
+            # and profiles that skip modules.
           } >> "$GITHUB_STEP_SUMMARY"
+          az group list \
+            --query "[?tags.managedBy=='ade' && starts_with(name,'${ADE_PREFIX}-')].name" \
+            -o tsv | sort | while IFS= read -r rg; do
+              echo "- \`${rg}\`" >> "$GITHUB_STEP_SUMMARY"
+            done
+            done

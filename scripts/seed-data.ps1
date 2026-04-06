@@ -481,7 +481,11 @@ if ($seedAll -or $Modules -contains 'keyvault') {
                 --name $secret.Key `
                 --value $secret.Value `
                 --output none 2>$null
-            Write-AdeLog "Secret set: $($secret.Key)" -Level Success
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Secret set: $($secret.Key)" -Level Success
+            } else {
+                Write-AdeLog "Secret '$($secret.Key)' could not be written — KV may have restricted network access in hardened mode." -Level Warning
+            }
         }
     }
 }
