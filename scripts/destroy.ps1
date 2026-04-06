@@ -184,33 +184,77 @@ if ($NoWait) {
     }
 }
 
-# ─── Purge soft-deleted Key Vaults ────────────────────────────────────────────
-# Key Vault soft-delete retains vault names in the deleted-vaults registry for
-# softDeleteRetentionInDays (default 7). Re-deploying with the same prefix hits
-# VaultAlreadyExists because the name is still reserved.
-# We list all deleted vaults matching the prefix and purge them immediately.
-# This only runs when deletions were synchronous (NoWait = false); in async mode
-# the KVs may not yet be in the deleted state when we check.
+# ─── Purge soft-deleted resources ────────────────────────────────────────────
+# Key Vault and Cognitive Services (AI Services, OpenAI) use soft-delete.
+# After RG deletion the name is reserved in the deleted registry and blocks
+# re-deployment with the same prefix. We purge and wait for completion.
 if (-not $NoWait -and $failedRgs.Count -eq 0) {
+
+    # ── Key Vaults ──────────────────────────────────────────────────────────
     Write-AdeLog "Purging any soft-deleted Key Vaults with prefix '$Prefix'..." -Level Info
     $deletedVaults = az keyvault list-deleted --resource-type vault --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" -o tsv 2>$null
     if ($deletedVaults) {
+        $purgedVaults = @()
         foreach ($line in $deletedVaults) {
             if (-not $line) { continue }
             $parts = ($line.Trim() -split '\t')
             $vaultName     = $parts[0]
             $vaultLocation = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName (no-wait)" -Level Warning
+            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName" -Level Warning
             $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--no-wait', '--output', 'none')
             if ($vaultLocation) { $purgeArgs += '--location'; $purgeArgs += $vaultLocation }
             az $purgeArgs 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "Purge initiated: $vaultName (completes in background; re-deploy in ~30s)" -Level Success
+            if ($LASTEXITCODE -eq 0) { $purgedVaults += $vaultName }
+            else { Write-AdeLog "Could not purge '$vaultName' (non-fatal)." -Level Warning }
+        }
+        # Poll until all initiated purges complete (name released from deleted registry)
+        if ($purgedVaults.Count -gt 0) {
+            Write-AdeLog "Waiting for Key Vault purge(s) to complete..." -Level Info
+            $kvTimeout = 120; $kvElapsed = 0
+            $stillPurging = @($purgedVaults)
+            while ($stillPurging.Count -gt 0 -and $kvElapsed -lt $kvTimeout) {
+                Start-Sleep -Seconds 10; $kvElapsed += 10
+                $stillPurging = @($stillPurging | Where-Object {
+                    $check = az keyvault list-deleted --resource-type vault --query "[?name=='$_'].name" -o tsv 2>$null
+                    -not [string]::IsNullOrWhiteSpace($check)
+                })
+            }
+            if ($stillPurging.Count -eq 0) {
+                Write-AdeLog "Key Vault name(s) released. Safe to re-deploy immediately." -Level Success
             } else {
-                Write-AdeLog "Could not purge '$vaultName' (non-fatal — may already be purging or location required)." -Level Warning
+                Write-AdeLog "Purge still in progress for: $($stillPurging -join ', '). Wait 30s before re-deploying." -Level Warning
             }
         }
     } else {
         Write-AdeLog "No soft-deleted Key Vaults found for prefix '$Prefix'." -Level Info
     }
+
+    # ── Cognitive Services (AI Services + OpenAI) ────────────────────────────
+    # Purge endpoint requires: name + location + original resource-group name.
+    # We extract all three from the deleted account's ARM resource ID:
+    #   .../providers/Microsoft.CognitiveServices/locations/{loc}/resourceGroups/{rg}/deletedAccounts/{name}
+    Write-AdeLog "Purging any soft-deleted Cognitive Services accounts with prefix '$Prefix'..." -Level Info
+    $deletedCognitive = az cognitiveservices account list-deleted --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" -o tsv 2>$null
+    if ($deletedCognitive) {
+        foreach ($line in $deletedCognitive) {
+            if (-not $line) { continue }
+            $parts    = ($line.Trim() -split '\t')
+            $acctName = $parts[0]
+            $acctLoc  = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+            $acctId   = if ($parts.Count -gt 2) { $parts[2] } else { '' }
+            # Extract original RG name from ARM ID
+            $acctRg   = if ($acctId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
+            if (-not $acctLoc -or -not $acctRg) {
+                Write-AdeLog "Could not determine location/RG for '$acctName' — skipping." -Level Warning
+                continue
+            }
+            Write-AdeLog "Purging soft-deleted Cognitive Services account: $acctName (rg: $acctRg)" -Level Warning
+            az cognitiveservices account purge --name $acctName --resource-group $acctRg --location $acctLoc --output none 2>$null
+            if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged: $acctName" -Level Success }
+            else { Write-AdeLog "Could not purge '$acctName' (non-fatal)." -Level Warning }
+        }
+    } else {
+        Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
+    }
 }
+
