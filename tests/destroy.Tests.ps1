@@ -197,6 +197,18 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
         $source | Should -Match 'keyvault.*purge'
     }
 
+    It 'Uses --no-wait on purge to avoid az CLI timeouts' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'keyvault.*purge.*--no-wait'
+    }
+
+    It 'Polls keyvault list-deleted until vault is released after purge' {
+        $source = Get-Content $script:destroyPs -Raw
+        # A polling loop must re-check list-deleted so we know the name is truly free
+        $source | Should -Match 'stillPurging'
+        $source | Should -Match 'kvTimeout'
+    }
+
     It 'Passes --location to az keyvault purge' {
         $source = Get-Content $script:destroyPs -Raw
         $source | Should -Match '--location.*vaultLocation'
@@ -211,6 +223,43 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
     It 'Does not purge KVs when any RG deletion failed' {
         $source = Get-Content $script:destroyPs -Raw
         # The purge block must check $failedRgs.Count -eq 0
+        $source | Should -Match 'failedRgs.Count -eq 0'
+    }
+}
+
+Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
+
+    It 'Calls az cognitiveservices account list-deleted after deletions succeed' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'cognitiveservices account list-deleted'
+    }
+
+    It 'Filters deleted Cognitive Services accounts by prefix' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'cognitiveservices account list-deleted.*starts_with\(name'
+    }
+
+    It 'Calls az cognitiveservices account purge for each matching deleted account' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'cognitiveservices account purge'
+    }
+
+    It 'Extracts resource-group name from ARM resource ID' {
+        $source = Get-Content $script:destroyPs -Raw
+        # RG must be extracted from the ARM id — not hardcoded
+        $source | Should -Match 'resourceGroups/\(\[\^/\]\+\)'
+    }
+
+    It 'Passes --resource-group and --location to the purge command' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match '--resource-group.*acctRg'
+        $source | Should -Match '--location.*acctLoc'
+    }
+
+    It 'Guards the CogSvc purge block with the same -NoWait / failedRgs conditions as KV purge' {
+        $source = Get-Content $script:destroyPs -Raw
+        # Both purge sections must be inside the same outer if block
+        $source | Should -Match '-not \$NoWait'
         $source | Should -Match 'failedRgs.Count -eq 0'
     }
 }

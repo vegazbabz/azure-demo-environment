@@ -36,7 +36,7 @@ param tags object = {}
 // ─── Azure AI Services ────────────────────────────────────────────────────────
 
 resource aiServices 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = if (deployAiServices) {
-  name: '${prefix}-aiservices'
+  name: '${prefix}-ai-${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   kind: 'CognitiveServices'
@@ -51,7 +51,7 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = 
 // ─── Azure OpenAI ─────────────────────────────────────────────────────────────
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = if (deployOpenAi) {
-  name: '${prefix}-openai'
+  name: '${prefix}-oai-${uniqueString(resourceGroup().id)}'
   location: location
   tags: tags
   kind: 'OpenAI'
