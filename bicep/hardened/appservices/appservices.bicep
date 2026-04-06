@@ -24,12 +24,6 @@ param deployLinuxApp bool = true
 @description('Deploy Function App (Consumption plan).')
 param deployFunctionApp bool = true
 
-@description('Deploy Static Web App.')
-param deployStaticWebApp bool = true
-
-@description('Azure region for Static Web App. Must be one of the regions that support Microsoft.Web/staticSites: westus2, centralus, eastus2, westeurope, eastasia. Defaults to westeurope so deployments in unsupported regions (e.g. swedencentral) still succeed.')
-param staticWebAppLocation string = 'westeurope'
-
 @description('Deploy Logic App (Standard).')
 param deployLogicApp bool = true
 
@@ -236,22 +230,6 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = if (deployFunctionApp) {
   }
 }
 
-// ─── Static Web App ───────────────────────────────────────────────────────────
-// Static Web Apps enforce HTTPS by default — no additional config needed.
-
-resource staticWebApp 'Microsoft.Web/staticSites@2023-01-01' = if (deployStaticWebApp) {
-  name: '${prefix}-static-app'
-  // Static Web Apps are only available in: westus2, centralus, eastus2, westeurope, eastasia.
-  // Use a dedicated location param so deployments in unsupported regions still succeed.
-  location: staticWebAppLocation
-  tags: tags
-  sku: {
-    name: 'Free'
-    tier: 'Free'
-  }
-  properties: {}
-}
-
 // ─── Logic App (Standard) ─────────────────────────────────────────────────────
 
 resource logicAppPlan 'Microsoft.Web/serverfarms@2023-01-01' = if (deployLogicApp) {
@@ -404,7 +382,5 @@ output linuxWebAppId string = deployLinuxApp ? linuxWebApp.id : ''
 output linuxWebAppHostname string = deployLinuxApp ? linuxWebApp!.properties.defaultHostName : ''
 output functionAppId string = deployFunctionApp ? functionApp.id : ''
 output functionAppHostname string = deployFunctionApp ? functionApp!.properties.defaultHostName : ''
-output staticWebAppId string = deployStaticWebApp ? staticWebApp.id : ''
-output staticWebAppHostname string = deployStaticWebApp ? staticWebApp!.properties.defaultHostname : ''
 output logicAppId string = deployLogicApp ? logicApp.id : ''
 output logicAppHostname string = deployLogicApp ? logicApp!.properties.defaultHostName : ''
