@@ -138,15 +138,20 @@ foreach ($rg in $targetGroups) {
 }
 
 $failedRgs = @()
+
+# Phase 1: Remove locks and start ALL deletions in parallel (no-wait).
+# This cuts wall-clock time from (N x avg-delete-time) to ~max-delete-time.
 foreach ($rg in $ordered) {
     try {
-        Remove-AdeResourceGroup -Name $rg -NoWait:$NoWait
-        Write-AdeLog "Deletion completed: $rg" -Level Success
+        Remove-AdeResourceGroup -Name $rg -NoWait  # always async for parallelism
+        Write-AdeLog "Deletion started: $rg" -Level Info
     } catch {
-        Write-AdeLog "Failed to delete '$rg': $_" -Level Error
+        Write-AdeLog "Failed to start deletion of '$rg': $_" -Level Error
         $failedRgs += $rg
     }
 }
+
+$allStarted = @($ordered | Where-Object { $_ -notin $failedRgs })
 
 if ($failedRgs.Count -gt 0) {
     Write-AdeLog "The following resource groups could NOT be deleted: $($failedRgs -join ', ')" -Level Error
@@ -154,9 +159,29 @@ if ($failedRgs.Count -gt 0) {
 }
 
 if ($NoWait) {
-    Write-AdeLog "Deletions running in background. Check status in the Azure Portal or run: az group list -o table" -Level Info
+    Write-AdeLog "Deletions running in background ($($allStarted.Count) RGs). Check status: az group list -o table" -Level Info
 } else {
-    Write-AdeLog "All resource groups deleted." -Level Success
+    # Phase 2: Poll until every started RG is gone (or timeout after 30 min).
+    Write-AdeLog "Waiting for $($allStarted.Count) resource group(s) to delete in parallel..." -Level Info
+    $remaining  = @($allStarted)
+    $maxSeconds = 1800
+    $elapsed    = 0
+    while ($remaining.Count -gt 0 -and $elapsed -lt $maxSeconds) {
+        Start-Sleep -Seconds 20
+        $elapsed += 20
+        $remaining = @($remaining | Where-Object {
+            (az group exists --name $_ 2>$null).Trim() -eq 'true'
+        })
+        if ($remaining.Count -gt 0) {
+            Write-AdeLog "Still deleting ($($remaining.Count) remaining): $($remaining -join ', ')" -Level Info
+        }
+    }
+    if ($remaining.Count -gt 0) {
+        Write-AdeLog "Timed out waiting for: $($remaining -join ', ')" -Level Warning
+        $failedRgs += $remaining
+    } else {
+        Write-AdeLog "All resource groups deleted." -Level Success
+    }
 }
 
 # ─── Purge soft-deleted Key Vaults ────────────────────────────────────────────

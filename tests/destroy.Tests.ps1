@@ -116,6 +116,12 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
         $deleteCall | Should -Match '--no-wait'
     }
 
+    It 'Passes --no-wait when -NoWait is set' {
+        Remove-AdeResourceGroup -Name 'ade-test-rg' -NoWait
+        $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
+        $deleteCall | Should -Match '--no-wait'
+    }
+
     It 'Does not pass --no-wait when -NoWait is not set' {
         Remove-AdeResourceGroup -Name 'ade-test-rg'
         $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
@@ -206,5 +212,23 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
         $source = Get-Content $script:destroyPs -Raw
         # The purge block must check $failedRgs.Count -eq 0
         $source | Should -Match 'failedRgs.Count -eq 0'
+    }
+}
+
+Describe 'destroy.ps1 – parallel deletion loop' -Tag 'unit' {
+
+    It 'Calls Remove-AdeResourceGroup with -NoWait for every RG (parallel launch)' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'Remove-AdeResourceGroup.*-NoWait'
+    }
+
+    It 'Polls with az group exists after starting deletions' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'group exists'
+    }
+
+    It 'Has a maximum wait timeout to avoid blocking forever' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'maxSeconds'
     }
 }
