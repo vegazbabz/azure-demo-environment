@@ -724,7 +724,7 @@ foreach ($moduleName in $deploymentOrder) {
                     )
                     foreach ($link in ($scheduleLinks | Where-Object { $_.Enabled })) {
                         if ($existingLinks -contains $link.Runbook) {
-                            Write-AdeLog "Job schedule already linked: $($link.Runbook) \u2192 $($link.Schedule)" -Level Info
+                            Write-AdeLog "Job schedule already linked: $($link.Runbook) → $($link.Schedule)" -Level Info
                             continue
                         }
                         $seed   = [System.Text.Encoding]::UTF8.GetBytes("$($state.automationAccountName)-$($link.Schedule)")
@@ -739,9 +739,9 @@ foreach ($moduleName in $deploymentOrder) {
                         } | ConvertTo-Json -Compress
                         az rest --method PUT --url $jsUrl --body $jsBody --headers 'Content-Type=application/json' --output none
                         if ($LASTEXITCODE -eq 0) {
-                            Write-AdeLog "Job schedule linked: $($link.Runbook) \u2192 $($link.Schedule)" -Level Success
+                            Write-AdeLog "Job schedule linked: $($link.Runbook) → $($link.Schedule)" -Level Success
                         } else {
-                            Write-AdeLog "Job schedule link failed ($($link.Runbook) \u2192 $($link.Schedule)) — non-fatal." -Level Warning
+                            Write-AdeLog "Job schedule link failed ($($link.Runbook) → $($link.Schedule)) — non-fatal." -Level Warning
                         }
                     }
                 }
