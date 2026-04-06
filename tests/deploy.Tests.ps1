@@ -392,12 +392,23 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
         function Get-DeployParamKeys ([string]$ModuleName) {
             $escapedMod = [regex]::Escape($ModuleName)
 
-            # Locate the switch block for this module — between "'module' {" and
-            # the next sibling case label or the closing brace of the switch.
-            $pattern   = "(?s)'$escapedMod'\s*\{(.+?)(?=\n[ \t]+'[a-z]+'\s*\{|\n[ \t]*\}[ \t]*\n[ \t]*\})"
-            $blockMatch = [regex]::Match($script:deploySrc, $pattern)
-            if (-not $blockMatch.Success) { return @() }
-            $block = $blockMatch.Groups[1].Value
+            # Locate the opening of this switch case.
+            $startMatch = [regex]::Match($script:deploySrc, "'$escapedMod'\s*\{")
+            if (-not $startMatch.Success) { return @() }
+
+            # Walk forward counting braces to find the exact close of this case body.
+            # This is robust against any nesting depth inside the case (loops, if/else, etc.)
+            # — the simple end-pattern regex would misfire on consecutive } lines.
+            $openPos = $startMatch.Index + $startMatch.Length - 1  # index of '{'
+            $depth = 1
+            $i = $openPos + 1
+            while ($i -lt $script:deploySrc.Length -and $depth -gt 0) {
+                $ch = $script:deploySrc[$i]
+                if ($ch -eq '{') { $depth++ }
+                elseif ($ch -eq '}') { $depth-- }
+                $i++
+            }
+            $block = $script:deploySrc.Substring($openPos + 1, $i - $openPos - 2)
 
             # Strip hardened-only blocks so we only see unconditionally passed keys.
             $block = [regex]::Replace(
@@ -419,7 +430,8 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
                 ForEach-Object { $keys.Add($_.Groups[1].Value) }
 
             # 'tags' is injected by Deploy-AdeModule itself and is always valid — exclude it.
-            return $keys | Where-Object { $_ -ne 'tags' } | Sort-Object -Unique
+            # Return as array to guard against single-element pipeline unwrapping.
+            return @($keys | Where-Object { $_ -ne 'tags' } | Sort-Object -Unique)
         }
     }
 
