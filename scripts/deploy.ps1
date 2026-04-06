@@ -811,6 +811,9 @@ foreach ($moduleName in $deploymentOrder) {
                     enableResourceLocks     = (Get-FeatureFlag -Features $govFeatures -Name 'resourceLocks').ToString().ToLower()
                     enablePolicyAssignments = (Get-FeatureFlag -Features $govFeatures -Name 'policyAssignments').ToString().ToLower()
                     computeResourceGroupName = "$Prefix-compute-rg"
+                    autoShutdownTime        = Get-FeatureFlag -Features $govFeatures -Name 'autoShutdownTime'     -Default '1900'
+                    autoShutdownTimezone    = Get-FeatureFlag -Features $govFeatures -Name 'autoShutdownTimezone' -Default 'UTC'
+                    autoStartEnabled        = ((Get-FeatureFlag -Features $govFeatures -Name 'autoStartEnabled') -eq $true).ToString().ToLower()
                 }
                 if ($budgetEmailSet) { $params['budgetAlertEmail'] = $effectiveBudgetEmail }
 

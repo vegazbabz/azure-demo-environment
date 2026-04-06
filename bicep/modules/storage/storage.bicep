@@ -48,8 +48,8 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-04-01' = {
   kind: 'StorageV2'
   properties: {
     accessTier: 'Hot'
-    // Default settings — no hardening applied
-    // supportsHttpsTrafficOnly: false (Azure default is true for new accounts — left as-is)
+    // Benchmark baseline: HTTPS-only intentionally disabled to expose the
+    // Azure-default setting for security comparison testing.
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: false
     allowBlobPublicAccess: true
