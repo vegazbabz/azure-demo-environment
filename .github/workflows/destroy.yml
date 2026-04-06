@@ -115,13 +115,14 @@ jobs:
           ADE_PREFIX:       ${{ github.event.inputs.prefix }}
           ADE_MODULES:      ${{ github.event.inputs.modules }}
           ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_NO_WAIT:      ${{ github.event.inputs.no_wait }}
         run: |
           $modulesArg = @()
           if ($env:ADE_MODULES) {
             $modulesArg = $env:ADE_MODULES -split ',' | ForEach-Object { $_.Trim() }
           }
 
-          $noWait = '${{ github.event.inputs.no_wait }}' -eq 'true'  # choice input — safe
+          $noWait = $env:ADE_NO_WAIT -eq 'true'
 
           $splat = @{
             Prefix         = $env:ADE_PREFIX

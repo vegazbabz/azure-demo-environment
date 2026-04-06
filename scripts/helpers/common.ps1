@@ -359,9 +359,14 @@ function Invoke-AdeBicepDeployment {
     $terminalStates = @('Succeeded', 'Failed', 'Canceled')
     $depState       = 'Running'
     $showResult     = $null
+    $pollStart      = [DateTime]::UtcNow
+    $maxPollSeconds = 5400  # 90 min — the deploy job timeout-minutes: 120 is the hard cap
 
     do {
         Start-Sleep -Seconds $PollIntervalSeconds
+        if (([DateTime]::UtcNow - $pollStart).TotalSeconds -gt $maxPollSeconds) {
+            throw "Deployment '$DeploymentName' timed out after $([int]($maxPollSeconds / 60)) minutes of polling. The deployment may still be running in Azure — check the portal."
+        }
 
         $ops = Invoke-AzCmd -ArgumentList @(
             'deployment', 'group', 'operation', 'list',
