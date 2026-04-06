@@ -173,3 +173,38 @@ Describe 'destroy.ps1 – source parses without errors' -Tag 'unit' {
         $criticalErrors.Count | Should -Be 0
     }
 }
+
+Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
+
+    It 'Calls az keyvault list-deleted after deletions succeed' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'keyvault list-deleted'
+    }
+
+    It 'Filters deleted vaults by prefix' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match "starts_with\(name.*-kv-"
+    }
+
+    It 'Calls az keyvault purge for each matching deleted vault' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'keyvault.*purge'
+    }
+
+    It 'Passes --location to az keyvault purge' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match '--location.*vaultLocation'
+    }
+
+    It 'Does not purge KVs when -NoWait is set (RGs may still be deleting)' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The purge block must be guarded by -not $NoWait
+        $source | Should -Match '-not \$NoWait'
+    }
+
+    It 'Does not purge KVs when any RG deletion failed' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The purge block must check $failedRgs.Count -eq 0
+        $source | Should -Match 'failedRgs.Count -eq 0'
+    }
+}
