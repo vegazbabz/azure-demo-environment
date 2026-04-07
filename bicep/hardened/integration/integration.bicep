@@ -56,7 +56,8 @@ param tags object = {}
 // Hardened: TLS 1.2, local auth disabled, public access disabled (MCSB IM-3, NS-1).
 
 resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = if (deployServiceBus) {
-  name: '${prefix}-sb'
+  // Note: Azure reserves the '-sb' suffix for internal use — use '-sbus' instead.
+  name: '${prefix}-sbus'
   location: location
   tags: tags
   sku: {

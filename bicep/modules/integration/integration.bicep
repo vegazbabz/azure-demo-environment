@@ -62,7 +62,8 @@ param tags object = {}
 // ─── Service Bus ──────────────────────────────────────────────────────────────
 
 resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = if (deployServiceBus) {
-  name: '${prefix}-sb'
+  // Note: Azure reserves the '-sb' suffix for internal use — use '-sbus' instead.
+  name: '${prefix}-sbus'
   location: location
   tags: tags
   sku: {
@@ -147,11 +148,9 @@ resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-preview' =
   }
 }
 
-resource eventHubConsumerGroup 'Microsoft.EventHub/namespaces/eventhubs/consumergroups@2023-01-01-preview' = if (deployEventHub) {
-  parent: eventHub
-  name: 'demo-consumer'
-  properties: {}
-}
+// Note: custom consumer groups require Standard tier. Basic tier provides only the
+// built-in $Default consumer group. The custom consumer group resource has been
+// removed; consumers should use $Default for demo workloads.
 
 // ─── Event Grid ───────────────────────────────────────────────────────────────
 
