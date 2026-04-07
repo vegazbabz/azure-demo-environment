@@ -6,19 +6,25 @@
 .DESCRIPTION
     Seeds dummy data into deployed ADE resources so they are usable for
     demo and benchmark testing immediately after deployment:
-      - Azure Blob Storage: uploads sample files (JSON, CSV)
+      - Azure Blob Storage: uploads sample files (JSON, CSV) to data/logs/public containers
+      - Storage Queue: creates demo-tasks queue and enqueues sample task messages
+      - Storage Table: creates demotable and inserts sample device/config entities
+      - Storage File Share: uploads welcome.txt to the provisioned file share
       - Cosmos DB: inserts sample order documents
       - Azure SQL Database: runs data/sql/seed.sql against AdventureWorksLT
-      - PostgreSQL: creates demo_products table and inserts sample rows
-      - MySQL: creates demo_events table and inserts sample rows
+      - PostgreSQL: creates demo_products + demo_orders tables and inserts sample rows
+      - MySQL: creates demo_events + demo_devices tables and inserts sample rows
       - Redis Cache: sets demo keys via TLS RESP connection
-      - Key Vault: adds commonly-expected demo secrets
+      - Key Vault: adds demo secrets, an RSA 2048 encryption key, and a self-signed certificate
       - Service Bus: sends test messages to the orders queue
-      - Event Hub: sends a batch of test telemetry events
+      - Event Hub: sends telemetry events via REST to the telemetry hub
+      - Event Grid: publishes demo events to the custom topic
 
     NOTE: SQL, PostgreSQL, and MySQL require -DatabaseAdminPassword.
     In hardened mode all databases are behind private endpoints — run this
     script from within the VNet (e.g. via Bastion or a jump VM).
+    Key Vault key and certificate creation require Key Vault Administrator
+    (or Crypto Officer + Certificates Officer) on the vault.
 
 .PARAMETER Prefix
     The prefix used during deployment. Default: ade
@@ -29,7 +35,7 @@
 .PARAMETER Modules
     Which resource types to seed. Defaults to all available.
     Accepted values: storage, cosmosdb, sql, postgresql, mysql, redis,
-                     keyvault, servicebus, eventhub, all
+                     keyvault, servicebus, eventhub, eventgrid, all
 
 .PARAMETER AdminUsername
     Admin username used during ADE deployment. Must match the -AdminUsername value
@@ -61,7 +67,7 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidateSet('storage', 'cosmosdb', 'sql', 'postgresql', 'mysql', 'redis',
-                 'keyvault', 'servicebus', 'eventhub', 'all')]
+                 'keyvault', 'servicebus', 'eventhub', 'eventgrid', 'all')]
     [string[]]$Modules = @('all'),
 
     [Parameter(Mandatory = $false)]
@@ -134,6 +140,23 @@ function Invoke-RedisCommand {
     $buf = New-Object byte[] 1024
     $n   = $Stream.Read($buf, 0, $buf.Length)
     return [System.Text.Encoding]::UTF8.GetString($buf, 0, $n).Trim()
+}
+
+# Generates a SharedAccessSignature token for Azure Service Bus / Event Hubs REST API.
+function New-EhSasToken {
+    param(
+        [string]$ResourceUri,
+        [string]$KeyName,
+        [string]$Key,
+        [int]$ExpirySeconds = 3600
+    )
+    $expiry       = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + $ExpirySeconds
+    $stringToSign = [Uri]::EscapeDataString($ResourceUri) + "`n" + $expiry
+    $hmac         = [System.Security.Cryptography.HMACSHA256]::new(
+                        [System.Text.Encoding]::UTF8.GetBytes($Key))
+    $sig          = [Convert]::ToBase64String(
+                        $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($stringToSign)))
+    return "SharedAccessSignature sr=$([Uri]::EscapeDataString($ResourceUri))&sig=$([Uri]::EscapeDataString($sig))&se=$expiry&skn=$KeyName"
 }
 
 # ─── Blob Storage ─────────────────────────────────────────────────────────────
@@ -213,6 +236,83 @@ Uploaded by seed-data.ps1 on $(Get-Date -Format 'yyyy-MM-dd').
         } else {
             Write-AdeLog "'public' container not found (hardened mode — expected). Skipping README upload." -Level Warning
         }
+
+        # ─── Logs container: seed a diagnostic run record ─────────────────────────
+        $logFile = Join-Path ([System.IO.Path]::GetTempPath()) 'seed-diagnostics.json'
+        @{ seedRun = (Get-Date -Format 'o'); host = [System.Net.Dns]::GetHostName(); status = 'ok' } |
+            ConvertTo-Json -Compress | Set-Content -Path $logFile -Encoding UTF8
+        az storage blob upload `
+            --account-name $accountName `
+            @authArgs `
+            --container-name 'logs' `
+            --name 'seed/seed-diagnostics.json' `
+            --file $logFile `
+            --overwrite `
+            --output none 2>$null
+        Write-AdeLog "Uploaded: logs/seed/seed-diagnostics.json" -Level Success
+        Remove-Item $logFile -Force
+
+        # ─── Storage Queue: demo task queue ───────────────────────────────────────
+        az storage queue create `
+            --account-name $accountName `
+            @authArgs `
+            --name 'demo-tasks' `
+            --output none 2>$null
+        Write-AdeLog "Queue created: demo-tasks" -Level Info
+
+        $demoQueueMessages = @(
+            '{"taskId":"task-001","type":"SendEmail","priority":"high","createdAt":"2026-01-01T00:00:00Z"}'
+            '{"taskId":"task-002","type":"ProcessOrder","priority":"normal","createdAt":"2026-01-01T00:01:00Z"}'
+            '{"taskId":"task-003","type":"GenerateReport","priority":"low","createdAt":"2026-01-01T00:02:00Z"}'
+        )
+        foreach ($msg in $demoQueueMessages) {
+            $msgB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($msg))
+            az storage message put `
+                --account-name $accountName `
+                @authArgs `
+                --queue-name 'demo-tasks' `
+                --content $msgB64 `
+                --output none 2>$null
+        }
+        Write-AdeLog "Enqueued $($demoQueueMessages.Count) demo tasks to 'demo-tasks' queue." -Level Success
+
+        # ─── Storage Table: demo entity store ─────────────────────────────────────
+        az storage table create `
+            --account-name $accountName `
+            @authArgs `
+            --name 'demotable' `
+            --output none 2>$null
+        Write-AdeLog "Table created: demotable" -Level Info
+
+        $demoEntities = @(
+            [ordered]@{ PartitionKey = 'devices'; RowKey = 'dev-001'; Model = 'SensorXv2'; Location = 'BuildingA'; Active = 'true' }
+            [ordered]@{ PartitionKey = 'devices'; RowKey = 'dev-002'; Model = 'SensorXv2'; Location = 'BuildingB'; Active = 'true' }
+            [ordered]@{ PartitionKey = 'config';  RowKey = 'global';  Theme = 'dark'; Version = '1.0'; Features = 'newUI' }
+        )
+        foreach ($entity in $demoEntities) {
+            $entityProps = $entity.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }
+            az storage entity insert `
+                --account-name $accountName `
+                @authArgs `
+                --table-name 'demotable' `
+                --entity @entityProps `
+                --if-exists replace `
+                --output none 2>$null
+            Write-AdeLog "Entity inserted: $($entity.PartitionKey)/$($entity.RowKey)" -Level Success
+        }
+
+        # ─── File Share: seed a welcome file ──────────────────────────────────────
+        $welcomePath = Join-Path ([System.IO.Path]::GetTempPath()) 'welcome.txt'
+        "Azure Demo Environment`nPrefix : $Prefix`nDeployed: $(Get-Date -Format 'yyyy-MM-dd')`nContents: Demo files for storage benchmark testing." |
+            Set-Content -Path $welcomePath -Encoding UTF8
+        az storage file upload `
+            --account-name $accountName `
+            @authArgs `
+            --share-name "$Prefix-fileshare" `
+            --source $welcomePath `
+            --output none 2>$null
+        Write-AdeLog "Uploaded: $Prefix-fileshare/welcome.txt" -Level Success
+        Remove-Item $welcomePath -Force
     }
 }
 
@@ -487,6 +587,36 @@ if ($seedAll -or $Modules -contains 'keyvault') {
                 Write-AdeLog "Secret '$($secret.Key)' could not be written — KV may have restricted network access in hardened mode." -Level Warning
             }
         }
+
+        # ─── Key: RSA 2048 encryption key ─────────────────────────────────────────
+        # Requires Key Vault Crypto Officer (or Administrator) on the vault.
+        az keyvault key create `
+            --vault-name $vaultName `
+            --name 'demo-encryption-key' `
+            --kty RSA `
+            --size 2048 `
+            --ops encrypt decrypt wrapKey unwrapKey `
+            --output none 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "Key created: demo-encryption-key (RSA 2048)" -Level Success
+        } else {
+            Write-AdeLog "Key 'demo-encryption-key' could not be created — ensure Key Vault Crypto Officer role is assigned." -Level Warning
+        }
+
+        # ─── Certificate: self-signed TLS demo certificate ────────────────────────
+        # Requires Key Vault Certificates Officer (or Administrator) on the vault.
+        # Policy: Self-signed, RSA 2048, CN=ade-demo, 12-month validity, server+client EKU.
+        $selfSignedPolicy = '{"issuerParameters":{"name":"Self"},"keyProperties":{"exportable":true,"keySize":2048,"keyType":"RSA","reuseKey":false},"lifetimeActions":[{"action":{"actionType":"AutoRenew"},"trigger":{"daysBeforeExpiry":90}}],"secretProperties":{"contentType":"application/x-pkcs12"},"x509CertificateProperties":{"ekus":["1.3.6.1.5.5.7.3.1","1.3.6.1.5.5.7.3.2"],"keyUsage":["digitalSignature","keyEncipherment"],"subject":"CN=ade-demo","validityInMonths":12}}'
+        az keyvault certificate create `
+            --vault-name $vaultName `
+            --name 'demo-tls-cert' `
+            --policy $selfSignedPolicy `
+            --output none 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "Certificate created: demo-tls-cert (self-signed, CN=ade-demo, RSA 2048)" -Level Success
+        } else {
+            Write-AdeLog "Certificate 'demo-tls-cert' could not be created — ensure Key Vault Certificates Officer role is assigned." -Level Warning
+        }
     }
 }
 
@@ -546,9 +676,95 @@ if ($seedAll -or $Modules -contains 'eventhub') {
             --query primaryConnectionString -o tsv 2>$null
 
         if ($ehKey) {
-            Write-AdeLog "Event Hub key retrieved. Use the SDK or az eventhubs to send test events." -Level Info
-            Write-AdeLog "Connection string saved to env var: ADE_EVENTHUB_CONN" -Level Info
+            # Extract the bare SAS key from the connection string
+            # Format: Endpoint=sb://...;SharedAccessKeyName=...;SharedAccessKey=<key>
+            $ehPrimaryKey = ($ehKey -split ';' | Where-Object { $_ -like 'SharedAccessKey=*' }) -replace 'SharedAccessKey=', ''
+            $ehHubName    = "$Prefix-telemetry"
+            $ehUri        = "https://$ehNs.servicebus.windows.net/$ehHubName"
+
+            $sas = New-EhSasToken -ResourceUri $ehUri -KeyName 'RootManageSharedAccessKey' -Key $ehPrimaryKey
+
+            $telemetryEvents = @(
+                @{ device = 'dev-001'; temperature = 22.5; humidity = 60;   ts = '2026-01-01T00:00:00Z'; unit = 'celsius' }
+                @{ device = 'dev-002'; temperature = 19.3; humidity = 65;   ts = '2026-01-01T00:01:00Z'; unit = 'celsius' }
+                @{ device = 'dev-003'; motion = $true;     zone = 'entrance'; ts = '2026-01-01T00:02:00Z' }
+            )
+            $sentCount = 0
+            foreach ($event in $telemetryEvents) {
+                try {
+                    Invoke-RestMethod `
+                        -Method POST `
+                        -Uri "$ehUri/messages" `
+                        -Headers @{ Authorization = $sas } `
+                        -ContentType 'application/json; charset=utf-8' `
+                        -Body ($event | ConvertTo-Json -Compress) | Out-Null
+                    $sentCount++
+                } catch {
+                    Write-AdeLog "Event Hub send failed: $_" -Level Warning
+                }
+            }
+            Write-AdeLog "Sent $sentCount telemetry events to '$ehHubName' Event Hub." -Level Success
             $env:ADE_EVENTHUB_CONN = $ehKey
+        }
+    }
+}
+
+# ─── Event Grid ───────────────────────────────────────────────────────────────
+
+if ($seedAll -or $Modules -contains 'eventgrid') {
+    Write-AdeSection "Seeding: Event Grid"
+
+    $intRg     = "$Prefix-integration-rg"
+    $topicName = Get-AdeResource -ResourceGroup $intRg -ResourceType 'Microsoft.EventGrid/topics'
+
+    if (-not $topicName) {
+        Write-AdeLog "No Event Grid custom topic found in '$intRg'. Skipping." -Level Warning
+    } else {
+        Write-AdeLog "Event Grid topic: $topicName" -Level Info
+
+        $topicEndpoint = az eventgrid topic show `
+            --name $topicName `
+            --resource-group $intRg `
+            --query 'properties.endpoint' -o tsv 2>$null
+
+        $topicKey = az eventgrid topic key list `
+            --name $topicName `
+            --resource-group $intRg `
+            --query 'key1' -o tsv 2>$null
+
+        if ($topicEndpoint -and $topicKey) {
+            $demoEgEvents = @(
+                [ordered]@{
+                    id          = [Guid]::NewGuid().ToString()
+                    eventType   = 'Demo.Order.Created'
+                    subject     = '/ade/orders/order-001'
+                    eventTime   = (Get-Date -Format 'o')
+                    dataVersion = '1.0'
+                    data        = @{ orderId = 'order-001'; customerId = 1; total = 149.99 }
+                }
+                [ordered]@{
+                    id          = [Guid]::NewGuid().ToString()
+                    eventType   = 'Demo.Resource.Updated'
+                    subject     = '/ade/resources/storage-001'
+                    eventTime   = (Get-Date -Format 'o')
+                    dataVersion = '1.0'
+                    data        = @{ resourceId = 'storage-001'; action = 'updated'; module = 'storage' }
+                }
+            ) | ConvertTo-Json -Depth 5
+
+            try {
+                Invoke-RestMethod `
+                    -Method POST `
+                    -Uri $topicEndpoint `
+                    -Headers @{ 'aeg-sas-key' = $topicKey } `
+                    -ContentType 'application/json' `
+                    -Body $demoEgEvents | Out-Null
+                Write-AdeLog "Published 2 demo events to Event Grid topic '$topicName'." -Level Success
+            } catch {
+                Write-AdeLog "Event Grid publish failed: $_" -Level Warning
+            }
+        } else {
+            Write-AdeLog "Could not retrieve Event Grid topic endpoint or key. Skipping." -Level Warning
         }
     }
 }
