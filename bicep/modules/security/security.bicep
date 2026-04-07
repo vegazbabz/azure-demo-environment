@@ -78,16 +78,18 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   tags: tags
 }
 
-// ─── Key Vault Secrets Officer for deployer ──────────────────────────────────
-// Grants seed-data.ps1 permission to write secrets after Bicep deployment.
+// ─── Key Vault Administrator for deployer ────────────────────────────────────
+// Grants seed-data.ps1 full data-plane access: secrets, keys, and certificates.
+// Key Vault Administrator covers all three planes whereas Secrets Officer alone
+// would block key creation (Crypto Officer) and certificate issuance (Certificates Officer).
 // Only created when deployerPrincipalId is explicitly passed.
 
-resource kvSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployKeyVault && !empty(deployerPrincipalId)) {
-  name: guid(keyVault.id, deployerPrincipalId, 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
+resource kvAdministrator 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployKeyVault && !empty(deployerPrincipalId)) {
+  name: guid(keyVault.id, deployerPrincipalId, '00482a5a-887f-4fb3-b363-3b7fe8e74483')
   scope: keyVault
   properties: {
-    // Key Vault Secrets Officer
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
+    // Key Vault Administrator — covers secrets, keys, and certificates
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
     principalId: deployerPrincipalId
     principalType: deployerPrincipalType
   }
