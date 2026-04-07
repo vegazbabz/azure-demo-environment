@@ -120,6 +120,14 @@ Describe 'seed-data.ps1 — skip when no resources found' -Tag 'unit' {
         } | Should -Not -Throw
     }
 
+    It 'Does not throw when Event Grid topic is missing' {
+        {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules eventgrid -Force
+        } | Should -Not -Throw
+    }
+
     It 'Does not throw when SQL Server is missing' {
         {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
@@ -169,12 +177,19 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             }
         }
 
-        It 'Calls az storage blob upload for each sample file plus README' {
+        It 'Calls az storage blob upload for each sample file plus additional storage seeding' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules storage -Force
-            # az should have been called: 1 (resource list) + 1 (keys list) + 4 (3 blobs + 1 README)
-            Should -Invoke az -Times 6 -Exactly
+            # 1  (resource list) + 1 (keys list)
+            # + 3 (blob uploads: customers, products, telemetry)
+            # + 1 (container exists check for public — returns '' so README skipped)
+            # + 1 (logs blob upload)
+            # + 1 (queue create) + 3 (queue messages)
+            # + 1 (table create) + 3 (entity inserts)
+            # + 1 (file share upload)
+            # = 16
+            Should -Invoke az -Times 16 -Exactly
         }
     }
 
@@ -212,12 +227,14 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             }
         }
 
-        It 'Calls az keyvault secret set for each secret' {
+        It 'Calls az keyvault secret set for each secret plus key and certificate creation' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules keyvault -Force
-            # 1 (resource list) + 1 (account show) + 1 (sql server list) + 7 (secret sets)
-            Should -Invoke az -Times 10 -Exactly
+            # 1 (resource list) + 1 (account show) + 1 (sql server list)
+            # + 7 (secret sets) + 1 (key create) + 1 (cert create)
+            # = 12
+            Should -Invoke az -Times 12 -Exactly
         }
     }
 
@@ -332,8 +349,9 @@ Describe 'seed-data.ps1 — module filter' -Tag 'unit' {
         function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
         function Write-AdeSection { param([string]$Title) }
         . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules all -Force
-        # 9 resource-list calls (one per block: storage, cosmosdb, sql, postgresql, mysql, redis, keyvault, servicebus, eventhub)
-        Should -Invoke az -Times 9 -Exactly
+        # 10 resource-list calls (one per block: storage, cosmosdb, sql, postgresql, mysql,
+        # redis, keyvault, servicebus, eventhub, eventgrid) — all return '' so all skip
+        Should -Invoke az -Times 10 -Exactly
     }
 }
 
