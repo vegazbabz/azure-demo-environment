@@ -280,7 +280,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | Mode | Bicep path | Purpose |
 | --- | --- | --- |
 | `default` (default) | `bicep/modules/` | Out-of-the-box Azure settings — no hardening, no enforced TLS, public network access at defaults. Use this to establish a pre-hardening **benchmark baseline**. |
-| `hardened` | `bicep/hardened/` | CIS/MCSB-aligned: TLS 1.2 minimum, public network access disabled, purge protection on Key Vault, all Defender plans enabled, Sentinel, resource locks, policy assignments in Enforce mode. |
+| `hardened` | `bicep/hardened/` | CIS v5.0.0/MCSB-aligned: TLS 1.2 minimum, public network access disabled, purge protection on Key Vault, all Defender plans enabled, Sentinel, resource locks, policy assignments in Enforce mode. |
 
 ```powershell
 # Baseline (default) — measure "before" score
@@ -766,7 +766,7 @@ ADE is designed for **paired benchmark comparisons**:
 3. Deploy with `-Mode hardened` to the same subscription (same prefix or a parallel prefix).
 4. Re-run the scan and compare.
 
-### CIS Azure Foundations Benchmark v2.0 — control coverage
+### CIS Azure Foundations Benchmark v5.0.0 — control coverage
 
 | CIS Section | Topic | ADE module | Hardened control |
 | --- | --- | --- | --- |
@@ -788,7 +788,7 @@ ADE is designed for **paired benchmark comparisons**:
 #### Option 1 — Defender for Cloud (Azure portal)
 
 1. Open **Microsoft Defender for Cloud → Regulatory compliance**
-2. Select **CIS Azure Foundations Benchmark v2.0** or **Microsoft Cloud Security Benchmark**
+2. Select **CIS Azure Foundations Benchmark v5.0.0** or **Microsoft Cloud Security Benchmark**
 3. Expand controls to see compliant vs. non-compliant resources
 
 #### Option 2 — Azure Policy via CLI
@@ -852,7 +852,7 @@ az account set --subscription <subscription-id>
 | Mode | Bicep source | Purpose |
 | --- | --- | --- |
 | `default` *(default)* | `bicep/modules/` | Out-of-the-box Azure settings — no hardening, no forced diagnostics. Baseline for CIS/MCSB benchmark scoring. |
-| `hardened` | `bicep/hardened/` | CIS/MCSB-aligned: TLS 1.2+, public network access disabled, purge protection, Defender for Cloud, Sentinel, resource locks, policy assignments in Enforce mode. |
+| `hardened` | `bicep/hardened/` | CIS v5.0.0/MCSB-aligned: TLS 1.2+, public network access disabled, purge protection, Defender for Cloud, Sentinel, resource locks, policy assignments in Enforce mode. |
 
 ---
 

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automation runbooks: `Start-AdeResources.ps1`, `Stop-AdeResources.ps1`
 - Cost dashboard script `Get-AdeCostDashboard.ps1`
 - Azure Policy definitions and initiative (`ade-governance-initiative`)
-- CI pipeline: Bicep lint, JSON validation, PSScriptAnalyzer, Pester unit tests (488 tests)
+- CI pipeline: Bicep lint, JSON validation, PSScriptAnalyzer, Pester unit tests (347 passing, 28 skipped)
 - Deploy and Destroy GitHub Actions workflows with OIDC authentication
 - Managed identity role assignments for Function App and Logic App
 - Domain Controller VM support in compute and networking modules
