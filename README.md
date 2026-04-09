@@ -621,13 +621,14 @@ Test coverage includes:
 
 ## GitHub Actions setup
 
-Three workflows are included:
+Four workflows are included:
 
 | Workflow | File | Trigger | What it does |
 | --- | --- | --- | --- |
 | ADE — Lint | `lint.yml` | Every push and PR | Bicep lint, PSScriptAnalyzer, JSON validation, Pester tests |
 | ADE — Deploy | `deploy.yml` | Manual (`workflow_dispatch`) | Deploys a chosen profile to Azure |
 | ADE — Destroy | `destroy.yml` | Manual (`workflow_dispatch`) | Destroys all resource groups for a given prefix |
+| ADE — Release | `release.yml` | Push of `v*.*.*` tag | Extracts the matching CHANGELOG.md section and creates a GitHub Release |
 
 All workflows use **OIDC federated identity** — no long-lived secrets or service principal passwords. You set this up once.
 
@@ -948,8 +949,8 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (442 passing, 0 failing)
-.github/workflows/  # GitHub Actions (deploy, destroy, lint)
+tests/              # Pester 5 unit tests (512 passing, 0 failing, 32 skipped)
+.github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 
 ---
@@ -980,7 +981,7 @@ az ad app federated-credential create \
   --parameters '{
     "name": "ade-github-main",
     "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:vegazbabz/azure-demo-environment:environment:demo",
+    "subject": "repo:<your-github-org>/<your-repo-name>:environment:demo",
     "audiences": ["api://AzureADTokenAudience"]
   }'
 ```
