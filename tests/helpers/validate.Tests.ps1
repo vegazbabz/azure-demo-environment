@@ -441,11 +441,18 @@ Describe 'Test-AdeSubscription' -Tag 'unit' {
             $script:AzSubCalls += ($args -join ' ')
             $global:LASTEXITCODE = 0
             # Return different JSON depending on the subcommand called
+            # NOTE: signed-in-user must be checked before 'show' (both contain 'show' in args)
+            if ($args -contains 'signed-in-user') {
+                return 'user-object-id-123'
+            }
             if ($args -contains 'show') {
                 return '{"id":"sub-abc","name":"ADE Demo","tenantId":"tenant-x"}'
             }
-            if ($args -contains 'signed-in-user') {
-                return 'user-object-id-123'
+            if ($args -contains 'get-member-groups') {
+                return ''
+            }
+            if ($args -contains 'management-group') {
+                return '[]'
             }
             if ($args -contains 'list') {
                 return "Contributor`n"
@@ -488,10 +495,16 @@ Describe 'Test-AdeSubscription' -Tag 'unit' {
     It 'Does not throw when role assignment check returns no assignments (warning only)' {
         Mock az {
             $global:LASTEXITCODE = 0
+            if ($args -contains 'signed-in-user') {
+                return 'caller-oid'
+            }
             if ($args -contains 'show') {
                 return '{"id":"sub-abc","name":"ADE Demo","tenantId":"t"}'
             }
-            return ''   # empty for signed-in-user and role list
+            if ($args -contains 'management-group') {
+                return '[]'
+            }
+            return ''   # empty for get-member-groups and role list
         }
         { Test-AdeSubscription -SubscriptionId 'sub-abc' } | Should -Not -Throw
     }

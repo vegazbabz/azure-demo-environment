@@ -110,9 +110,12 @@ function Test-AdeSubscription {
     # Check caller has at least Contributor at subscription scope.
     # az ad signed-in-user show only works for interactive users; fall back to
     # SP object ID lookup when running under OIDC (e.g. GitHub Actions).
+    Write-AdeLog "az ad signed-in-user show --query id" -Level Debug
     $callerId = az ad signed-in-user show --query id -o tsv 2>$null
     if (-not $callerId) {
+        Write-AdeLog "az account show --query user.name (SP fallback)" -Level Debug
         $appId    = az account show --query 'user.name' -o tsv 2>$null
+        Write-AdeLog "az ad sp show --id $appId" -Level Debug
         $callerId = az ad sp show --id $appId --query id -o tsv 2>$null
     }
     if ($callerId) { $callerId = $callerId.Trim().Trim('"') }
@@ -120,17 +123,59 @@ function Test-AdeSubscription {
     if (-not $callerId) {
         Write-AdeLog "Could not resolve caller object ID — skipping Contributor check." -Level Warning
     } else {
-        $assignments = az role assignment list `
-            --assignee $callerId `
-            --subscription $SubscriptionId `
-            --include-inherited `
-            --query "[?roleDefinitionName == 'Owner' || roleDefinitionName == 'Contributor'].roleDefinitionName" `
-            -o tsv 2>$null
+        $roleQuery = "[?roleDefinitionName == 'Owner' || roleDefinitionName == 'Contributor'].roleDefinitionName"
 
-        if (-not $assignments) {
-            Write-AdeLog "WARNING: Could not confirm Contributor/Owner role on subscription '$SubscriptionId'. Deployment may fail." -Level Warning
+        # Build principal list: caller + all transitive group memberships.
+        # az role assignment list --assignee does NOT expand groups at MG scope.
+        $principalsToCheck = [System.Collections.Generic.List[string]]@($callerId)
+        Write-AdeLog "az ad user get-member-groups --id $callerId" -Level Debug
+        $groupIds = az ad user get-member-groups --id $callerId --security-enabled-only true `
+            --query "[].id" -o tsv 2>$null
+        if ($groupIds) {
+            $groupIds -split "`n" | Where-Object { $_ } | ForEach-Object { $principalsToCheck.Add($_) }
+        }
+        Write-AdeLog "Role check: $($principalsToCheck.Count) principal(s) to check" -Level Debug
+
+        # Build scope list: subscription first, then full MG ancestry (innermost → root).
+        # --include-inherited does NOT climb to parent management groups.
+        $scopesToCheck = [System.Collections.Generic.List[string]]@("/subscriptions/$SubscriptionId")
+        Write-AdeLog "az account management-group entities list (ancestry for $SubscriptionId)" -Level Debug
+        $mgRaw = az account management-group entities list `
+            --query "[?name=='$SubscriptionId'].parentNameChain" `
+            -o json 2>$null
+        $mgEntities = if ($mgRaw) { $mgRaw | ConvertFrom-Json } else { $null }
+        if ($mgEntities -and $mgEntities[0]) {
+            # parentNameChain is ordered outermost→innermost; reverse so we check nearest MG first
+            [array]::Reverse($mgEntities[0])
+            foreach ($mgName in $mgEntities[0]) {
+                $scopesToCheck.Add("/providers/Microsoft.Management/managementGroups/$mgName")
+            }
+        }
+        Write-AdeLog "Role check: $($scopesToCheck.Count) scope(s) to check" -Level Debug
+
+        $assignedRole = $null
+        $assignedScope = $null
+        :outer foreach ($scope in $scopesToCheck) {
+            foreach ($principal in $principalsToCheck) {
+                Write-AdeLog "az role assignment list --assignee $principal --scope $scope" -Level Debug
+                $result = az role assignment list `
+                    --assignee $principal `
+                    --scope $scope `
+                    --query $roleQuery `
+                    -o tsv 2>$null
+                if ($result) {
+                    $assignedRole  = ($result -split "`n" | Select-Object -First 1)
+                    $assignedScope = $scope
+                    break outer
+                }
+            }
+        }
+
+        if ($assignedRole) {
+            $via = if ($assignedScope -like "*/managementGroups/*") { " (via management group)" } else { "" }
+            Write-AdeLog "Role confirmed: $assignedRole on $($sub.name)$via" -Level Success
         } else {
-            Write-AdeLog "Role confirmed: $($assignments -split "`n" | Select-Object -First 1) on $($sub.name)" -Level Success
+            Write-AdeLog "WARNING: Could not confirm Contributor/Owner role on subscription '$SubscriptionId'. Deployment may fail." -Level Warning
         }
     }
 
