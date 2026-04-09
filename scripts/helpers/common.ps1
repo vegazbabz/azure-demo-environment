@@ -51,9 +51,12 @@ function Write-AdeLog {
         return
     }
 
-    # Write the timestamp in default terminal color so it is always visible
-    # regardless of the user's color scheme (cyan on cyan, etc.).
-    # The level bracket + message get the semantic color.
+    $plain = "[$timestamp] [$prefix] $Message"
+
+    # Write-Host goes to the host directly and cannot be captured by pipelines or
+    # Tee-Object. Write-Information (stream 6) CAN be captured with *>&1 or 6>&1.
+    # We write both: Write-Host for coloured console output, Write-Information so
+    # callers using  *>&1 | Tee-Object  or  6>&1 | Out-File  get the plain text too.
     if ($NoNewline) {
         Write-Host -NoNewline "[$timestamp] "
         Write-Host -NoNewline "[$prefix] $Message" -ForegroundColor $color
@@ -61,9 +64,9 @@ function Write-AdeLog {
         Write-Host -NoNewline "[$timestamp] "
         Write-Host "[$prefix] $Message" -ForegroundColor $color
     }
+    Write-Information $plain -InformationAction Continue
 
     if ($script:AdeLogFile) {
-        $plain = "[$timestamp] [$prefix] $Message"
         if ($NoNewline) {
             [System.IO.File]::AppendAllText($script:AdeLogFile, $plain)
         } else {

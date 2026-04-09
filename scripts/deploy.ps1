@@ -320,6 +320,7 @@ function Initialize-AdeState {
 
     # ── Monitoring ────────────────────────────────────────────────────────────
     if (-not $AdeState.logAnalyticsId) {
+        Write-AdeLog "az monitor log-analytics workspace show --name ${Prefix}-law --resource-group ${Prefix}-monitoring-rg" -Level Debug
         $v = az monitor log-analytics workspace show `
                  --name "${Prefix}-law" `
                  --resource-group "${Prefix}-monitoring-rg" `
@@ -327,6 +328,7 @@ function Initialize-AdeState {
         if ($v) { $AdeState.logAnalyticsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsId) {
+        Write-AdeLog "az monitor app-insights component show --app ${Prefix}-appi --resource-group ${Prefix}-monitoring-rg (id)" -Level Debug
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
@@ -334,6 +336,7 @@ function Initialize-AdeState {
         if ($v) { $AdeState.appInsightsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsKey) {
+        Write-AdeLog "az monitor app-insights component show --app ${Prefix}-appi --resource-group ${Prefix}-monitoring-rg (key)" -Level Debug
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
@@ -344,6 +347,7 @@ function Initialize-AdeState {
     # ── Networking — single VNet call; derive all subnet IDs from its resource ID ──
     # Subnet resource IDs are always <vnetId>/subnets/<name> — no extra API calls needed.
     if (-not $AdeState.vnetId) {
+        Write-AdeLog "az network vnet show --name ${Prefix}-vnet --resource-group ${Prefix}-networking-rg" -Level Debug
         $v = az network vnet show `
                  --name "${Prefix}-vnet" `
                  --resource-group "${Prefix}-networking-rg" `
@@ -369,6 +373,7 @@ function Initialize-AdeState {
     # All ADE private DNS zones live in the same networking RG, so if blob exists
     # the others do too (they're all created together by networking.bicep).
     if (-not $AdeState.blobDnsZoneId) {
+        Write-AdeLog "az network private-dns zone show --name privatelink.blob.core.windows.net --resource-group ${Prefix}-networking-rg" -Level Debug
         $probe = az network private-dns zone show `
                      --name 'privatelink.blob.core.windows.net' `
                      --resource-group "${Prefix}-networking-rg" `
@@ -393,11 +398,13 @@ function Initialize-AdeState {
     # ── Security ──────────────────────────────────────────────────────────────
     # KV name includes uniqueString(RG.id) — query by RG rather than constructing.
     if (-not $AdeState.keyVaultName) {
+        Write-AdeLog "az keyvault list --resource-group ${Prefix}-security-rg" -Level Debug
         $v = az keyvault list `
                  --resource-group "${Prefix}-security-rg" `
                  --query '[0].name' -o tsv --request-timeout 30 2>$null
         if ($v) {
             $AdeState.keyVaultName = $v.Trim()
+            Write-AdeLog "az keyvault show --name $($v.Trim()) --resource-group ${Prefix}-security-rg" -Level Debug
             $vId = az keyvault show `
                        --name $AdeState.keyVaultName `
                        --resource-group "${Prefix}-security-rg" `
@@ -407,6 +414,7 @@ function Initialize-AdeState {
         }
     }
     if (-not $AdeState.managedIdentityId) {
+        Write-AdeLog "az identity show --name ${Prefix}-identity --resource-group ${Prefix}-security-rg" -Level Debug
         $v = az identity show `
                  --name "${Prefix}-identity" `
                  --resource-group "${Prefix}-security-rg" `
@@ -424,6 +432,7 @@ function Initialize-AdeState {
 
     # ── Storage — account name has uniqueString suffix, query by RG ──────────
     if (-not $AdeState.storageAccountName) {
+        Write-AdeLog "az storage account list --resource-group ${Prefix}-storage-rg" -Level Debug
         $v = az storage account list `
                  --resource-group "${Prefix}-storage-rg" `
                  --query '[0].name' -o tsv --request-timeout 30 2>$null
