@@ -14,8 +14,11 @@ param prefix string
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('Enable blob soft delete and versioning.')
+@description('Enable blob soft delete.')
 param enableSoftDelete bool = false
+
+@description('Enable blob versioning independently of soft delete.')
+param enableVersioning bool = false
 
 @description('Enable Data Lake Gen2 storage account.')
 param enableDataLake bool = true
@@ -65,7 +68,7 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-04-01'
       enabled: enableSoftDelete
       days: enableSoftDelete ? 7 : null
     }
-    isVersioningEnabled: enableSoftDelete
+    isVersioningEnabled: enableVersioning
   }
 }
 

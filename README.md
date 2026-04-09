@@ -50,11 +50,11 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 | `compute` | Windows Server 2022 VM (`Standard_B2s`) | Ubuntu 22.04 VM, VM Scale Set |
 | `storage` | General-purpose v2 Storage Account | Data Lake Gen2, File Shares, soft delete, versioning |
 | `databases` | Azure SQL Server + Serverless Database (AdventureWorksLT) | SQL Server on VM (IaaS), Cosmos DB (serverless), PostgreSQL Flexible Server, MySQL Flexible Server, Redis Cache |
-| `appservices` | App Service Plan (B1), Windows Web App, Linux Web App, Function App, Static Web App, Logic App | — |
+| `appservices` | App Service Plan (B1), Windows Web App, Function App, Logic App | — |
 | `containers` | Container Registry (Basic), AKS (1-node, free tier), Container Apps, Container Instances | — |
-| `integration` | Service Bus (Standard), Event Hub (Basic), Event Grid, SignalR | — |
-| `ai` | Azure AI Services, Azure OpenAI, Cognitive Search | — |
-| `data` | Data Factory, Synapse Analytics, Databricks | — |
+| `integration` | Service Bus (Standard), Event Hub (Basic), Event Grid, SignalR | API Management |
+| `ai` | — (all resources opt-in due to cost and quota) | Azure AI Services, Azure OpenAI, Cognitive Search, Machine Learning |
+| `data` | Data Factory | Synapse Analytics, Databricks, Microsoft Purview |
 | `governance` | Automation Account (auto-stop/start), Budget alerts | Resource locks, Azure Policy initiative assignments |
 
 > `ai` and `data` are disabled in all built-in profiles by default due to cost and quota requirements. Enable them in a custom profile when needed.
@@ -184,12 +184,12 @@ Every profile JSON controls exactly which sub-features are deployed within each 
 
 ### `monitoring`
 
+Log Analytics Workspace, Application Insights, and Action Group are **always deployed** by the monitoring module — they cannot be toggled off.
+
 | Flag | Default | Description |
 | --- | --- | --- |
-| `logAnalyticsWorkspace` | `true` | Log Analytics Workspace (required by most other modules) |
-| `applicationInsights` | varies | Application Insights |
-| `actionGroup` | `true` | Action Group for alert notifications |
 | `alertRules` | `false` | Pre-built alert rules (high CPU, disk, etc.) |
+| `alertEmail` | `""` | Email address for alert Action Group notifications. Leave empty to skip email delivery. |
 
 ### `networking`
 
@@ -228,13 +228,13 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 
 ### `storage`
 
+A General-purpose v2 Storage Account (including Blob, Queue, Table, and File services) is **always deployed**. It cannot be disabled independently of the module.
+
 | Flag | Default | Description |
 | --- | --- | --- |
-| `generalPurposeStorage` | `true` | Standard LRS general-purpose v2 storage account |
-| `dataLakeGen2` | varies | Hierarchical namespace storage account |
-| `fileShares` | varies | Azure File Shares |
-| `enableSoftDelete` | `false` | Blob/file soft delete (retention 7 days) |
-| `enableVersioning` | `false` | Blob versioning |
+| `dataLakeGen2` | varies | Hierarchical namespace (ADLS Gen2) storage account |
+| `enableSoftDelete` | `false` | Blob soft delete (7-day retention) |
+| `enableVersioning` | `false` | Blob versioning (independent of soft delete) |
 
 ### `databases`
 
@@ -252,9 +252,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | Flag | Default | Description |
 | --- | --- | --- |
 | `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
-| `linuxWebApp` | `true` | Linux Web App |
 | `functionApp` | `true` | Function App (Consumption plan) |
-| `staticWebApp` | `true` | Static Web App |
 | `logicApp` | `true` | Logic App (Standard) |
 
 ### `containers`
@@ -266,6 +264,37 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `containerApps` | `true` | Container Apps Environment + sample Container App |
 | `containerInstances` | `true` | Container Instances |
 
+### `integration`
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `serviceBus` | `true` | Service Bus namespace (Standard tier) with two sample queues |
+| `eventHub` | `true` | Event Hub namespace (Basic tier) with a sample hub |
+| `eventGrid` | `true` | Event Grid system topic |
+| `signalR` | `true` | SignalR Service (Free tier) |
+| `apiManagement` | `false` | API Management gateway (~$50/month Developer tier) |
+| `apimSku` | `"Developer"` | APIM SKU: `Developer` (~$50/mo), `Basic`, or `Standard` (~$750/mo). Only used when `apiManagement` is `true`. |
+
+### `ai`
+
+> All AI resources are **off by default** due to quota requirements and unpredictable cost. Enable individually in a custom profile.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `aiServices` | `false` | Azure AI Services multi-service account (S0) |
+| `openAi` | `false` | Azure OpenAI Service with GPT-4o deployment. Requires quota approval in your subscription. |
+| `cognitiveSearch` | `false` | Azure Cognitive Search (Basic ~$75/month) |
+| `machineLearning` | `false` | Azure Machine Learning workspace |
+
+### `data`
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `dataFactory` | `true` | Azure Data Factory with a sample linked service to the storage module |
+| `synapse` | `false` | Azure Synapse Analytics workspace (costs vary by usage) |
+| `databricks` | `false` | Azure Databricks workspace (costs vary by cluster usage) |
+| `purview` | `false` | Microsoft Purview account (~$50+/month) |
+
 ### `governance`
 
 | Flag | Default | Description |
@@ -273,8 +302,12 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `automationAccount` | varies | Automation Account with auto-stop/start runbooks and daily schedules |
 | `budget` | `true` | Monthly budget with email alerts at 80% and 100% spend |
 | `budgetAmount` | varies | Monthly budget limit in USD |
-| `resourceLocks` | `false` | ReadOnly lock on the networking resource group |
+| `budgetAlertEmail` | `""` | Email address for budget alert notifications. Required when `budget` is `true`. |
+| `resourceLocks` | `false` | CanNotDelete lock on the networking resource group |
 | `policyAssignments` | `false` | CIS Benchmark + MCSB policy initiative assignments (audit mode) |
+| `autoShutdownTime` | `"1900"` | Daily auto-shutdown time in HHMM format (e.g. `"1900"` = 19:00 UTC). |
+| `autoShutdownTimezone` | `"UTC"` | Timezone for the auto-shutdown/start schedules. |
+| `autoStartEnabled` | `false` | Enable daily auto-start at 08:00 on weekdays. Requires `automationAccount: true`. |
 
 ---
 
@@ -390,10 +423,8 @@ Minimal valid profile structure:
     "monitoring": {
       "enabled": true,
       "features": {
-        "logAnalyticsWorkspace": true,
-        "applicationInsights": false,
-        "actionGroup": true,
-        "alertRules": false
+        "alertRules": false,
+        "alertEmail": ""
       }
     },
     "networking": {
