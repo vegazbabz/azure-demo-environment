@@ -5,7 +5,7 @@
   "modules": {
     "monitoring": {
       "enabled": true,
-      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false, "alertEmail": "" }
+      "features": { "alertRules": false, "alertEmail": "" }
     },
     "networking": {
       "enabled": true,

@@ -492,8 +492,9 @@ foreach ($moduleName in $deploymentOrder) {
                 $monFeatProp = $deployProfile.modules.monitoring.PSObject.Properties['features']
                 $monFeatures = if ($null -ne $monFeatProp) { $monFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
-                    prefix   = $Prefix
-                    location = $Location
+                    prefix           = $Prefix
+                    location         = $Location
+                    deployAlertRules = (Get-FeatureFlag -Features $monFeatures -Name 'alertRules').ToString().ToLower()
                 }
                 $monAlertEmail = Get-FeatureFlag -Features $monFeatures -Name 'alertEmail' -Default ''
                 if (-not [string]::IsNullOrEmpty($monAlertEmail)) {
@@ -581,11 +582,13 @@ foreach ($moduleName in $deploymentOrder) {
                 # Some az CLI versions return the GUID wrapped in double-quotes (e.g. "abc-..."); strip them.
                 if ($deployerOid) { $deployerOid = $deployerOid.Trim().Trim('"') }
                 $params = @{
-                    prefix            = $Prefix
-                    location          = $Location
-                    logAnalyticsId    = $state.logAnalyticsId
-                    enableDefender    = (Get-FeatureFlag -Features $secFeatures -Name 'defenderForCloud').ToString().ToLower()
-                    enableSentinel    = (Get-FeatureFlag -Features $secFeatures -Name 'sentinel').ToString().ToLower()
+                    prefix                = $Prefix
+                    location              = $Location
+                    logAnalyticsId        = $state.logAnalyticsId
+                    deployKeyVault        = (Get-FeatureFlag -Features $secFeatures -Name 'keyVault'          -Default $true).ToString().ToLower()
+                    deployManagedIdentity = (Get-FeatureFlag -Features $secFeatures -Name 'managedIdentity'   -Default $true).ToString().ToLower()
+                    enableDefender        = (Get-FeatureFlag -Features $secFeatures -Name 'defenderForCloud').ToString().ToLower()
+                    enableSentinel        = (Get-FeatureFlag -Features $secFeatures -Name 'sentinel').ToString().ToLower()
                 }
                 if ($deployerOid) {
                     $params['deployerPrincipalId']   = $deployerOid
@@ -644,6 +647,7 @@ foreach ($moduleName in $deploymentOrder) {
                     location          = $Location
                     enableDataLake    = (Get-FeatureFlag -Features $stFeatures -Name 'dataLakeGen2').ToString().ToLower()
                     enableSoftDelete  = (Get-FeatureFlag -Features $stFeatures -Name 'enableSoftDelete').ToString().ToLower()
+                    enableVersioning  = (Get-FeatureFlag -Features $stFeatures -Name 'enableVersioning').ToString().ToLower()
                     privateEndpointSubnetId = $state.privateEndpointSubnetId
                     blobDnsZoneId           = $state.blobDnsZoneId
                     fileDnsZoneId           = $state.fileDnsZoneId

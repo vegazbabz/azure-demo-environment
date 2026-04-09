@@ -6,9 +6,6 @@
     "monitoring": {
       "enabled": true,
       "features": {
-        "logAnalyticsWorkspace": true,
-        "applicationInsights": true,
-        "actionGroup": true,
         "alertRules": true,
         "alertEmail": ""
       }
@@ -50,9 +47,7 @@
     "storage": {
       "enabled": true,
       "features": {
-        "generalPurposeStorage": true,
         "dataLakeGen2": true,
-        "fileShares": true,
         "enableSoftDelete": true,
         "enableVersioning": true,
         "allowedCidrRanges": []
@@ -73,7 +68,6 @@
       "enabled": true,
       "features": {
         "windowsWebApp": true,
-        "linuxWebApp": false,
         "functionApp": true,
         "logicApp": true
       }

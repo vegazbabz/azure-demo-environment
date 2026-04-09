@@ -5,7 +5,7 @@
   "modules": {
     "monitoring": {
       "enabled": true,
-      "features": { "logAnalyticsWorkspace": true, "applicationInsights": false, "actionGroup": true, "alertRules": false, "alertEmail": "" }
+      "features": { "alertRules": false, "alertEmail": "" }
     },
     "networking": {
       "enabled": true,
@@ -21,7 +21,7 @@
     },
     "storage": {
       "enabled": true,
-      "features": { "generalPurposeStorage": true, "dataLakeGen2": false, "fileShares": false, "enableSoftDelete": false, "enableVersioning": false, "allowedCidrRanges": [] }
+      "features": { "dataLakeGen2": false, "enableSoftDelete": false, "enableVersioning": false, "allowedCidrRanges": [] }
     },
     "databases": {
       "enabled": true,
