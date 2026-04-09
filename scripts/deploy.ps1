@@ -323,21 +323,21 @@ function Initialize-AdeState {
         $v = az monitor log-analytics workspace show `
                  --name "${Prefix}-law" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query id -o tsv 2>$null
+                 --query id -o tsv --request-timeout 30 2>$null
         if ($v) { $AdeState.logAnalyticsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsId) {
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query id -o tsv 2>$null
+                 --query id -o tsv --request-timeout 30 2>$null
         if ($v) { $AdeState.appInsightsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsKey) {
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query instrumentationKey -o tsv 2>$null
+                 --query instrumentationKey -o tsv --request-timeout 30 2>$null
         if ($v) { $AdeState.appInsightsKey = $v.Trim() }
     }
 
@@ -347,7 +347,7 @@ function Initialize-AdeState {
         $v = az network vnet show `
                  --name "${Prefix}-vnet" `
                  --resource-group "${Prefix}-networking-rg" `
-                 --query id -o tsv 2>$null
+                 --query id -o tsv --request-timeout 30 2>$null
         if ($v) {
             $vId = $v.Trim()
             $AdeState.vnetId                  = $vId
@@ -372,7 +372,7 @@ function Initialize-AdeState {
         $probe = az network private-dns zone show `
                      --name 'privatelink.blob.core.windows.net' `
                      --resource-group "${Prefix}-networking-rg" `
-                     --query id -o tsv 2>$null
+                     --query id -o tsv --request-timeout 30 2>$null
         if ($probe) {
             $zBase = "/subscriptions/$SubscriptionId/resourceGroups/${Prefix}-networking-rg" +
                      '/providers/Microsoft.Network/privateDnsZones'
@@ -395,13 +395,13 @@ function Initialize-AdeState {
     if (-not $AdeState.keyVaultName) {
         $v = az keyvault list `
                  --resource-group "${Prefix}-security-rg" `
-                 --query '[0].name' -o tsv 2>$null
+                 --query '[0].name' -o tsv --request-timeout 30 2>$null
         if ($v) {
             $AdeState.keyVaultName = $v.Trim()
             $vId = az keyvault show `
                        --name $AdeState.keyVaultName `
                        --resource-group "${Prefix}-security-rg" `
-                       --query id -o tsv 2>$null
+                       --query id -o tsv --request-timeout 30 2>$null
             if ($vId) { $AdeState.keyVaultId = $vId.Trim() }
             $recovered++
         }
@@ -410,13 +410,13 @@ function Initialize-AdeState {
         $v = az identity show `
                  --name "${Prefix}-identity" `
                  --resource-group "${Prefix}-security-rg" `
-                 --query id -o tsv 2>$null
+                 --query id -o tsv --request-timeout 30 2>$null
         if ($v) {
             $AdeState.managedIdentityId = $v.Trim()
             $cId = az identity show `
                        --name "${Prefix}-identity" `
                        --resource-group "${Prefix}-security-rg" `
-                       --query clientId -o tsv 2>$null
+                       --query clientId -o tsv --request-timeout 30 2>$null
             if ($cId) { $AdeState.managedIdentityClientId = $cId.Trim() }
             $recovered++
         }
@@ -426,7 +426,7 @@ function Initialize-AdeState {
     if (-not $AdeState.storageAccountName) {
         $v = az storage account list `
                  --resource-group "${Prefix}-storage-rg" `
-                 --query '[0].name' -o tsv 2>$null
+                 --query '[0].name' -o tsv --request-timeout 30 2>$null
         if ($v) { $AdeState.storageAccountName = $v.Trim(); $recovered++ }
     }
 
