@@ -168,6 +168,7 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 | `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB + PostgreSQL + MySQL), governance | ~$80–150/month | Database benchmark testing |
 | `security-focus` | monitoring, networking, security (+ Defender + Sentinel), compute (Windows + Linux), storage, databases (SQL only), governance (+ locks) | ~$100–200/month | Security posture and Defender coverage testing |
 | `full` | All 12 modules (ai and data excluded) | ~$300–500/month | Complete CIS/MCSB coverage |
+| `hardened` | All 12 modules with all hardening flags enabled | ~$300–500/month | CIS v5.0.0/MCSB-aligned end-to-end hardened environment |
 
 ```powershell
 ./scripts/deploy.ps1 -Profile minimal      -Location westeurope -Prefix ade
@@ -222,6 +223,8 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `vmss` | `false` | VM Scale Set |
 | `enableAutoShutdown` | varies per profile | Daily auto-shutdown at 19:00 UTC (saves cost) |
 | `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
+| `domainController` | `false` | Deploy an Active Directory Domain Controller (Windows Server 2022). Installs AD DS and promotes the VM to a forest root DC. Static IP `10.0.15.4` in the management subnet. VNet DNS is automatically pointed at the DC when enabled. |
+| `domainName` | `""` | FQDN for the AD forest (e.g. `corp.contoso.local`). Defaults to `<prefix>.local` when left empty. |
 
 ### `storage`
 
@@ -309,7 +312,7 @@ You can also deploy both side-by-side using different prefixes:
 | --- | --- | --- | --- |
 | `-Profile` | string | `full` | Built-in profile name or path to a custom JSON file |
 | `-Location` | string | `westeurope` | Azure region. Use `az account list-locations --query "[].name" -o tsv` to list all. |
-| `-Prefix` | string | `ade` | 2–8 lowercase alphanumeric characters. Becomes part of every resource group name and most resource names. |
+| `-Prefix` | string | `ade` | 2–8 lowercase alphanumeric characters (e.g. `ade`, `demo`, `contoso`). Becomes part of every resource group name and most resource names. |
 | `-SubscriptionId` | string | current account | Target subscription. Defaults to whatever `az account show` returns. |
 | `-AdminUsername` | string | `adeadmin` | VM and database administrator username |
 | `-AdminPassword` | SecureString | prompted | VM admin password. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. |
@@ -573,7 +576,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **442 passing, 0 failing, 28 skipped**.
+Current state: **512 passing, 0 failing, 32 skipped**.
 
 Test coverage includes:
 
@@ -883,7 +886,7 @@ Profiles live in `config/profiles/` and control which modules and features are e
 | --- | --- | --- |
 | `-Profile` | *(required)* | Built-in profile name or path to custom JSON |
 | `-Location` | `westeurope` | Azure region |
-| `-Prefix` | `ade` | 3–6 char lowercase prefix for all resource group names |
+| `-Prefix` | `ade` | 2–8 lowercase alphanumeric characters. Prefix for all resource group and resource names. |
 | `-SubscriptionId` | current account | Target subscription |
 | `-Mode` | `default` | `default` or `hardened` |
 | `-WhatIf` | — | Bicep what-if only, no deployment |
@@ -999,7 +1002,7 @@ az ad app federated-credential list --id <objectId> --query "[].subject"
 ```powershell
 # Run full suite (requires PowerShell 7 + Pester 5.7+)
 Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
-Invoke-Pester ./tests/ -Output Minimal
+./tests/Invoke-PesterSuite.ps1
 ```
 
 All Azure CLI calls are mocked — no subscription required to run tests.
