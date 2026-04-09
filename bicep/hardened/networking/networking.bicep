@@ -43,8 +43,11 @@ param enableDdos bool = false
 @description('Deploy Private DNS Zones for private endpoint name resolution.')
 param enablePrivateDnsZones bool = true    // Hardened: on by default
 
-@description('Deploy a Domain Controller VM. Sets VNet DNS to 10.0.15.4 so domain-joined resources resolve AD DNS.')
+@description('Deploy Domain Controller VM. Sets VNet DNS to 10.0.15.4 so domain-joined resources resolve AD DNS.')
 param deployDomainController bool = false
+
+@description('Resource ID of the Log Analytics workspace for NSG flow log traffic analytics. Leave empty to disable traffic analytics.')
+param logAnalyticsId string = ''
 
 // ─── Address space ────────────────────────────────────────────────────────────
 
@@ -124,6 +127,203 @@ resource networkWatcher 'Microsoft.Network/networkWatchers@2023-09-01' = {
   location: location
   tags: tags
   properties: {}
+}
+
+// ─── NSG Flow Log storage account ─────────────────────────────────────────────
+// Satisfies CIS v5.0.0 6.4: NSG flow logs enabled and retained 90 days.
+// HTTPS-only, TLS 1.2, no public blob access — minimal secure storage footprint.
+
+var flowLogStorageName = take('${replace(prefix, '-', '')}flowlogs${uniqueString(resourceGroup().id)}', 24)
+
+resource flowLogStorage 'Microsoft.Storage/storageAccounts@2023-04-01' = {
+  name: flowLogStorageName
+  location: location
+  tags: tags
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: {
+    supportsHttpsTrafficOnly: true
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+    accessTier: 'Hot'
+  }
+}
+
+// ─── Existing Log Analytics workspace (for traffic analytics) ─────────────────
+// Resolved only when logAnalyticsId is supplied; the customerId (workspace GUID)
+// is required by the traffic analytics configuration.
+
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = if (!empty(logAnalyticsId)) {
+  name: last(split(logAnalyticsId, '/'))!
+  scope: resourceGroup(split(logAnalyticsId, '/')[2], split(logAnalyticsId, '/')[4])
+}
+
+var trafficAnalyticsEnabled = !empty(logAnalyticsId)
+
+// ─── NSG Flow Logs ────────────────────────────────────────────────────────────
+// One flow log resource per workload NSG. Retention: 90 days. Format: JSON v2.
+// Traffic analytics routed to Log Analytics when logAnalyticsId is set.
+
+var flowLogRetentionPolicy = {
+  days: 90
+  enabled: true
+}
+
+var flowLogFormat = {
+  type: 'JSON'
+  version: 2
+}
+
+// Safe to use ! here: trafficAnalyticsConfig is only included when
+// trafficAnalyticsEnabled == true, which guarantees logAnalyticsWorkspace is non-null.
+var trafficAnalyticsConfig = trafficAnalyticsEnabled ? {
+  networkWatcherFlowAnalyticsConfiguration: {
+    enabled: true
+    workspaceId: logAnalyticsWorkspace!.properties.customerId
+    workspaceRegion: location
+    workspaceResourceId: logAnalyticsId
+    trafficAnalyticsInterval: 60
+  }
+} : null
+
+resource computeNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-compute-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: computeNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource appServicesNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-appservices-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: appServicesNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource databaseNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-database-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: databaseNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource containerNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-container-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: containerNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource integrationNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-integration-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: integrationNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource aiNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-ai-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: aiNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource dataNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-data-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: dataNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource managementNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-management-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: managementNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource privateEndpointNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-pe-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: privateEndpointNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
+}
+
+resource dcNsgFlowLog 'Microsoft.Network/networkWatchers/flowLogs@2023-09-01' = {
+  parent: networkWatcher
+  name: '${prefix}-dc-nsg-flowlog'
+  location: location
+  properties: {
+    storageId: flowLogStorage.id
+    enabled: true
+    targetResourceId: dcNsg.id
+    retentionPolicy: flowLogRetentionPolicy
+    format: flowLogFormat
+    flowAnalyticsConfiguration: trafficAnalyticsConfig
+  }
 }
 
 // ─── DDoS Protection Plan ─────────────────────────────────────────────────────

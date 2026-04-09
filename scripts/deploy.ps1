@@ -168,7 +168,7 @@ Write-AdeSection "Azure Demo Environment — Deployment ($Mode mode)"
 Write-AdeLog "Started at $($startTime.ToString('yyyy-MM-dd HH:mm:ss UTC'))" -Level Info
 
 # ─── Pre-flight ───────────────────────────────────────────────────────────────
-$null = Test-AdePrerequisites -StopOnError
+$null = Test-AdePrerequisites -Mode $Mode -StopOnError
 
 # ─── Subscription ─────────────────────────────────────────────────────────────
 if ($SubscriptionId) {
@@ -531,6 +531,12 @@ foreach ($moduleName in $deploymentOrder) {
                     enableDdos             = (Get-FeatureFlag -Features $netFeatures -Name 'enableDdos').ToString().ToLower()
                     enablePrivateDnsZones  = (Get-FeatureFlag -Features $netFeatures -Name 'enablePrivateDnsZones').ToString().ToLower()
                     deployDomainController = (Get-FeatureFlag -Features $computeFeatures -Name 'domainController').ToString().ToLower()
+                }
+                # Hardened mode: pass Log Analytics workspace ID for NSG flow log traffic analytics
+                if ($Mode -eq 'hardened') {
+                    if ($state.logAnalyticsId) {
+                        $params['logAnalyticsId'] = $state.logAnalyticsId
+                    }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'

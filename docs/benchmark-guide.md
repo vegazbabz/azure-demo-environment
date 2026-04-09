@@ -1,6 +1,6 @@
 # Benchmark Guide
 
-How ADE supports CIS Azure Foundations Benchmark v2.0 and Microsoft Cloud Security Benchmark (MCSB)
+How ADE supports CIS Microsoft Azure Foundations Benchmark v5.0.0 and Microsoft Cloud Security Benchmark (MCSB)
 assessments — what it deploys, how to generate a compliance report, and how to read the results.
 
 ---
@@ -21,7 +21,7 @@ the scan reflects the actual resource configuration rather than blocked deployme
 
 ---
 
-## CIS Azure Foundations Benchmark v2.0 — Control Coverage
+## CIS Microsoft Azure Foundations Benchmark v5.0.0 — Control Coverage
 
 The table below maps CIS sections to ADE modules. Coverage is indicated by the **hardened** mode
 configuration; default mode intentionally leaves these controls in a non-compliant state.
@@ -69,7 +69,7 @@ MCSB (Microsoft Cloud Security Benchmark) v1 supersedes the Azure Security Bench
 ### Option 1 — Defender CSPM (portal)
 
 1. Navigate to **Microsoft Defender for Cloud → Regulatory compliance**
-2. Select **CIS Azure Foundations Benchmark v2.0** or **Microsoft Cloud Security Benchmark**
+2. Select **CIS Microsoft Azure Foundations Benchmark v5.0.0** or **Microsoft Cloud Security Benchmark**
 3. Expand failing controls to see the non-compliant resources
 
 ### Option 2 — Azure Policy compliance state (CLI)
@@ -132,9 +132,147 @@ To cover additional CIS/MCSB controls not in ADE's current scope:
 
 ---
 
+## Audit Queries
+
+The queries below can be run against a deployed ADE environment to verify individual CIS v5.0.0
+controls. Known issues with deprecated or broken queries are called out inline.
+
+---
+
+### 6.1.1.5 / 7.5 — NSG Flow Logs
+
+> **⚠ Deprecated — cannot be satisfied on current subscriptions**
+>
+> Microsoft blocked new NSG flow log creation on **30 June 2025** and will retire the feature
+> entirely on **30 September 2027**. These two controls cannot be met on any subscription created
+> after that date. Auditors should mark them **Not Applicable** rather than Non-Compliant, and
+> should not attempt remediation — the ARM API will reject the request.
+>
+> The replacement technology is **VNet flow logs** (GA since late 2024), which captures traffic at
+> the VNet level rather than per-NSG. VNet flow log coverage is assessed under separate controls.
+
+---
+
+### 6.1.2.1–6.1.2.10 — Activity Log Alerts
+
+Verify that alert rules exist **and are enabled**. Rules that exist but are disabled are not
+compliant; omitting the `enabled` filter produces false-positive results.
+
+```bash
+# CLI — list all Activity Log alert rules that are enabled
+az monitor activity-log alert list \
+  --subscription <subscription-id> \
+  --query "[?enabled==\`true\`].{name:name, condition:condition.allOf[0].equals, rg:resourceGroup}" \
+  --output table
+```
+
+```powershell
+# PowerShell
+Get-AzActivityLogAlert | Where-Object { $_.Enabled -eq $true } |
+    Select-Object Name, ResourceGroupName,
+        @{ N='Operation'; E={ ($_.ConditionAllOf | Where-Object Field -eq 'operationName').EqualsValue } }
+```
+
+For a full compliant deployment, hardened mode creates rules for all ten operations:
+`Microsoft.Authorization/policyAssignments/write`, `Microsoft.Network/networkSecurityGroups/write`,
+`Microsoft.Network/networkSecurityGroups/delete`, `Microsoft.Network/networkSecurityGroups/securityRules/write`,
+`Microsoft.Network/networkSecurityGroups/securityRules/delete`, `Microsoft.Sql/servers/firewallRules/write`,
+`Microsoft.Sql/servers/firewallRules/delete`, `Microsoft.Security/tasks/activate/action`,
+`Microsoft.Security/tasks/dismiss/action`, `Microsoft.Security/securitySolutions/write`.
+
+---
+
+### 6.1.5 — No Basic or Consumption SKUs
+
+> **⚠ Known broken queries in older guidance**
+>
+> The PowerShell command `Get-AzResource | ?{ $_.Sku -EQ "Basic" }` is non-functional.
+> `$_.Sku` is a `PSResourceSku` object, not a string; comparing it to `"Basic"` with `-eq` always
+> returns `$false` regardless of what is deployed. The result is always an empty list.
+>
+> The Resource Graph `contains` operator on the `sku` field is also unreliable — `sku` is a JSON
+> object, not a string, and `contains` behaviour is inconsistent across resource types. Some SKUs
+> (e.g. App Service Free tier `sku.name = "F1"`) are never matched.
+
+Use Resource Graph with explicit field comparisons instead:
+
+```bash
+# CLI
+az graph query -q "
+Resources
+| where sku.name =~ 'Basic'
+   or sku.tier =~ 'Basic'
+   or sku.name =~ 'Free'
+   or sku.tier =~ 'Free'
+   or sku.name =~ 'Consumption'
+   or sku.tier =~ 'Consumption'
+| project name, type, resourceGroup, subscriptionId, sku
+| order by type asc"
+```
+
+```powershell
+# PowerShell — requires Az.ResourceGraph module
+Search-AzGraph -Query @"
+Resources
+| where sku.name =~ 'Basic'
+   or sku.tier =~ 'Basic'
+   or sku.name =~ 'Free'
+   or sku.tier =~ 'Free'
+   or sku.name =~ 'Consumption'
+   or sku.tier =~ 'Consumption'
+| project name, type, resourceGroup, subscriptionId, sku
+| order by type asc
+"@
+```
+
+Resource types where Basic/Consumption SKUs introduce material security limitations:
+
+| Resource type | Basic/Free limitation |
+|---|---|
+| Azure Bastion | No native client, no copy/paste, no session recording |
+| Application Gateway | No WAF, no autoscaling, no zone redundancy |
+| Virtual Network Gateway (VPN) | No BGP, no zone redundancy (being deprecated) |
+| Azure Container Registry | No geo-replication, no retention policies, no Private Link |
+| Event Hubs | No Kafka, no geo-disaster recovery, no Private Link |
+| Service Bus | No geo-disaster recovery, no Private Link |
+| API Management | Consumption has no VNet integration |
+| Log Analytics workspace | Free tier: 500 MB/day cap, 7-day retention only |
+
+---
+
+### 8.1.4.1 — Defender for Containers
+
+> **⚠ `ContainerRegistry` plan no longer exists on new subscriptions**
+>
+> Older audit commands targeting the `ContainerRegistry` Defender plan will fail silently or
+> return an error on subscriptions created after Microsoft merged it into the unified
+> `Containers` plan. Querying `ContainerRegistry` will not assess container security posture.
+
+Use the `Containers` plan name:
+
+```bash
+# CLI — check Defender for Containers plan is enabled
+az security pricing show \
+  --subscription <subscription-id> \
+  --name Containers \
+  --query "{plan:name, pricingTier:pricingTier}" \
+  --output table
+```
+
+```powershell
+# PowerShell
+Get-AzSecurityPricing -Name 'Containers' |
+    Select-Object Name, PricingTier
+```
+
+A compliant result returns `pricingTier: Standard`. The ADE hardened `security` module enables
+this plan explicitly.
+
+---
+
 ## Benchmark References
 
-- [CIS Azure Foundations Benchmark v2.0](https://www.cisecurity.org/benchmark/azure)
+- [CIS Azure Foundations Benchmark v5.0.0](https://www.cisecurity.org/benchmark/azure)
 - [Microsoft Cloud Security Benchmark v1](https://learn.microsoft.com/en-us/security/benchmark/azure/overview)
 - [Defender for Cloud — Regulatory compliance](https://learn.microsoft.com/en-us/azure/defender-for-cloud/regulatory-compliance-dashboard)
 - [Azure Policy built-in definitions for CIS](https://learn.microsoft.com/en-us/azure/governance/policy/samples/cis-azure-foundations-benchmark)

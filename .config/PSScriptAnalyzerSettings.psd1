@@ -50,6 +50,11 @@
         # ConvertTo-SecureString -AsPlainText is used in demo/test contexts where
         # the value originates from a secret store (Key Vault, GitHub Actions secret)
         # and not from untrusted user input. Acceptable for a demo environment.
-        'PSAvoidUsingConvertToSecureStringWithPlainText'
+        'PSAvoidUsingConvertToSecureStringWithPlainText',
+
+        # New-EhSasToken (seed-data.ps1) and New-SucceededShowMock (test helper)
+        # use New- prefix for clarity but neither modifies system state —
+        # both are pure computation/factory helpers with no -WhatIf surface.
+        'PSUseShouldProcessForStateChangingFunctions'
     )
 }
