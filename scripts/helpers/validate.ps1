@@ -140,9 +140,10 @@ function Test-AdeSubscription {
         # --include-inherited does NOT climb to parent management groups.
         $scopesToCheck = [System.Collections.Generic.List[string]]@("/subscriptions/$SubscriptionId")
         Write-AdeLog "az account management-group entities list (ancestry for $SubscriptionId)" -Level Debug
-        $mgEntities = az account management-group entities list `
+        $mgRaw = az account management-group entities list `
             --query "[?name=='$SubscriptionId'].parentNameChain" `
-            -o json 2>$null | ConvertFrom-Json
+            -o json 2>$null
+        $mgEntities = if ($mgRaw) { $mgRaw | ConvertFrom-Json } else { $null }
         if ($mgEntities -and $mgEntities[0]) {
             # parentNameChain is ordered outermost→innermost; reverse so we check nearest MG first
             [array]::Reverse($mgEntities[0])
