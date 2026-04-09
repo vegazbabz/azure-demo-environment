@@ -13,7 +13,10 @@ function Test-AdePrerequisites {
         Checks all required tools and Azure auth are in place.
         Returns $true if all checks pass, throws on first failure if -StopOnError.
     #>
-    param([switch]$StopOnError)
+    param(
+        [string]$Mode = 'default',
+        [switch]$StopOnError
+    )
 
     $failures = [System.Collections.Generic.List[string]]::new()
 
@@ -58,6 +61,19 @@ function Test-AdePrerequisites {
     } else {
         Write-AdeLog "Logged in as: $($account.user.name)" -Level Success
         Write-AdeLog "Subscription: $($account.name) [$($account.id)]" -Level Info
+    }
+
+    # ── EncryptionAtHost feature (hardened mode only) ─────────────────────────
+    # Required for hardened compute: VMs deployed with EncryptionAtHost = true will
+    # fail with an opaque ARM error if the feature is not registered on the subscription.
+    if ($Mode -eq 'hardened') {
+        Write-AdeLog "Checking EncryptionAtHost feature registration (required for hardened compute)..." -Level Info
+        $featureState = az feature show --name EncryptionAtHost --namespace Microsoft.Compute --query properties.state -o tsv 2>$null
+        if ($featureState -eq 'Registered') {
+            Write-AdeLog "EncryptionAtHost feature Registered ✓" -Level Success
+        } else {
+            $failures.Add("EncryptionAtHost feature is '$featureState' on this subscription — required for hardened compute (encryption at host). Run: az feature register --name EncryptionAtHost --namespace Microsoft.Compute && az provider register -n Microsoft.Compute  (allow 15-30 min to propagate)")
+        }
     }
 
     # ── Result ────────────────────────────────────────────────────────────────

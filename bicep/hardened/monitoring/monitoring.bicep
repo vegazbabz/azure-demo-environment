@@ -244,6 +244,18 @@ resource policyAlert 'Microsoft.Insights/activityLogAlerts@2020-10-01' = if (dep
   }
 }
 
+// ─── Activity Log → Log Analytics diagnostic settings ────────────────────────
+// Satisfies CIS v5.0.0 5.1.x: All Activity Log categories streamed to the
+// shared Log Analytics workspace at subscription scope.
+
+module activityLogDiag 'activity-log-diag.bicep' = {
+  name: 'activityLogDiag'
+  scope: subscription()
+  params: {
+    logAnalyticsId: logAnalyticsWorkspace.id
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 output logAnalyticsId string = logAnalyticsWorkspace.id

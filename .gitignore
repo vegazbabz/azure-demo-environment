@@ -29,6 +29,7 @@ local.*.json
 
 # ── Bicep compiled outputs (az bicep build) ───────────────────────────────────
 *.compiled.json
+bicep/**/*.json
 
 # ── Azure deployment output / parameter snapshots ────────────────────────────
 *.deploymentOutput.json
@@ -42,3 +43,8 @@ azuredeploy.parameters.json
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# ── Office documents (should not be in repo root) ────────────────────────────
+*.docx
+*.xlsx
+*.pptx

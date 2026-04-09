@@ -13,10 +13,10 @@ IF NOT EXISTS (SELECT 1 FROM SalesLT.Customer WHERE FirstName = 'Alex' AND LastN
 BEGIN
     INSERT INTO SalesLT.Customer (FirstName, LastName, EmailAddress, CompanyName, SalesPerson, PasswordHash, PasswordSalt, rowguid, ModifiedDate)
     VALUES
-      ('Alex',     'Azure',   'alex.azure@contoso.example',    'Contoso Ltd',       'adventure-works\pamela0', 'AQAAAAEAACcQAAAAEA==', 'abc123', NEWID(), GETDATE()),
-      ('Blake',    'Bicep',   'blake.bicep@fabrikam.example',  'Fabrikam Inc',      'adventure-works\jillian0', 'AQAAAAEAACcQAAAAEA==', 'def456', NEWID(), GETDATE()),
-      ('Charlie',  'Cloud',   'charlie@northwind.example',     'Northwind Traders', 'adventure-works\jose1',   'AQAAAAEAACcQAAAAEA==', 'ghi789', NEWID(), GETDATE()),
-      ('Dana',     'DevOps',  'dana@adventureworks.example',   'Adventure Works',   'adventure-works\shu0',    'AQAAAAEAACcQAAAAEA==', 'jkl012', NEWID(), GETDATE());
+      ('Alex',     'Azure',   'alex.azure@contoso.example',    'Contoso Ltd',       'adventure-works\pamela0', 'AQAAAAEAACcQAAAAEA==', 'U2FsdA==', NEWID(), GETDATE()),
+      ('Blake',    'Bicep',   'blake.bicep@fabrikam.example',  'Fabrikam Inc',      'adventure-works\jillian0', 'AQAAAAEAACcQAAAAEA==', 'U2FsdA==', NEWID(), GETDATE()),
+      ('Charlie',  'Cloud',   'charlie@northwind.example',     'Northwind Traders', 'adventure-works\jose1',   'AQAAAAEAACcQAAAAEA==', 'U2FsdA==', NEWID(), GETDATE()),
+      ('Dana',     'DevOps',  'dana@adventureworks.example',   'Adventure Works',   'adventure-works\shu0',    'AQAAAAEAACcQAAAAEA==', 'U2FsdA==', NEWID(), GETDATE());
 END
 GO
 
