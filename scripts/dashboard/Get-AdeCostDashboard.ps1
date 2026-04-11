@@ -79,8 +79,9 @@ function Show-AdeDashboard {
     $now    = Get-Date
     $year   = $now.Year
     $month  = $now.Month
-    $daysInMonth  = [DateTime]::DaysInMonth($year, $month)
-    $daysPassed   = $now.Day
+    $daysInMonth    = [DateTime]::DaysInMonth($year, $month)
+    $daysPassed     = $now.Day
+    $budgetRespData = $null  # populated in cost section; reused by budget section
 
     # ── Header ────────────────────────────────────────────────────────────────
     Write-Host ""
@@ -102,8 +103,27 @@ function Show-AdeDashboard {
     if (-not $rgs) {
         Write-Host "  No ADE resource groups found for prefix '$Prefix'." -ForegroundColor Gray
     } else {
+        # Pre-fetch the budget amount so cost colours are relative to the budget.
+        # Green  actual  = MTD spend is on pace (≤ expected for this day of month)
+        # Yellow actual  = slightly over pace (up to 20% above expected)
+        # Red    actual  = significantly over pace (>20% above expected)
+        # Green  projected = end-of-month will stay below 85% of budget
+        # Yellow projected = 85-100% of budget
+        # Red    projected = will exceed budget
+        $budgetAmount   = 0.0
+        $budgetRestUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets?api-version=2023-11-01"
+        $budgetRespData = $null
+        try {
+            $budgetRespData = az rest --method GET --url $budgetRestUrl 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($budgetRespData -and $budgetRespData.value) {
+                $adeBudget = @($budgetRespData.value | Where-Object { $_.name -like "*$Prefix*" }) | Select-Object -First 1
+                if ($adeBudget) { $budgetAmount = [double]$adeBudget.properties.amount }
+            }
+        } catch {}
+
         $totalActual    = 0.0
         $totalProjected = 0.0
+        $rgCount        = ($rgs | Measure-Object).Count
 
         foreach ($rg in ($rgs | Sort-Object)) {
             # Query cost management API for current month actual cost per resource group
@@ -135,17 +155,52 @@ function Show-AdeDashboard {
 
             $moduleName   = $rg -replace "^$Prefix-" -replace '-rg$'
             $bar          = '█' * [Math]::Min([int]$projected, 40)
-            $costColor    = if ($projected -gt 100) { 'Red' } elseif ($projected -gt 50) { 'Yellow' } else { 'Green' }
+
+            # Actual: neutral (it's a backward-looking fact; pace is shown on the TOTAL row)
+            $actualColor = 'White'
+
+            # Projected: budget-relative per-RG share when budget is known; else fixed thresholds
+            $projectedColor = if ($budgetAmount -gt 0 -and $rgCount -gt 0) {
+                $share = $budgetAmount / $rgCount
+                if ($projected -gt $share)              { 'Red'    }
+                elseif ($projected -gt $share * 0.75)   { 'Yellow' }
+                else                                    { 'Green'  }
+            } else {
+                if ($projected -gt 100) { 'Red' } elseif ($projected -gt 50) { 'Yellow' } else { 'Green' }
+            }
+
             $actualFmt    = $actual.ToString('C2').PadLeft(8)
             $projectedFmt = $projected.ToString('C2').PadLeft(8)
 
-            Write-Host ("  {0,-20} Actual: {1}  Projected: {2}  {3}" -f $moduleName, $actualFmt, $projectedFmt, $bar) -ForegroundColor $costColor
+            Write-Host ("  {0,-20} Actual: " -f $moduleName) -NoNewline -ForegroundColor DarkGray
+            Write-Host $actualFmt                             -NoNewline -ForegroundColor $actualColor
+            Write-Host '  Projected: '                       -NoNewline -ForegroundColor DarkGray
+            Write-Host ("{0}  {1}" -f $projectedFmt, $bar)              -ForegroundColor $projectedColor
         }
 
         Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
         $tActualFmt = $totalActual.ToString('C2').PadLeft(8)
         $tProjFmt   = $totalProjected.ToString('C2').PadLeft(8)
-        Write-Host ("  {0,-20} Actual: {1}  Projected: {2}" -f 'TOTAL', $tActualFmt, $tProjFmt) -ForegroundColor White
+
+        # Total actual: is MTD spend on pace relative to the budget?
+        $totalActualColor = if ($budgetAmount -gt 0 -and $daysPassed -gt 0) {
+            $expectedNow = $budgetAmount * ($daysPassed / $daysInMonth)
+            if ($totalActual -gt $expectedNow * 1.2)  { 'Red'    }
+            elseif ($totalActual -gt $expectedNow)    { 'Yellow' }
+            else                                      { 'Green'  }
+        } else { 'White' }
+
+        # Total projected: will end-of-month spend stay within budget?
+        $totalProjectedColor = if ($budgetAmount -gt 0) {
+            if ($totalProjected -gt $budgetAmount)              { 'Red'    }
+            elseif ($totalProjected -gt $budgetAmount * 0.85)  { 'Yellow' }
+            else                                               { 'Green'  }
+        } else { 'White' }
+
+        Write-Host "  $('TOTAL'.PadRight(20)) Actual: " -NoNewline -ForegroundColor DarkGray
+        Write-Host $tActualFmt                          -NoNewline -ForegroundColor $totalActualColor
+        Write-Host '  Projected: '                      -NoNewline -ForegroundColor DarkGray
+        Write-Host $tProjFmt                                       -ForegroundColor $totalProjectedColor
     }
 
     Write-Host ""
@@ -248,11 +303,24 @@ function Show-AdeDashboard {
     Write-Host "  BUDGET ALERTS" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
-    $budgetQuery = '[?contains(name,''ade'')].{name:name,amount:amount,currentSpend:currentSpend.amount,timeGrain:timeGrain}'
-    $budgets = az consumption budget list `
-        --scope "subscriptions/$SubscriptionId" `
-        --query $budgetQuery `
-        -o json 2>$null | ConvertFrom-Json
+    # Reuse the REST response already fetched for cost colouring; fall back to a fresh call
+    # if Show-AdeDashboard is called outside the rgs-else block (e.g. no ADE RGs deployed yet).
+    $budgetsResp = if ($null -ne $budgetRespData) { $budgetRespData } else {
+        try {
+            $url = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets?api-version=2023-11-01"
+            az rest --method GET --url $url 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+        } catch { $null }
+    }
+    $budgets = if ($budgetsResp -and $budgetsResp.value) {
+        @($budgetsResp.value | Where-Object { $_.name -like "*$Prefix*" } | ForEach-Object {
+            [pscustomobject]@{
+                name         = $_.name
+                amount       = [double]$_.properties.amount
+                currentSpend = [double]$_.properties.currentSpend.amount
+                timeGrain    = $_.properties.timeGrain
+            }
+        })
+    } else { $null }
 
     if ($budgets) {
         foreach ($b in $budgets) {
@@ -264,7 +332,7 @@ function Show-AdeDashboard {
             $spendFmt  = $b.currentSpend.ToString('N0').PadLeft(8)
             $amountFmt = $b.amount.ToString('N0').PadLeft(8)
             $pctFmt    = ([string]$pct).PadLeft(3)
-            $budgetLine = ("  {0,-25} [{1}{2}] {3}%" -f $b.name, $barFilled, $barEmpty, $pctFmt) + "  `$$spendFmt / `$$amountFmt"
+            $budgetLine = ("  {0,-25} [{1}{2}] {3}%" -f $b.name, $barFilled, $barEmpty, $pctFmt) + "  $spendFmt / $amountFmt"
             Write-Host $budgetLine -ForegroundColor $color
         }
     } else {
