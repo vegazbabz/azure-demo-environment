@@ -67,14 +67,15 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Match 'cost|consumption' -Because 'dashboard should show cost data'
     }
 
-    It 'Uses az costmanagement query (not the deprecated az consumption usage list)' {
+    It 'Uses REST API for cost query (not the unavailable az costmanagement query CLI)' {
         $source = Get-Content $script:dashboardPs -Raw
-        $source | Should -Match 'costmanagement query'
-        $source | Should -Not -Match 'consumption usage list' -Because 'az consumption usage list was deprecated in CLI 2.61'
+        $source | Should -Match 'Microsoft\.CostManagement/query' -Because 'az costmanagement query is not universally available; REST API must be used'
+        $source | Should -Not -Match "az costmanagement query" -Because 'az costmanagement query is not a valid CLI command'
     }
 
-    It 'Extracts cost from costmanagement query response (properties.rows[0][0])' {
+    It 'Fetches all RG costs in a single grouped REST call' {
         $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Match 'grouping'
         $source | Should -Match 'properties\.rows'
     }
 
