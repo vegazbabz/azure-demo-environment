@@ -307,9 +307,12 @@ function Test-AdePermissions {
     Write-AdeLog "Checking role-assignment permissions on subscription '$SubscriptionId'" -Level Info
 
     # Resolve caller object ID — works for interactive users and OIDC service principals.
+    Write-AdeLog "az ad signed-in-user show --query id" -Level Debug
     $callerId = az ad signed-in-user show --query id -o tsv 2>$null
     if (-not $callerId) {
+        Write-AdeLog "az account show --query user.name (SP fallback)" -Level Debug
         $appId    = az account show --query 'user.name' -o tsv 2>$null
+        Write-AdeLog "az ad sp show --id $appId" -Level Debug
         $callerId = az ad sp show --id $appId --query id -o tsv 2>$null
     }
     if ($callerId) { $callerId = $callerId.Trim().Trim('"') }
@@ -319,6 +322,7 @@ function Test-AdePermissions {
         return $false
     }
 
+    Write-AdeLog "az role assignment list --assignee $callerId --subscription $SubscriptionId --include-inherited" -Level Debug
     $assignments = az role assignment list `
         --assignee $callerId `
         --subscription $SubscriptionId `
