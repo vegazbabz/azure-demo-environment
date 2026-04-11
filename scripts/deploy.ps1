@@ -570,7 +570,7 @@ function Deploy-AdeModule {
 
     # Propagate the new-resources flag so the calling loop can pick the right message.
     $script:_adeModuleHadNewResources = if ($result -and $result.PSObject.Properties['HasNewResources']) { $result.HasNewResources } else { $false }
-    return if ($result -and $result.PSObject.Properties['Outputs']) { $result.Outputs } else { $result }
+    return $(if ($result -and $result.PSObject.Properties['Outputs']) { $result.Outputs } else { $result })
 }
 
 $script:_adeModuleHadNewResources = $false
