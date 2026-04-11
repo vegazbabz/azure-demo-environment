@@ -168,14 +168,17 @@ if ($LogFile) {
 Write-AdeSection "Azure Demo Environment — Deployment ($Mode mode)"
 Write-AdeLog "Started at $($startTime.ToString('yyyy-MM-dd HH:mm:ss UTC'))" -Level Info
 
-# ─── Pre-flight ───────────────────────────────────────────────────────────────
-$null = Test-AdePrerequisites -Mode $Mode -StopOnError
-
 # ─── Subscription ─────────────────────────────────────────────────────────────
+# Set before pre-flight so the login check displays the correct target subscription.
 if ($SubscriptionId) {
+    Write-AdeLog "az account set --subscription $SubscriptionId" -Level Debug
     az account set --subscription $SubscriptionId --output none
     if ($LASTEXITCODE -ne 0) { throw "Could not set subscription: $SubscriptionId" }
 }
+
+# ─── Pre-flight ───────────────────────────────────────────────────────────────
+$null = Test-AdePrerequisites -Mode $Mode -StopOnError
+
 $currentSub = az account show --output json | ConvertFrom-Json
 $SubscriptionId = $currentSub.id
 
@@ -283,8 +286,16 @@ if ($adminPasswordPlain.Length -lt 12) {
 $adminPasswordPlain = $null   # discard plaintext immediately after validation
 
 # ─── Confirmation ─────────────────────────────────────────────────────────────
-Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
-    -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+try {
+    Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
+        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+} catch {
+    if ($_.Exception.Message -match 'cancelled') {
+        Write-AdeLog "Deployment cancelled." -Level Warning
+        exit 0
+    }
+    throw
+}
 
 # ─── Global state tracker ─────────────────────────────────────────────────────
 # Collects output values from each module for cross-module parameter passing

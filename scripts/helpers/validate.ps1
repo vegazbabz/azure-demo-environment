@@ -56,22 +56,15 @@ function Test-AdePrerequisites {
         Write-AdeLog "Bicep $($bicepVersion -replace 'Bicep CLI version ','') ✓" -Level Success
     }
 
-    # ── application-insights extension ────────────────────────────────────────
-    # Required for 'az monitor app-insights component show' used during state hydration.
-    # Without it the CLI prompts interactively, causing the script to hang.
-    Write-AdeLog "az extension list --query application-insights installed check" -Level Debug
-    $aiExt = az extension list --query "[?name=='application-insights'].name" -o tsv 2>$null
-    if (-not $aiExt) {
-        Write-AdeLog "application-insights extension not installed — installing..." -Level Warning
-        Write-AdeLog "az extension add --name application-insights --allow-preview true" -Level Debug
-        $null = az extension add --name application-insights --allow-preview true 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            $failures.Add("Azure CLI 'application-insights' extension could not be installed. Run: az extension add --name application-insights")
-        } else {
-            Write-AdeLog "application-insights extension installed ✓" -Level Success
-        }
+    # ── CLI extension auto-install ───────────────────────────────────────────
+    # Enable dynamic install so any extension command (e.g. app-insights, rdbms-connect)
+    # is installed automatically and silently on first use, without interactive prompts.
+    Write-AdeLog "az config set extension.use_dynamic_install=yes_without_prompt" -Level Debug
+    $null = az config set extension.use_dynamic_install=yes_without_prompt 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $failures.Add("Could not configure Azure CLI extension auto-install. Run: az config set extension.use_dynamic_install=yes_without_prompt")
     } else {
-        Write-AdeLog "application-insights extension ✓" -Level Success
+        Write-AdeLog "CLI extension auto-install enabled ✓" -Level Success
     }
 
     # ── Azure CLI login ───────────────────────────────────────────────────────
