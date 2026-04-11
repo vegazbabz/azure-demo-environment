@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | deploy.ps1 | `tests/deploy.Tests.ps1` | 60 | 0 | ✅ Complete |
 | destroy.ps1 | `tests/destroy.Tests.ps1` | 35 | 0 | ✅ Complete |
-| Helper unit tests | `tests/helpers/common.Tests.ps1` | 49 | 0 | ✅ Complete |
+| Helper unit tests | `tests/helpers/common.Tests.ps1` | 51 | 0 | ✅ Complete |
 | Helper unit tests | `tests/helpers/validate.Tests.ps1` | 35 | 0 | ✅ Complete |
 | Helper unit tests | `tests/helpers/seed-data.Tests.ps1` | 28 | 0 | ✅ Complete |
 | Policy tests | `tests/policies/Deploy-AdePolicies.Tests.ps1` | 49 | 0 | ✅ Complete |
@@ -15,7 +15,7 @@
 | Dashboard | `tests/dashboard/Dashboard.Tests.ps1` | 16 | 0 | ✅ Complete |
 | Data files | `tests/data/DataFiles.Tests.ps1` | 34 | 0 | ✅ Complete |
 | Bicep smoke tests | `tests/bicep/Build-BicepModules.Tests.ps1` | 160 | 0 | ✅ Complete |
-| **Total** | | **545** | **0** | **0 failures** |
+| **Total** | | **547** | **0** | **0 failures** |
 
 Run the full suite:
 
