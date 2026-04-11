@@ -291,7 +291,7 @@ try {
         -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
 } catch {
     if ($_.Exception.Message -match 'cancelled') {
-        Write-AdeLog "Deployment cancelled." -Level Warning
+        Write-AdeLog "Deployment cancelled by user." -Level Warning
         exit 0
     }
     throw
