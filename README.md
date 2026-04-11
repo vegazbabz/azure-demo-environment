@@ -354,6 +354,7 @@ You can also deploy both side-by-side using different prefixes:
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
 | `-SkipModules` | string[] | — | Module names to skip. Example: `-SkipModules containers,ai` |
 | `-EnableModules` | string[] | — | Module names to force-enable regardless of profile. Example: `-EnableModules sentinel` |
+| `-BudgetAlertEmail` | string | `""` | Email address for budget alert notifications. Overrides `budgetAlertEmail` in the profile. |
 | `-LogFile` | string | — | Path for a plain-text log file. Example: `-LogFile ./logs/deploy-$(Get-Date -f yyyyMMdd).log` |
 
 ### Examples
@@ -607,7 +608,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **512 passing, 0 failing, 32 skipped**.
+Current state: **544 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -949,7 +950,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (512 passing, 0 failing, 32 skipped)
+tests/              # Pester 5 unit tests (544 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 

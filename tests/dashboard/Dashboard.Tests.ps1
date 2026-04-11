@@ -57,6 +57,12 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Match 'az vm'
     }
 
+    It 'Queries VM power state using Where-Object, not a JMESPath filter (Windows shell-quoting safe)' {
+        $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Not -Match 'starts_with\(code' -Because 'JMESPath PowerState filter exits 255 on Windows due to shell quoting; use Where-Object instead'
+        $source | Should -Match 'Where-Object.*PowerState|PowerState.*Where-Object' -Because 'PowerState must be filtered in PowerShell to avoid cross-platform shell quoting issues'
+    }
+
     It 'Filters groups by managedBy=ade tag' {
         $source = Get-Content $script:dashboardPs -Raw
         $source | Should -Match "managedBy.*ade"
