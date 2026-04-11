@@ -286,8 +286,16 @@ if ($adminPasswordPlain.Length -lt 12) {
 $adminPasswordPlain = $null   # discard plaintext immediately after validation
 
 # ─── Confirmation ─────────────────────────────────────────────────────────────
-Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
-    -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+try {
+    Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
+        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+} catch {
+    if ($_.Exception.Message -match 'cancelled') {
+        Write-AdeLog "Deployment cancelled." -Level Warning
+        exit 0
+    }
+    throw
+}
 
 # ─── Global state tracker ─────────────────────────────────────────────────────
 # Collects output values from each module for cross-module parameter passing
