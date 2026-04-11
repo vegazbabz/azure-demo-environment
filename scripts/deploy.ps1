@@ -980,7 +980,8 @@ foreach ($moduleName in $deploymentOrder) {
         $isNonInteractive = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
         $continue = if ($isNonInteractive) { 'N' } else { Read-Host "Continue with remaining modules? [y/N]" }
         if ($continue -notmatch '^[Yy]$') {
-            throw "Deployment aborted after failure in module '$moduleName'."
+            Write-AdeLog "Deployment aborted after failure in module '$moduleName'." -Level Warning
+            exit 1
         }
     }
 }
