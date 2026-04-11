@@ -277,9 +277,12 @@ if ($needsAdminPassword -and -not $AdminPassword) {
     }
     $generatedPw = -join $pwChars
     Write-Host ""
-    Write-Host "  AUTO-GENERATED VM PASSWORD: " -ForegroundColor Cyan -NoNewline
-    Write-Host $generatedPw -ForegroundColor Yellow
-    Write-Host "  (save this now — it will not be shown again)" -ForegroundColor Cyan
+    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "║   AUTO-GENERATED VM PASSWORD : " -ForegroundColor Yellow -NoNewline
+    Write-Host $generatedPw.PadRight(34) -ForegroundColor White -NoNewline
+    Write-Host "║" -ForegroundColor Yellow
+    Write-Host "║   Save this now — it will not be shown again.                    ║" -ForegroundColor Yellow
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
     Write-Host ""
     $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
     $generatedPw   = $null   # discard plaintext from memory
