@@ -77,8 +77,8 @@ function Show-AdeDashboard {
     Write-Host ""
     Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
     Write-Host "║       Azure Demo Environment — Cost & Status Dashboard           ║" -ForegroundColor Cyan
-    Write-Host "║   Subscription : $($sub.name.PadRight(47))║" -ForegroundColor Cyan
-    Write-Host "║   Refreshed    : $(($now.ToString('yyyy-MM-dd HH:mm:ss')).PadRight(47))║" -ForegroundColor Cyan
+    Write-Host "║   Subscription : $($sub.name.PadRight(48))║" -ForegroundColor Cyan
+    Write-Host "║   Refreshed    : $(($now.ToString('yyyy-MM-dd HH:mm:ss')).PadRight(48))║" -ForegroundColor Cyan
     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
 
@@ -87,7 +87,7 @@ function Show-AdeDashboard {
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
     $rgsRaw = az group list -o json 2>$null | ConvertFrom-Json
-    $rgs = $rgsRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.name -like "$Prefix-*" } |
+    $rgs = $rgsRaw | Where-Object { $null -ne $_.tags -and $_.tags.managedBy -eq 'ade' -and $_.name -like "$Prefix-*" } |
         Select-Object -ExpandProperty name
 
     if (-not $rgs) {

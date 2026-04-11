@@ -296,20 +296,32 @@ function Invoke-AdeBicepDeployment {
         throw "Bicep template not found: $TemplatePath"
     }
 
-    # Build the parameter arguments
+    # Build parameter arguments.
+    # Scalars stay inline as 'key=value'. Complex values (hashtables, arrays, psobjects)
+    # are written to a temp ARM-format parameters file and referenced as '@file' to avoid
+    # Windows command-line double-quote stripping when JSON is embedded in an argument string.
     $paramArgs = @()
+    $tempParamsFile = $null
+    $fileParams = @{}
+
     foreach ($key in $Parameters.Keys) {
         $val = $Parameters[$key]
-        if ($val -is [hashtable] -or $val -is [System.Collections.Hashtable] -or $val -is [pscustomobject]) {
-            $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
-            $paramArgs += "$key=$jsonVal"
-        } elseif ($val -is [array] -or $val -is [System.Collections.ArrayList]) {
-            $jsonVal = $val | ConvertTo-Json -Compress -Depth 10
-            $paramArgs += "$key=$jsonVal"
+        if ($val -is [hashtable] -or $val -is [System.Collections.Hashtable] -or
+            $val -is [pscustomobject] -or
+            $val -is [array] -or $val -is [System.Collections.ArrayList]) {
+            $fileParams[$key] = @{ value = $val }
         } else {
             $paramArgs += "$key=$val"
         }
     }
+
+    if ($fileParams.Count -gt 0) {
+        $tempParamsFile = [System.IO.Path]::GetTempFileName() + '.json'
+        $fileParams | ConvertTo-Json -Depth 20 | Set-Content $tempParamsFile -Encoding utf8NoBOM
+        $paramArgs = @("@$tempParamsFile") + $paramArgs
+    }
+
+    try {
 
     # What-if: run synchronously and return immediately
     if ([bool]$WhatIfPreference) {
@@ -449,6 +461,12 @@ function Invoke-AdeBicepDeployment {
         return $showResult.properties.outputs
     }
     return $null
+
+    } finally {
+        if ($tempParamsFile -and (Test-Path $tempParamsFile)) {
+            Remove-Item $tempParamsFile -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # ─── Tag builder ──────────────────────────────────────────────────────────────
