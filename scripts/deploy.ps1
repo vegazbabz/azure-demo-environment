@@ -630,12 +630,6 @@ foreach ($moduleName in $deploymentOrder) {
                     enablePrivateDnsZones  = (Get-FeatureFlag -Features $netFeatures -Name 'enablePrivateDnsZones').ToString().ToLower()
                     deployDomainController = (Get-FeatureFlag -Features $computeFeatures -Name 'domainController').ToString().ToLower()
                 }
-                # Hardened mode: pass Log Analytics workspace ID for NSG flow log traffic analytics
-                if ($Mode -eq 'hardened') {
-                    if ($state.logAnalyticsId) {
-                        $params['logAnalyticsId'] = $state.logAnalyticsId
-                    }
-                }
                 $outputs = Deploy-AdeModule -ModuleName 'networking' -BicepFile $bicep -Parameters $params
                 $state.vnetId                  = Get-AdeDeploymentOutput $outputs 'vnetId'
                 $state.computeSubnetId         = Get-AdeDeploymentOutput $outputs 'computeSubnetId'
