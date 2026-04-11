@@ -577,9 +577,6 @@ function Deploy-AdeModule {
 $script:_adeModuleHadNewResources = $false
 foreach ($moduleName in $deploymentOrder) {
     $currentModule++
-    $pct = [int](($currentModule / $totalModules) * 100)
-    Write-Progress -Activity "ADE Deployment" -Status "[$currentModule/$totalModules] $moduleName" -PercentComplete $pct
-
     Write-AdeSection "$moduleName Module [$currentModule/$totalModules]"
 
     try {
@@ -1049,7 +1046,7 @@ foreach ($moduleName in $deploymentOrder) {
     }
 }
 
-Write-Progress -Activity "ADE Deployment" -Completed
+
 
 # ─── Post-deployment summary ──────────────────────────────────────────────────
 $elapsed = (Get-Date) - $startTime
