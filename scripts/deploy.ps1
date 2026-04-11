@@ -939,11 +939,9 @@ foreach ($moduleName in $deploymentOrder) {
                             $contentUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/runbooks/$rbName/draft/content?api-version=$apiVer"
                             az rest --method PUT --url $contentUri --body "@$rbFile" --headers 'Content-Type=text/powershell' --output none 2>&1 | Out-Null
                             if ($LASTEXITCODE -eq 0) {
-                                az automation runbook publish `
-                                    --resource-group $govRg `
-                                    --automation-account-name $state.automationAccountName `
-                                    --name $rbName `
-                                    --output none
+                                # Publish via REST to avoid the 'automation' preview extension entirely.
+                                $publishUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/runbooks/$rbName/publish?api-version=$apiVer"
+                                az rest --method POST --url $publishUri --output none 2>&1 | Out-Null
                                 if ($LASTEXITCODE -eq 0) {
                                     Write-AdeLog "Runbook '$rbName' published." -Level Success
                                 } else {
