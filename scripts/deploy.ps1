@@ -242,12 +242,33 @@ if ($automationWanted) {
 
 # ─── Admin password ───────────────────────────────────────────────────────────
 # Only generated when a module that actually uses it (compute, databases, data) is enabled.
-# Default: auto-generate a secure password and print it once.
-# Override: pass -AdminPassword (SecureString) to use your own.
+# Password is generated here (before confirmation) only to validate -AdminPassword early
+# if the user supplied one. Display and SecureString conversion happen after confirmation.
 $needsAdminPassword = @('compute', 'databases', 'data') | Where-Object {
     $m = $deployProfile.modules.PSObject.Properties[$_]
     $null -ne $m -and $m.Value.enabled -eq $true
 }
+if ($AdminPassword) {
+    $adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
+    if ($adminPasswordPlain.Length -lt 12) {
+        throw "Admin password must be at least 12 characters."
+    }
+    $adminPasswordPlain = $null   # discard plaintext immediately after validation
+}
+
+# ─── Confirmation ─────────────────────────────────────────────────────────────
+try {
+    Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
+        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+} catch {
+    if ($_.Exception.Message -match 'cancelled') {
+        Write-AdeLog "Deployment cancelled by user." -Level Warning
+        exit 0
+    }
+    throw
+}
+
+# ─── Generate and display password (after user confirms) ──────────────────────
 if ($needsAdminPassword -and -not $AdminPassword) {
     $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $lower   = 'abcdefghjkmnpqrstuvwxyz'
@@ -286,25 +307,6 @@ if ($needsAdminPassword -and -not $AdminPassword) {
     Write-Host ""
     $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
     $generatedPw   = $null   # discard plaintext from memory
-}
-if ($AdminPassword) {
-    $adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
-    if ($adminPasswordPlain.Length -lt 12) {
-        throw "Admin password must be at least 12 characters."
-    }
-    $adminPasswordPlain = $null   # discard plaintext immediately after validation
-}
-
-# ─── Confirmation ─────────────────────────────────────────────────────────────
-try {
-    Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
-        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
-} catch {
-    if ($_.Exception.Message -match 'cancelled') {
-        Write-AdeLog "Deployment cancelled by user." -Level Warning
-        exit 0
-    }
-    throw
 }
 
 # ─── Global state tracker ─────────────────────────────────────────────────────
