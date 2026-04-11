@@ -498,9 +498,9 @@ function Initialize-AdeState {
     }
 
     if ($recovered -gt 0) {
-        Write-AdeLog "State hydration: $recovered resource group(s) recovered from Azure." -Level Info
+        Write-AdeLog "State hydration: $recovered resource(s) recovered from existing Azure resources." -Level Info
     } else {
-        Write-AdeLog 'State hydration: no existing resources found — fresh deploy.' -Level Info
+        Write-AdeLog 'State hydration: no deployed ADE resources found in existing resource groups — modules will deploy fresh.' -Level Info
     }
 }
 
