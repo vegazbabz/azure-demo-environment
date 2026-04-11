@@ -30,6 +30,13 @@ param pgAdminLogin string = 'pgadmin'
 @secure()
 param pgAdminPassword string
 
+@description('MySQL administrator login.')
+param mysqlAdminLogin string = 'mysqladmin'
+
+@description('MySQL administrator password.')
+@secure()
+param mysqlAdminPassword string
+
 @description('Deploy Azure SQL Database.')
 param deploySql bool = true
 
@@ -356,6 +363,18 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
   }
 }
 
+// Hardened: enforce TLS 1.2 minimum on PostgreSQL Flexible Server (CIS 4.3.1)
+// The server-level properties do not expose a minimumTlsVersion field;
+// enforcement requires a configuration resource.
+resource postgresTlsConfig 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-06-01-preview' = if (deployPostgresql) {
+  parent: postgresServer
+  name: 'ssl_min_protocol_version'
+  properties: {
+    value: 'TLSv1.2'
+    source: 'user-override'
+  }
+}
+
 // ─── MySQL Flexible Server ────────────────────────────────────────────────────
 // Hardened: TLS 1.2, no public access, Entra ID auth enabled.
 
@@ -368,8 +387,8 @@ resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = if (dep
     tier: 'Burstable'
   }
   properties: {
-    administratorLogin: pgAdminLogin
-    administratorLoginPassword: pgAdminPassword
+    administratorLogin: mysqlAdminLogin
+    administratorLoginPassword: mysqlAdminPassword
     version: '8.0.21'
     storage: { storageSizeGB: 20, autoGrow: 'Enabled' }
     backup: {
@@ -392,6 +411,16 @@ resource mysqlDatabase 'Microsoft.DBforMySQL/flexibleServers/databases@2023-06-3
   properties: {
     charset: 'utf8'
     collation: 'utf8_general_ci'
+  }
+}
+
+// Hardened: enforce TLS 1.2 minimum on MySQL (CIS 4.5.1)
+resource mysqlTlsConfig 'Microsoft.DBforMySQL/flexibleServers/configurations@2023-06-30' = if (deployMysql) {
+  parent: mysqlServer
+  name: 'tls_version'
+  properties: {
+    value: 'TLSv1.2'
+    source: 'user-override'
   }
 }
 

@@ -69,7 +69,7 @@ var dcStaticIp    = '10.0.15.4'
 
 // ─── Availability Set ─────────────────────────────────────────────────────────
 
-resource availabilitySet 'Microsoft.Compute/availabilitySets@2023-09-01' = {
+resource availabilitySet 'Microsoft.Compute/availabilitySets@2023-09-01' = if (deployWindowsVm || deployLinuxVm || deployVmss) {
   name: '${prefix}-avset'
   location: location
   tags: tags
@@ -561,7 +561,7 @@ output windowsVmName string = deployWindowsVm ? windowsVm.name : ''
 output linuxVmId string = deployLinuxVm ? linuxVm.id : ''
 output linuxVmName string = deployLinuxVm ? linuxVm.name : ''
 output vmssId string = deployVmss ? vmss.id : ''
-output availabilitySetId string = availabilitySet.id
+output availabilitySetId string = (deployWindowsVm || deployLinuxVm || deployVmss) ? availabilitySet.id : ''
 output dcVmName string = deployDomainController ? dcVm.name : ''
 output dcPrivateIp string = deployDomainController ? dcStaticIp : ''
 output domainName string = deployDomainController ? dcDomainName : ''

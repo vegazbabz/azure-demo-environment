@@ -27,6 +27,13 @@ param pgAdminLogin string = 'pgadmin'
 @secure()
 param pgAdminPassword string
 
+@description('MySQL administrator login.')
+param mysqlAdminLogin string = 'mysqladmin'
+
+@description('MySQL administrator password.')
+@secure()
+param mysqlAdminPassword string
+
 @description('Deploy Azure SQL Database.')
 param deploySql bool = true
 
@@ -254,8 +261,8 @@ resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-06-30' = if (dep
     tier: 'Burstable'
   }
   properties: {
-    administratorLogin: pgAdminLogin
-    administratorLoginPassword: pgAdminPassword
+    administratorLogin: mysqlAdminLogin
+    administratorLoginPassword: mysqlAdminPassword
     version: '8.0.21'
     storage: { storageSizeGB: 20, autoGrow: 'Enabled' }
     backup: {

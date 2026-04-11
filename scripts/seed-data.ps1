@@ -704,7 +704,8 @@ if ($seedAll -or $Modules -contains 'eventhub') {
                 }
             }
             Write-AdeLog "Sent $sentCount telemetry events to '$ehHubName' Event Hub." -Level Success
-            $env:ADE_EVENTHUB_CONN = $ehKey
+            # Note: connection string intentionally not persisted in the environment
+            # after use — SAS keys should not outlive the operation that needs them.
         }
     }
 }

@@ -60,6 +60,7 @@ $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 
 if ($SubscriptionId) {
     az account set --subscription $SubscriptionId --output none
+    if ($LASTEXITCODE -ne 0) { throw "Could not switch to subscription '$SubscriptionId'. Verify az login and access." }
 }
 $sub = az account show --output json | ConvertFrom-Json
 $SubscriptionId = $sub.id
@@ -366,6 +367,9 @@ function Show-AdeDashboard {
 }
 
 # ── Stop / Start all VMs ──────────────────────────────────────────────────────
+if ($StopAll -and $StartAll) {
+    throw '-StopAll and -StartAll are mutually exclusive. Specify only one.'
+}
 if ($StopAll) {
     Write-AdeSection "Stopping All VMs"
 
