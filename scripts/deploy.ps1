@@ -118,6 +118,9 @@ param(
     [SecureString]$AdminPassword,
 
     [Parameter(Mandatory = $false)]
+    [switch]$AutoGeneratePassword,
+
+    [Parameter(Mandatory = $false)]
     [switch]$Force,
 
     [Parameter(Mandatory = $false)]
@@ -248,6 +251,9 @@ $needsAdminPassword = @('compute', 'databases', 'data') | Where-Object {
     $m = $deployProfile.modules.PSObject.Properties[$_]
     $null -ne $m -and $m.Value.enabled -eq $true
 }
+if ($AutoGeneratePassword -and $AdminPassword) {
+    throw "-AutoGeneratePassword cannot be combined with -AdminPassword."
+}
 if ($AdminPassword) {
     $adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
     if ($adminPasswordPlain.Length -lt 12) {
@@ -269,7 +275,7 @@ try {
 }
 
 # ─── Generate and display password (after user confirms) ──────────────────────
-if ($needsAdminPassword -and -not $AdminPassword) {
+if (($needsAdminPassword -or $AutoGeneratePassword) -and -not $AdminPassword) {
     $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $lower   = 'abcdefghjkmnpqrstuvwxyz'
     $digits  = '23456789'
@@ -385,7 +391,7 @@ function Initialize-AdeState {
         $v = az monitor log-analytics workspace show `
                  --name "${Prefix}-law" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query id -o tsv --request-timeout 30 2>$null
+                 --query id -o tsv 2>$null
         if ($v) { $AdeState.logAnalyticsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsId) {
@@ -393,7 +399,7 @@ function Initialize-AdeState {
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query id -o tsv --request-timeout 30 2>$null
+                 --query id -o tsv 2>$null
         if ($v) { $AdeState.appInsightsId = $v.Trim(); $recovered++ }
     }
     if (-not $AdeState.appInsightsKey) {
@@ -401,7 +407,7 @@ function Initialize-AdeState {
         $v = az monitor app-insights component show `
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
-                 --query instrumentationKey -o tsv --request-timeout 30 2>$null
+                 --query instrumentationKey -o tsv 2>$null
         if ($v) { $AdeState.appInsightsKey = $v.Trim() }
     }
 
@@ -412,7 +418,7 @@ function Initialize-AdeState {
         $v = az network vnet show `
                  --name "${Prefix}-vnet" `
                  --resource-group "${Prefix}-networking-rg" `
-                 --query id -o tsv --request-timeout 30 2>$null
+                 --query id -o tsv 2>$null
         if ($v) {
             $vId = $v.Trim()
             $AdeState.vnetId                  = $vId
@@ -438,7 +444,7 @@ function Initialize-AdeState {
         $probe = az network private-dns zone show `
                      --name 'privatelink.blob.core.windows.net' `
                      --resource-group "${Prefix}-networking-rg" `
-                     --query id -o tsv --request-timeout 30 2>$null
+                     --query id -o tsv 2>$null
         if ($probe) {
             $zBase = "/subscriptions/$SubscriptionId/resourceGroups/${Prefix}-networking-rg" +
                      '/providers/Microsoft.Network/privateDnsZones'
@@ -462,14 +468,14 @@ function Initialize-AdeState {
         Write-AdeLog "az keyvault list --resource-group ${Prefix}-security-rg" -Level Debug
         $v = az keyvault list `
                  --resource-group "${Prefix}-security-rg" `
-                 --query '[0].name' -o tsv --request-timeout 30 2>$null
+                 --query '[0].name' -o tsv 2>$null
         if ($v) {
             $AdeState.keyVaultName = $v.Trim()
             Write-AdeLog "az keyvault show --name $($v.Trim()) --resource-group ${Prefix}-security-rg" -Level Debug
             $vId = az keyvault show `
                        --name $AdeState.keyVaultName `
                        --resource-group "${Prefix}-security-rg" `
-                       --query id -o tsv --request-timeout 30 2>$null
+                       --query id -o tsv 2>$null
             if ($vId) { $AdeState.keyVaultId = $vId.Trim() }
             $recovered++
         }
@@ -479,13 +485,13 @@ function Initialize-AdeState {
         $v = az identity show `
                  --name "${Prefix}-identity" `
                  --resource-group "${Prefix}-security-rg" `
-                 --query id -o tsv --request-timeout 30 2>$null
+                 --query id -o tsv 2>$null
         if ($v) {
             $AdeState.managedIdentityId = $v.Trim()
             $cId = az identity show `
                        --name "${Prefix}-identity" `
                        --resource-group "${Prefix}-security-rg" `
-                       --query clientId -o tsv --request-timeout 30 2>$null
+                       --query clientId -o tsv 2>$null
             if ($cId) { $AdeState.managedIdentityClientId = $cId.Trim() }
             $recovered++
         }
@@ -496,7 +502,7 @@ function Initialize-AdeState {
         Write-AdeLog "az storage account list --resource-group ${Prefix}-storage-rg" -Level Debug
         $v = az storage account list `
                  --resource-group "${Prefix}-storage-rg" `
-                 --query '[0].name' -o tsv --request-timeout 30 2>$null
+                 --query '[0].name' -o tsv 2>$null
         if ($v) { $AdeState.storageAccountName = $v.Trim(); $recovered++ }
     }
 
@@ -535,16 +541,19 @@ function Deploy-AdeModule {
 
     Write-AdeLog "Deploying module: $ModuleName -> $rgName" -Level Step
 
-    $outputs = Invoke-AdeBicepDeployment `
+    $result = Invoke-AdeBicepDeployment `
         -ResourceGroup  $rgName `
         -TemplatePath   $BicepFile `
         -DeploymentName "ade-$ModuleName-$(Get-Date -Format 'yyyyMMddHHmmss')" `
         -Parameters     $Parameters `
         -WhatIf:$WhatIf
 
-    return $outputs
+    # Propagate the new-resources flag so the calling loop can pick the right message.
+    $script:_adeModuleHadNewResources = if ($result -and $result.PSObject.Properties['HasNewResources']) { $result.HasNewResources } else { $false }
+    return if ($result -and $result.PSObject.Properties['Outputs']) { $result.Outputs } else { $result }
 }
 
+$script:_adeModuleHadNewResources = $false
 foreach ($moduleName in $deploymentOrder) {
     $currentModule++
     $pct = [int](($currentModule / $totalModules) * 100)
@@ -878,7 +887,21 @@ foreach ($moduleName in $deploymentOrder) {
                 $budgetEmailSet = -not [string]::IsNullOrEmpty($effectiveBudgetEmail)
                 $budgetEnabled  = (Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and $budgetEmailSet
                 if ((Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and -not $budgetEmailSet) {
-                    Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                    # Before warning, check whether the budget already exists from a prior run.
+                    # If it does, treat it as already deployed — no email needed, no warning.
+                    $existingBudgetName = "$Prefix-monthly-budget"
+                    $budgetCheckUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets/$existingBudgetName`?api-version=2023-11-01"
+                    $budgetExists = $false
+                    try {
+                        $budgetJson = az rest --method GET --url $budgetCheckUrl 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        $budgetExists = $null -ne $budgetJson -and $LASTEXITCODE -eq 0 -and $null -ne $budgetJson.name
+                    } catch {}
+                    if ($budgetExists) {
+                        Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
+                        $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
+                    } else {
+                        Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                    }
                 }
 
                 $params = @{
@@ -916,11 +939,9 @@ foreach ($moduleName in $deploymentOrder) {
                             $contentUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/runbooks/$rbName/draft/content?api-version=$apiVer"
                             az rest --method PUT --url $contentUri --body "@$rbFile" --headers 'Content-Type=text/powershell' --output none 2>&1 | Out-Null
                             if ($LASTEXITCODE -eq 0) {
-                                az automation runbook publish `
-                                    --resource-group $govRg `
-                                    --automation-account-name $state.automationAccountName `
-                                    --name $rbName `
-                                    --output none
+                                # Publish via REST to avoid the 'automation' preview extension entirely.
+                                $publishUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/runbooks/$rbName/publish?api-version=$apiVer"
+                                az rest --method POST --url $publishUri --output none 2>&1 | Out-Null
                                 if ($LASTEXITCODE -eq 0) {
                                     Write-AdeLog "Runbook '$rbName' published." -Level Success
                                 } else {
@@ -973,7 +994,11 @@ foreach ($moduleName in $deploymentOrder) {
 
         }
 
-        Write-AdeLog "Module '$moduleName' deployed successfully." -Level Success
+        if ($script:_adeModuleHadNewResources) {
+            Write-AdeLog "Module '$moduleName' deployed successfully." -Level Success
+        } else {
+            Write-AdeLog "Module '$moduleName': no changes — all resources already up to date." -Level Info
+        }
 
     } catch {
         Write-AdeLog "Module '$moduleName' FAILED: $_" -Level Error
@@ -1006,3 +1031,4 @@ foreach ($mod in $deploymentOrder) {
 Write-Host ""
 Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to view costs and resource status." -Level Info
 Write-AdeLog "Run './scripts/destroy.ps1 -Prefix $Prefix' to tear down the entire environment." -Level Warning
+
