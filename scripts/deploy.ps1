@@ -378,7 +378,8 @@ function Initialize-AdeState {
     param([hashtable]$AdeState, [string]$Prefix, [string]$SubscriptionId)
 
     Write-AdeLog 'Hydrating state from existing Azure resources (best-effort)...' -Level Info
-    $recovered  = 0
+    $queriesOk  = 0   # number of successful Azure queries
+    $keysSet    = 0   # number of individual state keys populated
     $notFound   = 0   # exit code ≠ 0 (resource doesn't exist yet — normal on first run)
 
     # ── Monitoring ────────────────────────────────────────────────────────────
@@ -388,7 +389,7 @@ function Initialize-AdeState {
                  --name "${Prefix}-law" `
                  --resource-group "${Prefix}-monitoring-rg" `
                  --query id -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.logAnalyticsId = $v.Trim(); $recovered++ }
+        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.logAnalyticsId = $v.Trim(); $queriesOk++; $keysSet++ }
         elseif ($LASTEXITCODE -eq 0)     { Write-AdeLog "  ✗ log-analytics workspace (empty result)" -Level Debug }
         else                             { Write-AdeLog "  ✗ log-analytics workspace (exit $LASTEXITCODE)" -Level Debug; $notFound++ }
     }
@@ -398,7 +399,7 @@ function Initialize-AdeState {
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
                  --query id -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.appInsightsId = $v.Trim(); $recovered++ }
+        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.appInsightsId = $v.Trim(); $queriesOk++; $keysSet++ }
         elseif ($LASTEXITCODE -eq 0)     { Write-AdeLog "  ✗ app-insights id (empty result)" -Level Debug }
         else                             { Write-AdeLog "  ✗ app-insights id (exit $LASTEXITCODE)" -Level Debug; $notFound++ }
     }
@@ -408,7 +409,7 @@ function Initialize-AdeState {
                  --app "${Prefix}-appi" `
                  --resource-group "${Prefix}-monitoring-rg" `
                  --query instrumentationKey -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.appInsightsKey = $v.Trim() }
+        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.appInsightsKey = $v.Trim(); $keysSet++ }
     }
 
     # ── Networking — single VNet call; derive all subnet IDs from its resource ID ──
@@ -432,7 +433,7 @@ function Initialize-AdeState {
             $AdeState.privateEndpointSubnetId = "$vId/subnets/privateendpoints"
             $AdeState.mysqlSubnetId           = "$vId/subnets/mysql"
             $AdeState.dcSubnetId              = "$vId/subnets/dc"
-            $recovered++
+            $queriesOk++; $keysSet += 11
         } elseif ($LASTEXITCODE -eq 0) {
             Write-AdeLog "  ✗ vnet (empty result)" -Level Debug
         } else {
@@ -462,7 +463,7 @@ function Initialize-AdeState {
             $AdeState.serviceBusDnsZoneId = "$zBase/privatelink.servicebus.windows.net"
             $AdeState.eventHubDnsZoneId   = "$zBase/privatelink.eventhub.windows.net"
             $AdeState.redisDnsZoneId      = "$zBase/privatelink.redis.cache.windows.net"
-            $recovered++
+            $queriesOk++; $keysSet += 10
         } elseif ($LASTEXITCODE -eq 0) {
             Write-AdeLog "  ✗ private-dns zones (empty result — zones not deployed)" -Level Debug
         } else {
@@ -484,8 +485,8 @@ function Initialize-AdeState {
                        --name $AdeState.keyVaultName `
                        --resource-group "${Prefix}-security-rg" `
                        --query id -o tsv 2>$null
-            if ($LASTEXITCODE -eq 0 -and $vId) { $AdeState.keyVaultId = $vId.Trim() }
-            $recovered++
+            if ($LASTEXITCODE -eq 0 -and $vId) { $AdeState.keyVaultId = $vId.Trim(); $keysSet++ }
+            $queriesOk++; $keysSet++  # keyVaultName
         } elseif ($LASTEXITCODE -eq 0) {
             Write-AdeLog "  ✗ keyvault (no vault in RG yet)" -Level Debug
         } else {
@@ -504,8 +505,8 @@ function Initialize-AdeState {
                        --name "${Prefix}-identity" `
                        --resource-group "${Prefix}-security-rg" `
                        --query clientId -o tsv 2>$null
-            if ($LASTEXITCODE -eq 0 -and $cId) { $AdeState.managedIdentityClientId = $cId.Trim() }
-            $recovered++
+            if ($LASTEXITCODE -eq 0 -and $cId) { $AdeState.managedIdentityClientId = $cId.Trim(); $keysSet++ }
+            $queriesOk++; $keysSet++  # managedIdentityId
         } elseif ($LASTEXITCODE -eq 0) {
             Write-AdeLog "  ✗ managed-identity (empty result)" -Level Debug
         } else {
@@ -519,13 +520,13 @@ function Initialize-AdeState {
         $v = az storage account list `
                  --resource-group "${Prefix}-storage-rg" `
                  --query '[0].name' -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.storageAccountName = $v.Trim(); $recovered++ }
+        if ($LASTEXITCODE -eq 0 -and $v) { $AdeState.storageAccountName = $v.Trim(); $queriesOk++; $keysSet++ }
         elseif ($LASTEXITCODE -eq 0)     { Write-AdeLog "  ✗ storage account (no account in RG yet)" -Level Debug }
         else                             { Write-AdeLog "  ✗ storage account list (exit $LASTEXITCODE)" -Level Debug; $notFound++ }
     }
 
-    if ($recovered -gt 0) {
-        Write-AdeLog "State hydration complete: $recovered value(s) recovered from existing resources." -Level Info
+    if ($queriesOk -gt 0) {
+        Write-AdeLog "State hydration complete: $queriesOk quer$(if ($queriesOk -eq 1) {'y'} else {'ies'}) succeeded, $keysSet state key$(if ($keysSet -eq 1) {''} else {'s'}) pre-populated (cross-module dependencies only)." -Level Info
     } elseif ($notFound -gt 0) {
         Write-AdeLog "State hydration: resources not yet deployed (first run or clean environment). All modules will deploy fresh." -Level Info
     } else {
