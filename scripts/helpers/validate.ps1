@@ -56,22 +56,31 @@ function Test-AdePrerequisites {
         Write-AdeLog "Bicep $($bicepVersion -replace 'Bicep CLI version ','') ✓" -Level Success
     }
 
-    # ── application-insights extension ────────────────────────────────────────
-    # Required for 'az monitor app-insights component show' used during state hydration.
-    # Without it the CLI prompts interactively, causing the script to hang.
-    Write-AdeLog "az extension list --query application-insights installed check" -Level Debug
-    $aiExt = az extension list --query "[?name=='application-insights'].name" -o tsv 2>$null
-    if (-not $aiExt) {
-        Write-AdeLog "application-insights extension not installed — installing..." -Level Warning
-        Write-AdeLog "az extension add --name application-insights --allow-preview true" -Level Debug
-        $null = az extension add --name application-insights --allow-preview true 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            $failures.Add("Azure CLI 'application-insights' extension could not be installed. Run: az extension add --name application-insights")
+    # ── Required CLI extensions ─────────────────────────────────────────────
+    # Checked here so any missing extension produces a clear error instead of
+    # an interactive install prompt that hangs the script.
+    #
+    #   application-insights  – az monitor app-insights component show (deploy state hydration)
+    #   rdbms-connect         – az postgres/mysql flexible-server execute  (seed-data.ps1)
+    $requiredExtensions = @(
+        @{ Name = 'application-insights'; Reason = "az monitor app-insights component show (state hydration)" }
+        @{ Name = 'rdbms-connect';        Reason = "az postgres/mysql flexible-server execute (seed-data.ps1)" }
+    )
+    Write-AdeLog "az extension list --query (checking required extensions)" -Level Debug
+    $installedExts = az extension list --query "[].name" -o tsv 2>$null
+    foreach ($ext in $requiredExtensions) {
+        if ($installedExts -notcontains $ext.Name) {
+            Write-AdeLog "'$($ext.Name)' extension not installed — installing... ($($ext.Reason))" -Level Warning
+            Write-AdeLog "az extension add --name $($ext.Name) --allow-preview true" -Level Debug
+            $null = az extension add --name $ext.Name --allow-preview true 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                $failures.Add("Azure CLI '$($ext.Name)' extension could not be installed. Run: az extension add --name $($ext.Name)")
+            } else {
+                Write-AdeLog "$($ext.Name) extension installed ✓" -Level Success
+            }
         } else {
-            Write-AdeLog "application-insights extension installed ✓" -Level Success
+            Write-AdeLog "$($ext.Name) extension ✓" -Level Success
         }
-    } else {
-        Write-AdeLog "application-insights extension ✓" -Level Success
     }
 
     # ── Azure CLI login ───────────────────────────────────────────────────────
