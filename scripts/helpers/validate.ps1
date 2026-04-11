@@ -56,31 +56,15 @@ function Test-AdePrerequisites {
         Write-AdeLog "Bicep $($bicepVersion -replace 'Bicep CLI version ','') ✓" -Level Success
     }
 
-    # ── Required CLI extensions ─────────────────────────────────────────────
-    # Checked here so any missing extension produces a clear error instead of
-    # an interactive install prompt that hangs the script.
-    #
-    #   application-insights  – az monitor app-insights component show (deploy state hydration)
-    #   rdbms-connect         – az postgres/mysql flexible-server execute  (seed-data.ps1)
-    $requiredExtensions = @(
-        @{ Name = 'application-insights'; Reason = "az monitor app-insights component show (state hydration)" }
-        @{ Name = 'rdbms-connect';        Reason = "az postgres/mysql flexible-server execute (seed-data.ps1)" }
-    )
-    Write-AdeLog "az extension list --query (checking required extensions)" -Level Debug
-    $installedExts = az extension list --query "[].name" -o tsv 2>$null
-    foreach ($ext in $requiredExtensions) {
-        if ($installedExts -notcontains $ext.Name) {
-            Write-AdeLog "'$($ext.Name)' extension not installed — installing... ($($ext.Reason))" -Level Warning
-            Write-AdeLog "az extension add --name $($ext.Name) --allow-preview true" -Level Debug
-            $null = az extension add --name $ext.Name --allow-preview true 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                $failures.Add("Azure CLI '$($ext.Name)' extension could not be installed. Run: az extension add --name $($ext.Name)")
-            } else {
-                Write-AdeLog "$($ext.Name) extension installed ✓" -Level Success
-            }
-        } else {
-            Write-AdeLog "$($ext.Name) extension ✓" -Level Success
-        }
+    # ── CLI extension auto-install ───────────────────────────────────────────
+    # Enable dynamic install so any extension command (e.g. app-insights, rdbms-connect)
+    # is installed automatically and silently on first use, without interactive prompts.
+    Write-AdeLog "az config set extension.use_dynamic_install=yes_without_prompt" -Level Debug
+    $null = az config set extension.use_dynamic_install=yes_without_prompt 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $failures.Add("Could not configure Azure CLI extension auto-install. Run: az config set extension.use_dynamic_install=yes_without_prompt")
+    } else {
+        Write-AdeLog "CLI extension auto-install enabled ✓" -Level Success
     }
 
     # ── Azure CLI login ───────────────────────────────────────────────────────
