@@ -31,6 +31,7 @@ function Test-AdePrerequisites {
     }
 
     # ── Azure CLI ─────────────────────────────────────────────────────────────
+    Write-AdeLog "az version --output json" -Level Debug
     $azVerJson = az version --output json 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $azVerJson) {
         $failures.Add("Azure CLI not found. Install from https://aka.ms/installazurecliwindows")
@@ -40,9 +41,11 @@ function Test-AdePrerequisites {
     }
 
     # ── Bicep CLI ─────────────────────────────────────────────────────────────
+    Write-AdeLog "az bicep version" -Level Debug
     $bicepVersion = az bicep version 2>$null
     if ($LASTEXITCODE -ne 0) {
         Write-AdeLog "Bicep not installed — attempting install via 'az bicep install'" -Level Warning
+        Write-AdeLog "az bicep install" -Level Debug
         $null = az bicep install 2>$null
         if ($LASTEXITCODE -ne 0) {
             $failures.Add("Bicep CLI could not be installed automatically. Run: az bicep install")
@@ -54,6 +57,7 @@ function Test-AdePrerequisites {
     }
 
     # ── Azure CLI login ───────────────────────────────────────────────────────
+    Write-AdeLog "az account show --output json" -Level Debug
     $accountJson = az account show --output json 2>$null
     $account = if ($accountJson) { $accountJson | ConvertFrom-Json } else { $null }
     if ($LASTEXITCODE -ne 0 -or -not $account) {
@@ -68,6 +72,7 @@ function Test-AdePrerequisites {
     # fail with an opaque ARM error if the feature is not registered on the subscription.
     if ($Mode -eq 'hardened') {
         Write-AdeLog "Checking EncryptionAtHost feature registration (required for hardened compute)..." -Level Info
+        Write-AdeLog "az feature show --name EncryptionAtHost --namespace Microsoft.Compute --query properties.state" -Level Debug
         $featureState = az feature show --name EncryptionAtHost --namespace Microsoft.Compute --query properties.state -o tsv 2>$null
         if ($featureState -eq 'Registered') {
             Write-AdeLog "EncryptionAtHost feature Registered ✓" -Level Success
