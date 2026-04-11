@@ -64,6 +64,15 @@ if ($SubscriptionId) {
 $sub = az account show --output json | ConvertFrom-Json
 $SubscriptionId = $sub.id
 
+# Returns $true when an Azure resource object has tags.managedBy = 'ade'.
+# Safe against $null tags or missing keys (common on non-ADE resource groups).
+function Test-AdeManagedBy {
+    param([psobject]$Resource)
+    $null -ne $Resource.tags -and
+    $Resource.tags.PSObject.Properties['managedBy'] -and
+    $Resource.tags.managedBy -eq 'ade'
+}
+
 function Show-AdeDashboard {
 
     Clear-Host
@@ -87,7 +96,7 @@ function Show-AdeDashboard {
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
     $rgsRaw = az group list -o json 2>$null | ConvertFrom-Json
-    $rgs = $rgsRaw | Where-Object { $null -ne $_.tags -and $_.tags.managedBy -eq 'ade' -and $_.name -like "$Prefix-*" } |
+    $rgs = $rgsRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.name -like "$Prefix-*" } |
         Select-Object -ExpandProperty name
 
     if (-not $rgs) {
@@ -146,7 +155,7 @@ function Show-AdeDashboard {
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
     $vmsRaw = az vm list -o json 2>$null | ConvertFrom-Json
-    $vms = $vmsRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $vms = $vmsRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}, @{n='size';e={$_.hardwareProfile.vmSize}}
 
     if ($vms) {
@@ -185,7 +194,7 @@ function Show-AdeDashboard {
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
 
     $clustersRaw = az aks list -o json 2>$null | ConvertFrom-Json
-    $clusters = $clustersRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $clusters = $clustersRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}, @{n='powerState';e={$_.powerState.code}}, @{n='version';e={$_.kubernetesVersion}}, @{n='nodeCount';e={$_.agentPoolProfiles[0].count}}
 
     if ($clusters) {
@@ -201,19 +210,19 @@ function Show-AdeDashboard {
 
     # ── Integration resources ─────────────────────────────────────────────────
     $sbRaw        = az servicebus namespace list -o json 2>$null | ConvertFrom-Json
-    $sbNamespaces = $sbRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $sbNamespaces = $sbRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='sku';e={$_.sku.name}}, @{n='rg';e={$_.resourceGroup}}
 
     $ehRaw        = az eventhubs namespace list -o json 2>$null | ConvertFrom-Json
-    $ehNamespaces = $ehRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $ehNamespaces = $ehRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='sku';e={$_.sku.name}}, @{n='rg';e={$_.resourceGroup}}
 
     $caRaw  = az containerapp env list -o json 2>$null | ConvertFrom-Json
-    $caEnvs = $caRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $caEnvs = $caRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     $adfRaw = az resource list --resource-type 'Microsoft.DataFactory/factories' -o json 2>$null | ConvertFrom-Json
-    $adfs   = $adfRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $adfs   = $adfRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     if ($sbNamespaces -or $ehNamespaces -or $caEnvs -or $adfs) {
@@ -275,11 +284,11 @@ if ($StopAll) {
     Write-AdeSection "Stopping All VMs"
 
     $vmIds = az vm list -o json 2>$null | ConvertFrom-Json |
-        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object -ExpandProperty id
 
     $vmssIds = az vmss list -o json 2>$null | ConvertFrom-Json |
-        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object -ExpandProperty id
 
     if ($vmIds) {
@@ -296,7 +305,7 @@ if ($StopAll) {
 
     # Stop AKS clusters
     $aksRaw   = az aks list -o json 2>$null | ConvertFrom-Json
-    $aksNames = $aksRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $aksNames = $aksRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     foreach ($aks in $aksNames) {
@@ -309,11 +318,11 @@ if ($StartAll) {
     Write-AdeSection "Starting All VMs"
 
     $vmIds = az vm list -o json 2>$null | ConvertFrom-Json |
-        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object -ExpandProperty id
 
     $vmssIds = az vmss list -o json 2>$null | ConvertFrom-Json |
-        Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+        Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object -ExpandProperty id
 
     if ($vmIds) {
@@ -329,7 +338,7 @@ if ($StartAll) {
     }
 
     $aksRaw   = az aks list -o json 2>$null | ConvertFrom-Json
-    $aksNames = $aksRaw | Where-Object { $_.tags.managedBy -eq 'ade' -and $_.resourceGroup -like "$Prefix-*" } |
+    $aksNames = $aksRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.resourceGroup -like "$Prefix-*" } |
         Select-Object name, @{n='rg';e={$_.resourceGroup}}
 
     foreach ($aks in $aksNames) {

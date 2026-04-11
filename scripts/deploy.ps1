@@ -309,6 +309,7 @@ if ($needsAdminPassword -and -not $AdminPassword) {
     $generatedPw   = $null   # discard plaintext from memory
 }
 
+
 # ─── Global state tracker ─────────────────────────────────────────────────────
 # Collects output values from each module for cross-module parameter passing
 $state = @{
