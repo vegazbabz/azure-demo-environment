@@ -303,16 +303,11 @@ if (($needsAdminPassword -or $AutoGeneratePassword) -and -not $AdminPassword) {
         $tmp = $pwChars[$i]; $pwChars[$i] = $pwChars[$j]; $pwChars[$j] = $tmp
     }
     $generatedPw = -join $pwChars
-    Write-Host ""
-    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-    Write-Host "║   AUTO-GENERATED VM PASSWORD : " -ForegroundColor Yellow -NoNewline
-    Write-Host $generatedPw.PadRight(34) -ForegroundColor White -NoNewline
-    Write-Host "║" -ForegroundColor Yellow
-    Write-Host "║   Save this now — it will not be shown again.                    ║" -ForegroundColor Yellow
-    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
-    Write-Host ""
     $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
     $generatedPw   = $null   # discard plaintext from memory
+    $script:_adePasswordWasGenerated = $true
+} else {
+    $script:_adePasswordWasGenerated = $false
 }
 
 
@@ -738,6 +733,18 @@ foreach ($moduleName in $deploymentOrder) {
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId']       = $state.logAnalyticsId
                     $params['dataCollectionRuleId'] = $state.dataCollectionRuleId
+                }
+                if ($script:_adePasswordWasGenerated) {
+                    $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    Write-Host ""
+                    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+                    Write-Host "║   AUTO-GENERATED VM PASSWORD : " -ForegroundColor Yellow -NoNewline
+                    Write-Host $pwPlain.PadRight(34) -ForegroundColor White -NoNewline
+                    Write-Host "║" -ForegroundColor Yellow
+                    Write-Host "║   Save this now — it will not be shown again.                    ║" -ForegroundColor Yellow
+                    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+                    Write-Host ""
+                    $pwPlain = $null
                 }
                 $null = Deploy-AdeModule -ModuleName 'compute' -BicepFile $bicep -Parameters $params
             }
