@@ -42,8 +42,9 @@
     Admin username for VMs. Default: adeadmin
 
 .PARAMETER AdminPassword
-    Admin password for VMs (SecureString). Must meet Azure complexity requirements.
-    If omitted, you will be prompted interactively.
+    Override the VM admin password (SecureString). Must meet Azure complexity requirements
+    (min 12 chars, upper + lower + digit + symbol).
+    If omitted, a secure 12-character password is auto-generated and printed to the terminal.
 
 .PARAMETER Mode
     Deployment mode.
@@ -213,6 +214,7 @@ Test-AdeProfile -Profile $deployProfile
 # If resource groups with this prefix already exist (incremental profile stack-up
 # e.g. minimal → databases-only) use their location automatically so the caller
 # does not need to remember or re-specify the original region.
+Write-AdeLog "az group list --query (looking for existing '${Prefix}-*-rg' resource groups)" -Level Debug
 $existingRgLocation = az group list `
     --query "[?starts_with(name, '${Prefix}-') && ends_with(name, '-rg')].location | [0]" `
     -o tsv 2>$null
@@ -236,8 +238,43 @@ if ($automationWanted) {
 }
 
 # ─── Admin password ───────────────────────────────────────────────────────────
+# Default: auto-generate a secure password and print it once.
+# Override: pass -AdminPassword (SecureString) to use your own.
 if (-not $AdminPassword) {
-    $AdminPassword = Read-Host -AsSecureString "Enter VM admin password (min 12 chars, upper+lower+digit+symbol)"
+    $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    $lower   = 'abcdefghjkmnpqrstuvwxyz'
+    $digits  = '23456789'
+    $symbols = '!@#$%^&*'
+    $rng     = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes   = [byte[]]::new(32)
+    $rng.GetBytes($bytes)
+    $pwChars = @(
+        $upper[$bytes[0]  % $upper.Length]
+        $upper[$bytes[1]  % $upper.Length]
+        $upper[$bytes[2]  % $upper.Length]
+        $upper[$bytes[3]  % $upper.Length]
+        $lower[$bytes[4]  % $lower.Length]
+        $lower[$bytes[5]  % $lower.Length]
+        $lower[$bytes[6]  % $lower.Length]
+        $lower[$bytes[7]  % $lower.Length]
+        $digits[$bytes[8] % $digits.Length]
+        $digits[$bytes[9] % $digits.Length]
+        $symbols[$bytes[10] % $symbols.Length]
+        $symbols[$bytes[11] % $symbols.Length]
+    )
+    # Shuffle with Fisher-Yates using crypto bytes
+    for ($i = $pwChars.Count - 1; $i -gt 0; $i--) {
+        $j = $bytes[$i % $bytes.Length] % ($i + 1)
+        $tmp = $pwChars[$i]; $pwChars[$i] = $pwChars[$j]; $pwChars[$j] = $tmp
+    }
+    $generatedPw = -join $pwChars
+    Write-Host ""
+    Write-Host "  AUTO-GENERATED VM PASSWORD: " -ForegroundColor Cyan -NoNewline
+    Write-Host $generatedPw -ForegroundColor Yellow
+    Write-Host "  (save this now — it will not be shown again)" -ForegroundColor Cyan
+    Write-Host ""
+    $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
+    $generatedPw   = $null   # discard plaintext from memory
 }
 $adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
 if ($adminPasswordPlain.Length -lt 12) {
