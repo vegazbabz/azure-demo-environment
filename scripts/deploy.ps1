@@ -887,7 +887,21 @@ foreach ($moduleName in $deploymentOrder) {
                 $budgetEmailSet = -not [string]::IsNullOrEmpty($effectiveBudgetEmail)
                 $budgetEnabled  = (Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and $budgetEmailSet
                 if ((Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and -not $budgetEmailSet) {
-                    Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                    # Before warning, check whether the budget already exists from a prior run.
+                    # If it does, treat it as already deployed — no email needed, no warning.
+                    $existingBudgetName = "$Prefix-monthly-budget"
+                    $budgetCheckUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets/$existingBudgetName`?api-version=2023-11-01"
+                    $budgetExists = $false
+                    try {
+                        $budgetJson = az rest --method GET --url $budgetCheckUrl 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        $budgetExists = $null -ne $budgetJson -and $LASTEXITCODE -eq 0 -and $null -ne $budgetJson.name
+                    } catch {}
+                    if ($budgetExists) {
+                        Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
+                        $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
+                    } else {
+                        Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                    }
                 }
 
                 $params = @{
