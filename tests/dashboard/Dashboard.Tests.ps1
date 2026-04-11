@@ -78,10 +78,10 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Match 'properties\.rows'
     }
 
-    It 'az consumption budget list includes --scope parameter' {
+    It 'Fetches budgets via REST API (Microsoft.Consumption/budgets)' {
         $source = Get-Content $script:dashboardPs -Raw
-        # Budget list must be scoped to the subscription, not called globally
-        $source | Should -Match 'budget list.*--scope|budget list[\s\S]{1,200}--scope'
+        # Budget data must come from the REST endpoint, not the broken az consumption budget list
+        $source | Should -Match 'Microsoft\.Consumption/budgets'
     }
 
     It 'Has no critical PowerShell syntax errors' {
