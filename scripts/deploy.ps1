@@ -241,9 +241,14 @@ if ($automationWanted) {
 }
 
 # ─── Admin password ───────────────────────────────────────────────────────────
+# Only generated when a module that actually uses it (compute, databases, data) is enabled.
 # Default: auto-generate a secure password and print it once.
 # Override: pass -AdminPassword (SecureString) to use your own.
-if (-not $AdminPassword) {
+$needsAdminPassword = @('compute', 'databases', 'data') | Where-Object {
+    $m = $deployProfile.modules.PSObject.Properties[$_]
+    $null -ne $m -and $m.Value.enabled -eq $true
+}
+if ($needsAdminPassword -and -not $AdminPassword) {
     $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $lower   = 'abcdefghjkmnpqrstuvwxyz'
     $digits  = '23456789'
@@ -279,11 +284,13 @@ if (-not $AdminPassword) {
     $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
     $generatedPw   = $null   # discard plaintext from memory
 }
-$adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
-if ($adminPasswordPlain.Length -lt 12) {
-    throw "Admin password must be at least 12 characters."
+if ($AdminPassword) {
+    $adminPasswordPlain = [System.Net.NetworkCredential]::new('', $AdminPassword).Password
+    if ($adminPasswordPlain.Length -lt 12) {
+        throw "Admin password must be at least 12 characters."
+    }
+    $adminPasswordPlain = $null   # discard plaintext immediately after validation
 }
-$adminPasswordPlain = $null   # discard plaintext immediately after validation
 
 # ─── Confirmation ─────────────────────────────────────────────────────────────
 try {
