@@ -137,7 +137,7 @@
 
 ---
 
-## Part 4 — CIS Azure Foundations Benchmark v3.0.0 Spot Checks
+## Part 4 — CIS Azure Foundations Benchmark v5.0.0 Spot Checks
 
 > Run these against the **default** deployment to confirm expected non-compliant baseline, then re-run against **hardened** to confirm remediation.
 
@@ -187,9 +187,9 @@
 | # | CIS Control | Expected in Default | Command |
 |---|------------|---------------------|---------|
 | 4.25 | 5.1.x — Activity Log diagnostic setting to Log Analytics | ❌ FAIL | `az monitor diagnostic-settings subscription list --query "value[?contains(workspaceId, 'ade-logs')]" -o table` |
-| 4.26 | 5.2.x — Activity Log alert: Create/Update security policy | ❌ FAIL | `az monitor activity-log alert list -g ade-monitoring-rg -o table` |
+| 4.26 | 5.2.x — Activity Log alert: Create/Update security policy | ❌ FAIL | `az monitor activity-log alert list -g ade-monitoring-rg --query "[?enabled==\`true\`].{name:name,condition:condition.allOf[0].equals}" -o table` |
 | 4.27 | 5.3 — Log Analytics retention ≥ 90 days | ❌ FAIL (default 30 days) | `az monitor log-analytics workspace show -g ade-monitoring-rg -n ade-logs --query "retentionInDays" -o tsv` → 30 |
-| 4.28 | **Hardened:** retention + alerts configured | Review hardened monitoring.bicep | Verify `az monitor activity-log alert list` |
+| 4.28 | **Hardened:** retention + alerts configured | Review hardened monitoring.bicep | Verify `az monitor activity-log alert list -g ade-monitoring-rg --query "[?enabled==\`true\`].name" -o tsv` → 3 rules |
 
 ### CIS Section 6 — Networking
 
@@ -197,7 +197,7 @@
 |---|------------|---------------------|---------|
 | 4.29 | 6.2 — No RDP/22 from Internet on NSGs | ✅ PASS (no explicit allow rule) | `az network nsg rule list -g ade-networking-rg --nsg-name ade-compute-nsg --query "[?access=='Allow' && sourceAddressPrefix=='*' && (destinationPortRange=='22' || destinationPortRange=='3389')]" -o table` → empty |
 | 4.30 | 6.3 — SSH/RDP not open via management port | ✅ PASS (Bastion is the access path) | Confirm no VM has a JIT rule permitting internet-sourced RDP/SSH |
-| 4.31 | 6.4 — NSG flow logs enabled | ❌ FAIL | `az network watcher flow-log list -l westeurope --query "[?contains(storageId,'ade')]" -o table` → empty |
+| 4.31 | 6.1.1.5 / 6.4 — NSG flow logs | ⚠ N/A — deprecated | NSG flow log creation blocked by Microsoft since **2025-06-30**; full retirement **2027-09-30**. Mark as **Not Applicable** — do not attempt remediation (ARM API rejects). See `docs/benchmark-guide.md` §6.1.1.5. |
 | 4.32 | 6.5 — Network Watcher enabled | ✅ PASS | `az network watcher show -g ade-networking-rg -n ade-networkwatcher -o table` |
 | 4.33 | 6.6 — Bastion is the access method (no public management ports) | ✅ PASS | Confirm Bastion exists and is reachable |
 
@@ -342,7 +342,7 @@
 | 9.11 | `LICENSE` file present | `ls LICENSE` → MIT |
 | 9.12 | `README.md` cost warning is prominent | Verify `[!WARNING]` cost block appears near the top |
 | 9.13 | `CHANGELOG.md` date is not in the future | Check `## [1.0.0] - YYYY-MM-DD` — must be today's date or earlier |
-| 9.14 | `benchmark-guide.md` references correct CIS version | File should reference CIS Microsoft Azure Foundations Benchmark v3.0.0, not v2.0 |
+| 9.14 | `benchmark-guide.md` references correct CIS version | File should reference CIS Microsoft Azure Foundations Benchmark v5.0.0, not v2.0 or v3.0.0 |
 | 9.15 | No copilot prompt files committed | `.github/prompts/` should be empty or absent (in `.gitignore`) |
 | 9.16 | Dependabot or similar automated PR bot configured | `.github/dependabot.yml` exists |
 | 9.17 | Branch protection on `main` requires PR + CI check | Settings → Branches → `main` → require PR, require status checks (lint) |
@@ -378,11 +378,11 @@ The following items are **by design** in default mode and generate expected CIS 
 | KV public network access on | ❌ | ✅ | CIS 8.1 |
 | ACR admin user enabled | ❌ | ✅ | CIS 8.x |
 | All Defender plans Free | ❌ | ✅ | CIS 2.1 |
-| NSG flow logs absent | ❌ | ❌ GAP | CIS 6.4 |
+| NSG flow logs (CIS 6.1.1.5 / 6.4) | ⚠ N/A | ⚠ N/A | Deprecated 2025-06-30; ARM API blocks creation. Not Applicable on all current subscriptions. |
 | No Activity Log diagnostic setting | ❌ | ❌ GAP | CIS 5.1 |
 
 > **Gap items** (`❌ GAP`) are architectural gaps not yet implemented in any module. They are documented here for awareness but do not block release.
 
 ---
 
-*Generated: based on code review of commit `ed67bc3`. Update the checklist when modules change.*
+*Generated: based on code review of commit `b7dc764`. Update the checklist when modules change.*

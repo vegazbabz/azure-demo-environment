@@ -608,7 +608,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **544 passing, 0 failing, 0 skipped**.
+Current state: **547 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -950,7 +950,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (544 passing, 0 failing, 0 skipped)
+tests/              # Pester 5 unit tests (547 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 
