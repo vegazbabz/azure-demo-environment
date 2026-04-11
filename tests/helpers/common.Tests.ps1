@@ -589,6 +589,57 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         ($script:capturedCreateArgs -join ' ') | Should -Match 'location=westeurope'
     }
 
+    It 'Routes parameters with shell-unsafe characters through the JSON file, not inline' {
+        $script:capturedCreateArgs = $null
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'create') { $script:capturedCreateArgs = $ArgumentList }
+            return $null
+        }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-unsafe-param-test' `
+            -Parameters     @{ adminPassword = 'P@ss&word1!'; prefix = 'ade' } `
+            -PollIntervalSeconds 0
+
+        # The unsafe password must NOT appear inline — it must go into the @file argument
+        $inlineArgs = $script:capturedCreateArgs -join ' '
+        $inlineArgs | Should -Not -Match 'adminPassword=P' -Because 'passwords with & or ! must not be passed inline (shell command separator)'
+        $inlineArgs | Should -Match '@' -Because 'unsafe params are routed to a temp JSON file referenced with @'
+        $inlineArgs | Should -Match 'prefix=ade' -Because 'safe params still pass inline'
+    }
+
+    It 'Routes credential-named parameters through the JSON file even without shell-unsafe characters' {
+        $script:capturedCreateArgs = $null
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'create') { $script:capturedCreateArgs = $ArgumentList }
+            return $null
+        }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-cred-key-test' `
+            -Parameters     @{ adminPassword = 'AdeAdmin2026'; prefix = 'ade' } `
+            -PollIntervalSeconds 0
+
+        # A plain-text password (no special chars) must still go to the file — never inline —
+        # so it does not appear in the debug log.
+        $inlineArgs = $script:capturedCreateArgs -join ' '
+        $inlineArgs | Should -Not -Match 'adminPassword=' -Because 'credential-named params must never appear inline regardless of value content'
+        $inlineArgs | Should -Match '@' -Because 'credential params are always routed to a temp JSON file'
+        $inlineArgs | Should -Match 'prefix=ade' -Because 'non-credential params still pass inline'
+    }
+
     It 'Handles template paths containing spaces without splitting them' {
         $spacyDir  = Join-Path $TestDrive 'path with spaces'
         $null      = New-Item -ItemType Directory -Path $spacyDir -Force

@@ -66,8 +66,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployKeyVault) {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enablePurgeProtection: true
-    enabledForDeployment: true
-    enabledForTemplateDeployment: true
+    enabledForDeployment: false             // Hardened: off — RBAC + private endpoint is the only access path (CIS 8.1)
+    enabledForTemplateDeployment: false     // Hardened: off — secrets must not be pulled inline by ARM (CIS 8.1)
     enabledForDiskEncryption: true
     // Hardened: no public network access — private endpoints only (MCSB NS-2)
     // Exception: allowedCidrRanges can be set to permit deployer/CI runner public IPs.

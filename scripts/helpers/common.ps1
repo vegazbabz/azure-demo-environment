@@ -310,6 +310,14 @@ function Invoke-AdeBicepDeployment {
             $val -is [pscustomobject] -or
             $val -is [array] -or $val -is [System.Collections.ArrayList]) {
             $fileParams[$key] = @{ value = $val }
+        } elseif ($val -is [string] -and (
+                $key -match '(?i)password|secret|apikey|accesskey' -or
+                $val -match '[&|<>^"''`$!#%]')) {
+            # Route credential parameters (key-name match) and strings containing
+            # shell-unsafe characters through the JSON file.  This prevents plaintext
+            # secrets from appearing in the debug log or being misinterpreted by the
+            # shell (e.g. & splits commands, $ expands variables).
+            $fileParams[$key] = @{ value = $val }
         } else {
             $paramArgs += "$key=$val"
         }
