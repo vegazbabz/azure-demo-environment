@@ -630,7 +630,8 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
             -DeploymentName 'ade-out-test' `
             -PollIntervalSeconds 0
 
-        $result.logAnalyticsId.value | Should -Be '/subscriptions/x/workspaces/y'
+        $result.Outputs.logAnalyticsId.value | Should -Be '/subscriptions/x/workspaces/y'
+        $result.HasNewResources              | Should -BeOfType [bool]
     }
 
     It 'Returns null when deployment produces no outputs' {
@@ -648,7 +649,7 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
             -DeploymentName 'ade-noout' `
             -PollIntervalSeconds 0
 
-        $result | Should -BeNullOrEmpty
+        $result.Outputs | Should -BeNullOrEmpty
     }
 
     It 'Calls az resource list before and after deployment for the new/existing diff' {

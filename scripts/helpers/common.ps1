@@ -435,6 +435,8 @@ function Invoke-AdeBicepDeployment {
     }
 
     # Post-deployment resource summary — diff against pre-deploy snapshot.
+    $newResources      = @()
+    $existingResources = @()
     $deployedList = Invoke-AzCmd -ArgumentList @(
         'resource', 'list',
         '--resource-group', $ResourceGroup,
@@ -442,8 +444,6 @@ function Invoke-AdeBicepDeployment {
         '--output', 'json'
     ) -Silent -AllowFailure
     if ($deployedList) {
-        $newResources      = @()
-        $existingResources = @()
         foreach ($r in @($deployedList)) {
             $shortType = ($r.type -split '/')[-1]
             $key = "$($r.type)/$($r.name)"
@@ -458,7 +458,10 @@ function Invoke-AdeBicepDeployment {
     }
 
     if ($showResult -and $showResult.properties) {
-        return $showResult.properties.outputs
+        return [pscustomobject]@{
+            Outputs         = $showResult.properties.outputs
+            HasNewResources = $newResources.Count -gt 0
+        }
     }
     return $null
 
