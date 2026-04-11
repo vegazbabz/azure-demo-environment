@@ -234,12 +234,11 @@ function Show-AdeDashboard {
 
     if ($vms) {
         foreach ($vm in $vms) {
-            $pvQuery    = 'instanceView.statuses[?starts_with(code,''PowerState/'')].displayStatus'
-            $powerState = az vm get-instance-view `
+            $iv         = az vm get-instance-view `
                 --resource-group $vm.rg `
                 --name $vm.name `
-                --query $pvQuery `
-                -o tsv 2>$null
+                -o json 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+            $powerState = ($iv.instanceView.statuses | Where-Object { $_.code -like 'PowerState/*' }).displayStatus
 
             $stateColor = switch -Wildcard ($powerState) {
                 '*running*'     { 'Green'  }
