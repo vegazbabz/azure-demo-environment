@@ -56,6 +56,24 @@ function Test-AdePrerequisites {
         Write-AdeLog "Bicep $($bicepVersion -replace 'Bicep CLI version ','') ✓" -Level Success
     }
 
+    # ── application-insights extension ────────────────────────────────────────
+    # Required for 'az monitor app-insights component show' used during state hydration.
+    # Without it the CLI prompts interactively, causing the script to hang.
+    Write-AdeLog "az extension list --query application-insights installed check" -Level Debug
+    $aiExt = az extension list --query "[?name=='application-insights'].name" -o tsv 2>$null
+    if (-not $aiExt) {
+        Write-AdeLog "application-insights extension not installed — installing..." -Level Warning
+        Write-AdeLog "az extension add --name application-insights --allow-preview true" -Level Debug
+        $null = az extension add --name application-insights --allow-preview true 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            $failures.Add("Azure CLI 'application-insights' extension could not be installed. Run: az extension add --name application-insights")
+        } else {
+            Write-AdeLog "application-insights extension installed ✓" -Level Success
+        }
+    } else {
+        Write-AdeLog "application-insights extension ✓" -Level Success
+    }
+
     # ── Azure CLI login ───────────────────────────────────────────────────────
     Write-AdeLog "az account show --output json" -Level Debug
     $accountJson = az account show --output json 2>$null
