@@ -114,10 +114,13 @@ function Show-AdeDashboard {
         $budgetRestUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets?api-version=2023-11-01"
         $budgetRespData = $null
         try {
-            $budgetRespData = az rest --method GET --url $budgetRestUrl 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
-            if ($budgetRespData -and $budgetRespData.value) {
-                $adeBudget = @($budgetRespData.value | Where-Object { $_.name -like "*$Prefix*" }) | Select-Object -First 1
-                if ($adeBudget) { $budgetAmount = [double]$adeBudget.properties.amount }
+            $budgetRaw = az rest --method GET --url $budgetRestUrl 2>$null
+            if ($LASTEXITCODE -eq 0 -and $budgetRaw) {
+                $budgetRespData = $budgetRaw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                if ($budgetRespData -and $budgetRespData.value) {
+                    $adeBudget = @($budgetRespData.value | Where-Object { $_.name -like "*$Prefix*" }) | Select-Object -First 1
+                    if ($adeBudget) { $budgetAmount = [double]$adeBudget.properties.amount }
+                }
             }
         } catch {}
 
@@ -125,29 +128,45 @@ function Show-AdeDashboard {
         $totalProjected = 0.0
         $rgCount        = ($rgs | Measure-Object).Count
 
-        foreach ($rg in ($rgs | Sort-Object)) {
-            # Query cost management API for current month actual cost per resource group
-            # az costmanagement query is the modern replacement for the deprecated consumption API
-            $fromDate = "$year-$($month.ToString('D2'))-01"
-            $toDate   = $now.ToString('yyyy-MM-dd')
-            $datasetFilter = '{"dimensions":{"name":"ResourceGroupName","operator":"In","values":["' + $rg + '"]}}'
-            $costJson = az costmanagement query `
-                --type  Usage `
-                --scope "subscriptions/$SubscriptionId" `
-                --timeframe Custom `
-                --time-period "from=$fromDate" "to=$toDate" `
-                --dataset-aggregation '{"totalCost":{"name":"PreTaxCost","function":"Sum"}}' `
-                --dataset-filter $datasetFilter `
-                --dataset-granularity None `
-                -o json 2>$null
-
-            $actual = 0.0
-            if ($costJson) {
-                $costObj = $costJson | ConvertFrom-Json
-                if ($costObj.properties.rows -and $costObj.properties.rows.Count -gt 0) {
-                    $actual = [double]($costObj.properties.rows[0][0])
+        # Single REST call to get all RG costs at once (grouped by ResourceGroupName).
+        # Uses the Microsoft.CostManagement/query REST API — no CLI extension needed.
+        $rgCosts  = @{}   # rg-name → actual cost (DKK/USD etc.)
+        $fromDate = "$year-$($month.ToString('D2'))-01"
+        $toDate   = $now.ToString('yyyy-MM-dd')
+        $costBodyObj = @{
+            type      = 'Usage'
+            timeframe = 'Custom'
+            timePeriod = @{ from = $fromDate; to = $toDate }
+            dataset = @{
+                granularity = 'None'
+                aggregation = @{ totalCost = @{ name = 'PreTaxCost'; function = 'Sum' } }
+                grouping    = @( @{ type = 'Dimension'; name = 'ResourceGroupName' } )
+            }
+        }
+        $costBodyFile = [System.IO.Path]::GetTempFileName() + '.json'
+        $costBodyObj | ConvertTo-Json -Depth 10 -Compress | Set-Content $costBodyFile -Encoding utf8NoBOM
+        try {
+            $costUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+            $costRaw = az rest --method POST --url $costUrl --body "@$costBodyFile" --headers 'Content-Type=application/json' 2>$null
+            $costEc  = $LASTEXITCODE
+            if ($costEc -eq 0 -and $costRaw) {
+                $costResp = $costRaw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                # Columns: [PreTaxCost, ResourceGroupName, Currency]
+                $rgIdx = ($costResp.properties.columns | ForEach-Object { $_.name }).IndexOf('ResourceGroupName')
+                $costIdx = ($costResp.properties.columns | ForEach-Object { $_.name }).IndexOf('PreTaxCost')
+                if ($rgIdx -ge 0 -and $costIdx -ge 0) {
+                    foreach ($row in @($costResp.properties.rows)) {
+                        $rgName = [string]$row[$rgIdx]
+                        if ($rgName) { $rgCosts[$rgName] = [double]$row[$costIdx] }
+                    }
                 }
             }
+        } finally {
+            if (Test-Path $costBodyFile) { Remove-Item $costBodyFile -Force -ErrorAction SilentlyContinue }
+        }
+
+        foreach ($rg in ($rgs | Sort-Object)) {
+            $actual = if ($rgCosts.ContainsKey($rg)) { $rgCosts[$rg] } else { 0.0 }
             $projected = if ($daysPassed -gt 0) { ($actual / $daysPassed) * $daysInMonth } else { 0.0 }
 
             $totalActual    += $actual
