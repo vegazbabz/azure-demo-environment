@@ -75,7 +75,37 @@ var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
 // Outbound: allow VNet + internet (workloads need outbound for updates etc.)
 
 var hardenedInboundRules = [
-  // Allow SSH/RDP from within the VNet — management only
+  // Allow SSH/RDP from Azure Bastion (bastionSubnetPrefix) — the only approved remote-admin path
+  {
+    name: 'Allow_Bastion_RDP_SSH'
+    properties: {
+      priority: 910
+      protocol: 'Tcp'
+      access: 'Allow'
+      direction: 'Inbound'
+      sourceAddressPrefix: bastionSubnetPrefix
+      sourcePortRange: '*'
+      destinationAddressPrefix: '*'
+      destinationPortRanges: ['22', '3389']
+    }
+  }
+  // Deny SSH/RDP from all other VNet sources — keeps management-only intent intact even
+  // though Allow_VNet_Inbound (P1000) would otherwise override any per-NSG management rule.
+  // NSGs with an explicit Allow_Management_RDP_SSH at P900 still permit that subnet first.
+  {
+    name: 'Deny_VNet_RDP_SSH'
+    properties: {
+      priority: 950
+      protocol: 'Tcp'
+      access: 'Deny'
+      direction: 'Inbound'
+      sourceAddressPrefix: 'VirtualNetwork'
+      sourcePortRange: '*'
+      destinationAddressPrefix: '*'
+      destinationPortRanges: ['22', '3389']
+    }
+  }
+  // Allow all other intra-VNet traffic (service-to-service: app → db, workloads → AD, etc.)
   {
     name: 'Allow_VNet_Inbound'
     properties: {

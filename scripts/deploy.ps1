@@ -726,7 +726,8 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId']       = $state.logAnalyticsId
                     $params['dataCollectionRuleId'] = $state.dataCollectionRuleId
                 }
-                if ($script:_adePasswordWasGenerated) {
+                $null = Deploy-AdeModule -ModuleName 'compute' -BicepFile $bicep -Parameters $params
+                if ($script:_adePasswordWasGenerated -and $script:_adeModuleHadNewResources) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
                     Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
@@ -738,7 +739,6 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-Host ""
                     $pwPlain = $null
                 }
-                $null = Deploy-AdeModule -ModuleName 'compute' -BicepFile $bicep -Parameters $params
             }
 
             # ── STORAGE ─────────────────────────────────────────────────────
@@ -778,6 +778,8 @@ foreach ($moduleName in $deploymentOrder) {
                     sqlAdminPassword  = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     pgAdminLogin      = $state.adminUsername
                     pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    mysqlAdminLogin   = $state.adminUsername
+                    mysqlAdminPassword = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     deploySql         = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase').ToString().ToLower()
                     deployCosmos      = (Get-FeatureFlag -Features $dbFeatures -Name 'cosmosDb').ToString().ToLower()
                     deployPostgresql  = (Get-FeatureFlag -Features $dbFeatures -Name 'postgresql').ToString().ToLower()

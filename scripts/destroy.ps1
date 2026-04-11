@@ -91,6 +91,7 @@ $rgQuery  = -join ('[', "?tags.managedBy=='ade' && starts_with(name, '", $Prefix
 $allGroups = az group list `
     --query $rgQuery `
     -o tsv 2>$null
+if ($LASTEXITCODE -ne 0) { throw "Failed to list resource groups — check az login and subscription access." }
 
 if (-not $allGroups) {
     Write-AdeLog "No ADE resource groups found with prefix '$Prefix'. Nothing to destroy." -Level Warning
@@ -128,7 +129,7 @@ $destroyOrder = @('governance', 'data', 'ai', 'integration', 'containers',
                   'appservices', 'databases', 'storage', 'compute',
                   'security', 'networking', 'monitoring')
 
-$ordered = foreach ($mod in $destroyOrder) {
+[array]$ordered = foreach ($mod in $destroyOrder) {
     $rgName = "$Prefix-$mod-rg"
     if ($targetGroups -contains $rgName) { $rgName }
 }
