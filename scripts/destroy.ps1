@@ -290,5 +290,30 @@ if (-not $NoWait -and $failedRgs.Count -eq 0) {
     } else {
         Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
     }
+
+    # ── Subscription-scope Budget ────────────────────────────────────────────
+    # Budgets live at subscription scope (Microsoft.Consumption/budgets) and are
+    # NOT deleted when resource groups are removed. Delete it explicitly so that
+    # a re-deploy can create a fresh budget and to leave the subscription clean.
+    $budgetName = "$Prefix-monthly-budget"
+    Write-AdeLog "Checking for subscription-scope budget: $budgetName" -Level Info
+    $subId = (az account show --query id -o tsv 2>$null).Trim()
+    if ($subId) {
+        $budgetUrl = "https://management.azure.com/subscriptions/$subId/providers/Microsoft.Consumption/budgets/${budgetName}?api-version=2023-11-01"
+        $budgetCheck = az rest --method GET --url $budgetUrl 2>$null
+        if ($LASTEXITCODE -eq 0 -and $budgetCheck) {
+            Write-AdeLog "Deleting subscription-scope budget: $budgetName" -Level Warning
+            az rest --method DELETE --url $budgetUrl --output none 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Budget '$budgetName' deleted." -Level Success
+            } else {
+                Write-AdeLog "Could not delete budget '$budgetName' (non-fatal)." -Level Warning
+            }
+        } else {
+            Write-AdeLog "No budget found with name '$budgetName' — nothing to delete." -Level Info
+        }
+    } else {
+        Write-AdeLog "Could not determine subscription ID — skipping budget cleanup." -Level Warning
+    }
 }
 
