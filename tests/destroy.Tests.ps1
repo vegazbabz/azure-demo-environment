@@ -210,7 +210,7 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
 
     It 'Passes --location to az keyvault purge' {
         $source = Get-Content $script:destroyPs -Raw
-        $source | Should -Match '--location.*vaultLocation'
+        $source | Should -Match '--location.*\$loc'
     }
 
     It 'Does not purge KVs when -NoWait is set (RGs may still be deleting)' {
