@@ -124,6 +124,9 @@ param(
     [switch]$Force,
 
     [Parameter(Mandatory = $false)]
+    [switch]$ContinueOnError,
+
+    [Parameter(Mandatory = $false)]
     [switch]$WhatIf,
 
     [Parameter(Mandatory = $false)]
@@ -575,6 +578,7 @@ function Deploy-AdeModule {
 }
 
 $script:_adeModuleHadNewResources = $false
+$failedModules = [System.Collections.Generic.List[string]]::new()
 foreach ($moduleName in $deploymentOrder) {
     $currentModule++
     Write-AdeSection "$moduleName Module [$currentModule/$totalModules]"
@@ -1032,12 +1036,17 @@ foreach ($moduleName in $deploymentOrder) {
 
     } catch {
         Write-AdeLog "Module '$moduleName' FAILED: $_" -Level Error
+        $failedModules.Add($moduleName)
         Write-Host ""
-        $isNonInteractive = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
-        $continue = if ($isNonInteractive) { 'N' } else { Read-Host "Continue with remaining modules? [y/N]" }
-        if ($continue -notmatch '^[Yy]$') {
-            Write-AdeLog "Deployment aborted after failure in module '$moduleName'." -Level Warning
-            exit 1
+        if ($ContinueOnError) {
+            Write-AdeLog "Continuing with remaining modules (-ContinueOnError)." -Level Warning
+        } else {
+            $isNonInteractive = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
+            $continue = if ($isNonInteractive) { 'N' } else { Read-Host "Continue with remaining modules? [y/N]" }
+            if ($continue -notmatch '^[Yy]$') {
+                Write-AdeLog "Deployment aborted after failure in module '$moduleName'." -Level Warning
+                exit 1
+            }
         }
     }
 }
@@ -1052,6 +1061,11 @@ Write-Host "  Subscription     : " -NoNewline; Write-Host "$($sub.name) [$Subscr
 Write-Host "  Profile          : " -NoNewline; Write-Host $deployProfile.profileName -ForegroundColor Cyan
 Write-Host "  Mode             : " -NoNewline; Write-Host $Mode -ForegroundColor $(if ($Mode -eq 'hardened') { 'Yellow' } else { 'Cyan' })
 Write-Host "  Modules deployed : " -NoNewline; Write-Host ($deploymentOrder -join ', ') -ForegroundColor Green
+if ($failedModules.Count -gt 0) {
+    Write-Host "  Failed modules   : " -NoNewline
+    Write-Host ($failedModules -join ', ') -ForegroundColor Red
+    Write-AdeLog "$($failedModules.Count) module(s) failed: $($failedModules -join ', ')" -Level Error
+}
 Write-Host ""
 Write-Host "  Resource Groups:" -ForegroundColor White
 foreach ($mod in $deploymentOrder) {
@@ -1061,4 +1075,7 @@ foreach ($mod in $deploymentOrder) {
 Write-Host ""
 Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to view costs and resource status." -Level Info
 Write-AdeLog "Run './scripts/destroy.ps1 -Prefix $Prefix' to tear down the entire environment." -Level Warning
+if ($failedModules.Count -gt 0) {
+    exit 1
+}
 
