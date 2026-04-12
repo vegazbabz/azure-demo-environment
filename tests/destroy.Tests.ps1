@@ -280,3 +280,38 @@ Describe 'destroy.ps1 – parallel deletion loop' -Tag 'unit' {
         $source | Should -Match 'maxSeconds'
     }
 }
+
+Describe 'destroy.ps1 – subscription-scope budget cleanup' -Tag 'unit' {
+
+    It 'Checks for a budget named {prefix}-monthly-budget' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'monthly-budget'
+    }
+
+    It 'Uses az rest GET to check budget existence before deleting' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'az rest.*--method GET'
+        $source | Should -Match 'Microsoft.Consumption/budgets'
+    }
+
+    It 'Uses az rest DELETE to remove the budget' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'az rest.*--method DELETE'
+    }
+
+    It 'Skips budget deletion when -NoWait is set' {
+        $source = Get-Content $script:destroyPs -Raw
+        # Budget cleanup must be inside the same -not $NoWait guard
+        $source | Should -Match '-not \$NoWait'
+    }
+
+    It 'Skips budget deletion when any RG deletion failed' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'failedRgs.Count -eq 0'
+    }
+
+    It 'Logs success after budget is deleted' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match "Budget.*deleted"
+    }
+}
