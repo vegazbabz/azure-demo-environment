@@ -373,6 +373,8 @@ function Invoke-AdeBicepDeployment {
     # Stream per-resource progress by polling deployment operations via Invoke-AzCmd
     # so unit tests can mock all az calls through a single seam.
     $seenOps        = @{}
+    $loggedViaOps   = @{}   # type/name keys logged during polling; post-deploy skips duplicates
+    $hasNewViaOps   = $false
     $showableOps    = @('Create', 'Delete', 'Deploy')
     $terminalStates = @('Succeeded', 'Failed', 'Canceled')
     $depState       = 'Running'
@@ -406,14 +408,23 @@ function Invoke-AdeBicepDeployment {
 
                 if (-not $seenOps.ContainsKey($opId)) {
                     $seenOps[$opId] = $state
-                    if ($state -ne 'Waiting') {
-                        Write-AdeLog "  $resType '$resName'" -Level Info
-                    }
                 } elseif ($seenOps[$opId] -ne $state) {
                     $seenOps[$opId] = $state
-                    if ($state -in @('Failed', 'Canceled')) {
-                        Write-AdeLog "  $resType '$resName' — $state" -Level Error
-                    }
+                } else {
+                    continue  # state unchanged — nothing to do
+                }
+
+                # Log on terminal state transition (real-time, with correct timestamp)
+                $resKey = "$($op.properties.targetResource.resourceType)/$resName"
+                if ($state -eq 'Succeeded') {
+                    $isNew    = -not $preDeployNames.ContainsKey($resKey)
+                    $label    = if ($isNew) { '[new]' } else { '[existing]' }
+                    $logLevel = if ($isNew) { 'Success' } else { 'Info' }
+                    Write-AdeLog "  $resType '$resName' $label" -Level $logLevel
+                    $loggedViaOps[$resKey] = $true
+                    if ($isNew) { $hasNewViaOps = $true }
+                } elseif ($state -in @('Failed', 'Canceled')) {
+                    Write-AdeLog "  $resType '$resName' — $state" -Level Error
                 }
             }
         }
@@ -482,6 +493,7 @@ function Invoke-AdeBicepDeployment {
         foreach ($r in @($deployedList)) {
             $shortType = ($r.type -split '/')[-1]
             $key = "$($r.type)/$($r.name)"
+            if ($loggedViaOps.ContainsKey($key)) { continue }  # already logged during polling
             if ($preDeployNames.ContainsKey($key)) {
                 $existingResources += "  $shortType '$($r.name)'"
             } else {
@@ -495,7 +507,7 @@ function Invoke-AdeBicepDeployment {
     if ($showResult -and $showResult.properties) {
         return [pscustomobject]@{
             Outputs         = $showResult.properties.outputs
-            HasNewResources = $newResources.Count -gt 0
+            HasNewResources = ($newResources.Count -gt 0 -or $hasNewViaOps)
         }
     }
     return $null

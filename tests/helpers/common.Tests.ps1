@@ -730,6 +730,64 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         $script:listCallCount | Should -Be 2
     }
 
+    It 'Logs [new]/[existing] with real-time timestamp during polling when ops report Succeeded' {
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'operation') {
+                return @(
+                    [pscustomobject]@{
+                        operationId = 'op-rt-1'
+                        properties  = [pscustomobject]@{
+                            provisioningState     = 'Succeeded'
+                            provisioningOperation = 'Create'
+                            targetResource        = [pscustomobject]@{
+                                resourceName = 'ade-law'
+                                resourceType = 'Microsoft.OperationalInsights/workspaces'
+                            }
+                            statusMessage = [pscustomobject]@{ error = $null }
+                        }
+                    }
+                    [pscustomobject]@{
+                        operationId = 'op-rt-2'
+                        properties  = [pscustomobject]@{
+                            provisioningState     = 'Succeeded'
+                            provisioningOperation = 'Create'
+                            targetResource        = [pscustomobject]@{
+                                resourceName = 'ade-ag'
+                                resourceType = 'Microsoft.Insights/actionGroups'
+                            }
+                            statusMessage = [pscustomobject]@{ error = $null }
+                        }
+                    }
+                )
+            }
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded'; outputs = $null; error = $null } }
+            }
+            if ($ArgumentList -contains 'list' -and $ArgumentList -contains 'resource') {
+                # Pre-deploy snapshot: ade-law already exists
+                return @([pscustomobject]@{ name = 'ade-law'; type = 'Microsoft.OperationalInsights/workspaces' })
+            }
+            return $null
+        }
+
+        $logOutput = [System.Collections.Generic.List[string]]::new()
+        Mock Write-AdeLog { $logOutput.Add("$args") }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-realtime-test' `
+            -PollIntervalSeconds 0
+
+        # ade-law was pre-existing → [existing]; ade-ag was new → [new]
+        $logOutput | Where-Object { $_ -match 'ade-law.*\[existing\]' } | Should -Not -BeNullOrEmpty
+        $logOutput | Where-Object { $_ -match 'ade-ag.*\[new\]' }      | Should -Not -BeNullOrEmpty
+        # Each resource should appear exactly once (poll loop logged it; post-deploy block skips it)
+        (@($logOutput | Where-Object { $_ -match 'ade-ag' })).Count   | Should -Be 1
+        (@($logOutput | Where-Object { $_ -match 'ade-law' })).Count  | Should -Be 1
+    }
+
     It 'Labels newly created resources as [new] and pre-existing resources as [existing]' {
         $script:listCall = 0
         Mock Invoke-AzCmd {
