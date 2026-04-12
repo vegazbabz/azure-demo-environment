@@ -224,6 +224,11 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match 'failedModules\.Count.*gt.*0'
     }
 
+    It 'Detects and deletes a Failed Container Apps Environment before deploying containers' {
+        $script:source | Should -Match 'containerapp env show'
+        $script:source | Should -Match 'ManagedEnvironmentNotReadyForAppCreation|Failed state|containerapp env delete'
+    }
+
     It 'Does not contain dead bastionSubnetId state key' {
         $script:source | Should -Not -Match 'bastionSubnetId'
     }

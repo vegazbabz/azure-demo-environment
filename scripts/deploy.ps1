@@ -822,6 +822,24 @@ foreach ($moduleName in $deploymentOrder) {
             # ── CONTAINERS ──────────────────────────────────────────────────
             'containers' {
                 $bicep = Join-Path $bicepRoot 'containers\containers.bicep'
+
+                # If a Container Apps Environment from a previous run is stuck in
+                # 'Failed' state, ARM rejects new container app creation with
+                # ManagedEnvironmentNotReadyForAppCreation. Delete it so Bicep
+                # can recreate it cleanly on this run.
+                $caeRg   = "$Prefix-containers-rg"
+                $caeName = "$Prefix-cae"
+                Write-AdeLog "az containerapp env show --name $caeName (checking for Failed state)" -Level Debug
+                $caeState = az containerapp env show --name $caeName --resource-group $caeRg --query 'properties.provisioningState' -o tsv 2>$null
+                if ($LASTEXITCODE -eq 0 -and $caeState -eq 'Failed') {
+                    Write-AdeLog "Container Apps Environment '$caeName' is in Failed state — deleting so it can be recreated." -Level Warning
+                    az containerapp env delete --name $caeName --resource-group $caeRg --yes --output none 2>$null
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Could not delete failed Container Apps Environment '$caeName'. Delete it manually and retry."
+                    }
+                    Write-AdeLog "Container Apps Environment '$caeName' deleted." -Level Info
+                }
+
                 $ctFeatProp = $deployProfile.modules.containers.PSObject.Properties['features']
                 $ctFeatures = if ($null -ne $ctFeatProp) { $ctFeatProp.Value } else { [pscustomobject]@{} }
                 $params = @{
