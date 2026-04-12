@@ -1,5 +1,5 @@
 ﻿// ─── containers.bicep ────────────────────────────────────────────────────────
-// Deploys: Azure Container Registry (Basic), AKS (1-node, free tier control plane),
+// Deploys: Azure Container Registry (Basic), AKS (1-node, Standard tier control plane),
 //          Container Apps Environment + Container App, Container Instances.
 //
 // DEFAULT MODE: Admin user enabled on ACR, public endpoints, no RBAC enforcement,
