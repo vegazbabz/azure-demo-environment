@@ -32,6 +32,10 @@ param deployContainerInstances bool = true
 @description('AKS node VM size.')
 param aksNodeSize string = 'Standard_B2s'
 
+@description('AKS control-plane tier. Free is unavailable in some regions (capacity constraints); Standard is the reliable default.')
+@allowed(['Free', 'Standard', 'Premium'])
+param aksTier string = 'Standard'
+
 @description('Log Analytics workspace resource ID. Used to enable AKS Defender for Containers.')
 param logAnalyticsId string = ''
 
@@ -84,7 +88,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
   tags: tags
   sku: {
     name: 'Base'
-    tier: 'Free'
+    tier: aksTier
   }
   identity: {
     type: 'SystemAssigned'
