@@ -73,6 +73,10 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         $script:source | Should -Match '\[switch\]\$Force'
     }
 
+    It 'Has a -ContinueOnError switch parameter' {
+        $script:source | Should -Match '\[switch\]\$ContinueOnError'
+    }
+
     It 'Has a -SkipModules string array parameter' {
         $script:source | Should -Match '\[string\[\]\]\$SkipModules'
     }
@@ -204,6 +208,25 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
     It 'Skips interactive Read-Host in CI environments (guards on env:CI / GITHUB_ACTIONS)' {
         $script:source | Should -Match 'isNonInteractive'
         $script:source | Should -Match 'GITHUB_ACTIONS'
+    }
+
+    It 'Tracks failed modules in a $failedModules list' {
+        $script:source | Should -Match 'failedModules'
+    }
+
+    It 'Continues to remaining modules when -ContinueOnError is set' {
+        $script:source | Should -Match 'ContinueOnError'
+        $script:source | Should -Match 'Continuing with remaining modules'
+    }
+
+    It 'Reports failed modules in the post-deployment summary' {
+        $script:source | Should -Match 'Failed modules'
+        $script:source | Should -Match 'failedModules\.Count.*gt.*0'
+    }
+
+    It 'Detects and deletes a Failed Container Apps Environment before deploying containers' {
+        $script:source | Should -Match 'containerapp env show'
+        $script:source | Should -Match 'ManagedEnvironmentNotReadyForAppCreation|Failed state|containerapp env delete'
     }
 
     It 'Does not contain dead bastionSubnetId state key' {
