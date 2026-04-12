@@ -396,4 +396,24 @@ Describe 'seed-data.ps1 – source analysis' -Tag 'unit' {
         $script:seedSource | Should -Match 'LASTEXITCODE'
         $script:seedSource | Should -Match 'throw'
     }
+
+    It 'Discovers GP v2 storage account by filtering isHnsEnabled==false (avoids Data Lake account)' {
+        # az resource list [0] can return the Data Lake account (same resource type, name sorts first).
+        # The fix uses az storage account list with an isHnsEnabled filter.
+        $script:seedSource | Should -Match 'storage account list'
+        $script:seedSource | Should -Match 'isHnsEnabled'
+    }
+
+    It 'Checks LASTEXITCODE after blob upload to detect silent container-not-found failures' {
+        # Without the check, uploads to the wrong account report [OK] even when the container
+        # does not exist and the az CLI returns a non-zero exit code.
+        $script:seedSource | Should -Match 'blob upload[\s\S]{1,400}\$LASTEXITCODE'
+    }
+
+    It 'Uses --query endpoint (not properties.endpoint) for az eventgrid topic show' {
+        # az eventgrid topic show auto-flattens the ARM response so the endpoint is a
+        # top-level field; querying properties.endpoint always returns null.
+        $script:seedSource | Should -Match "query 'endpoint'"
+        $script:seedSource | Should -Not -Match "query 'properties\.endpoint'"
+    }
 }

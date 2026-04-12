@@ -165,7 +165,14 @@ if ($seedAll -or $Modules -contains 'storage') {
     Write-AdeSection "Seeding: Blob Storage"
 
     $storageRg   = "$Prefix-storage-rg"
-    $accountName = Get-AdeResource -ResourceGroup $storageRg -ResourceType 'Microsoft.Storage/storageAccounts'
+    # az resource list returns [0] alphabetically — the Data Lake account (isHnsEnabled=true,
+    # name contains 'dl') can sort before the GP v2 account and lacks the 'data'/'logs'/'public'
+    # containers. Filter to the non-HNS account explicitly.
+    $rawAcct     = az storage account list `
+        --resource-group $storageRg `
+        --query '[?isHnsEnabled==`false`].name | [0]' `
+        -o tsv 2>$null
+    $accountName = if ($rawAcct) { $rawAcct.Trim() } else { '' }
 
     if (-not $accountName) {
         Write-AdeLog "No storage account found in '$storageRg'. Skipping." -Level Warning
@@ -203,8 +210,12 @@ if ($seedAll -or $Modules -contains 'storage') {
                 --name $file.Name `
                 --file $tmpPath `
                 --overwrite `
-                --output none
-            Write-AdeLog "Uploaded: data/$($file.Name)" -Level Success
+                --output none 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Uploaded: data/$($file.Name)" -Level Success
+            } else {
+                Write-AdeLog "Failed to upload data/$($file.Name) — 'data' container missing or access denied." -Level Warning
+            }
             Remove-Item $tmpPath -Force
         }
 
@@ -249,7 +260,11 @@ Uploaded by seed-data.ps1 on $(Get-Date -Format 'yyyy-MM-dd').
             --file $logFile `
             --overwrite `
             --output none 2>$null
-        Write-AdeLog "Uploaded: logs/seed/seed-diagnostics.json" -Level Success
+        if ($LASTEXITCODE -eq 0) {
+            Write-AdeLog "Uploaded: logs/seed/seed-diagnostics.json" -Level Success
+        } else {
+            Write-AdeLog "Failed to upload diagnostic log to 'logs' container." -Level Warning
+        }
         Remove-Item $logFile -Force
 
         # ─── Storage Queue: demo task queue ───────────────────────────────────────
@@ -726,7 +741,7 @@ if ($seedAll -or $Modules -contains 'eventgrid') {
         $topicEndpoint = az eventgrid topic show `
             --name $topicName `
             --resource-group $intRg `
-            --query 'properties.endpoint' -o tsv 2>$null
+            --query 'endpoint' -o tsv 2>$null
 
         $topicKey = az eventgrid topic key list `
             --name $topicName `
