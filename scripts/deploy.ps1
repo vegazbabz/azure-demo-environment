@@ -32,7 +32,7 @@
     List regions: az account list-locations --query "[].name" -o tsv
 
 .PARAMETER Prefix
-    Short prefix for resource names (3-6 lowercase alphanum). Default: ade
+    Short prefix for resource names (2-8 lowercase alphanum). Default: ade
     Example: 'myco' -> resource groups like 'myco-networking-rg', 'myco-compute-rg'
 
 .PARAMETER SubscriptionId
@@ -59,6 +59,10 @@
 
 .PARAMETER Force
     Skip deployment confirmation prompt.
+
+.PARAMETER ContinueOnError
+    Continue deploying remaining modules even if one fails.
+    Without this switch the script prompts interactively (or aborts in CI) when a module fails.
 
 .PARAMETER WhatIf
     Run Bicep what-if on each module without deploying.
@@ -94,7 +98,7 @@
 .NOTES
     Tooling: Azure CLI (all Azure API calls) + PowerShell 7+ (orchestration only).
     No Az PowerShell module is used.
-    Reference: https://github.com/your-org/azure-demo-environment
+    Reference: https://github.com/vegazbabz/azure-demo-environment
 #>
 [CmdletBinding()]
 param(

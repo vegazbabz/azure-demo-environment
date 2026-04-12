@@ -352,6 +352,7 @@ You can also deploy both side-by-side using different prefixes:
 | `-Mode` | string | `default` | `default` or `hardened` |
 | `-WhatIf` | switch | — | Run Bicep what-if on each module without actually deploying anything |
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
+| `-ContinueOnError` | switch | — | Continue deploying remaining modules even if one fails. Without this switch the script prompts interactively (or aborts in CI) when a module fails. |
 | `-SkipModules` | string[] | — | Module names to skip. Example: `-SkipModules containers,ai` |
 | `-EnableModules` | string[] | — | Module names to force-enable regardless of profile. Example: `-EnableModules sentinel` |
 | `-BudgetAlertEmail` | string | `""` | Email address for budget alert notifications. Overrides `budgetAlertEmail` in the profile. |
@@ -455,6 +456,7 @@ Minimal valid profile structure:
         "automationAccount": false,
         "budget": true,
         "budgetAmount": 50,
+        "budgetAlertEmail": "",
         "resourceLocks": false,
         "policyAssignments": false
       }
@@ -524,7 +526,7 @@ The deployment script warns you before deploying any expensive resources and sho
 ### Keeping costs low during testing
 
 - Use the `minimal` profile to start.
-- Enable `autoShutdown: true` — VMs are deallocated every evening at 19:00 UTC automatically.
+- Enable `enableAutoShutdown: true` — VMs are deallocated every evening at 19:00 UTC automatically.
 - Destroy the environment when not in use: `./scripts/destroy.ps1 -Prefix ade -Force`
 - Use [the cost dashboard](#cost-dashboard) to spot unexpected spend.
 
@@ -747,7 +749,8 @@ azure-demo-environment/
 │   │   ├── compute-only.json
 │   │   ├── databases-only.json
 │   │   ├── networking-only.json
-│   │   └── security-focus.json
+│   │   ├── security-focus.json
+│   │   └── hardened.json
 │   └── schema.json               JSON Schema for custom profile validation
 ├── data/
 │   ├── blob/                     Sample blob files for storage seeding
