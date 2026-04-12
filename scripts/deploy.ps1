@@ -1036,7 +1036,7 @@ foreach ($moduleName in $deploymentOrder) {
                                 schedule = @{ name = $link.Schedule }
                                 runbook  = @{ name = $link.Runbook }
                             }
-                        } | ConvertTo-Json -Compress
+                        } | ConvertTo-Json -Depth 5 -Compress
                         az rest --method PUT --url $jsUrl --body $jsBody --headers 'Content-Type=application/json' --output none
                         if ($LASTEXITCODE -eq 0) {
                             Write-AdeLog "Job schedule linked: $($link.Runbook) → $($link.Schedule)" -Level Success
