@@ -437,7 +437,34 @@ function Invoke-AdeBicepDeployment {
             # Prefer the inner details messages — they contain the actual failure reason
             # (e.g. VaultAlreadyExists). Fall back to the outer message if no details exist.
             $detailMsgs = @($err.details | Where-Object { $_.message } | ForEach-Object { "$($_.code): $($_.message)" })
-            if ($detailMsgs.Count -gt 0) { $detailMsgs -join ' | ' } else { $err.message }
+
+            # If all detail messages are the generic ResourceDeploymentFailure wrapper,
+            # the real reason is one level deeper in the deployment operations.
+            $nonGenericDetails = @($detailMsgs | Where-Object { $_ -notmatch '^ResourceDeploymentFailure' })
+            $allGeneric = $detailMsgs.Count -gt 0 -and $nonGenericDetails.Count -eq 0
+            if ($allGeneric -or $detailMsgs.Count -eq 0) {
+                $ops = Invoke-AzCmd -ArgumentList @(
+                    'deployment', 'operation', 'group', 'list',
+                    '--resource-group', $ResourceGroup,
+                    '--name',           $DeploymentName,
+                    '--output',         'json'
+                ) -Silent -AllowFailure
+                $opMsgs = @()
+                if ($ops) {
+                    $opMsgs = @($ops | Where-Object {
+                        $_.properties.provisioningState -eq 'Failed' -and
+                        $_.properties.statusMessage.error.message
+                    } | ForEach-Object {
+                        $opErr = $_.properties.statusMessage.error
+                        "$($opErr.code): $($opErr.message)"
+                    })
+                }
+                if ($opMsgs.Count -gt 0) { $opMsgs -join ' | ' }
+                elseif ($detailMsgs.Count -gt 0) { $detailMsgs -join ' | ' }
+                else { $err.message }
+            } else {
+                $detailMsgs -join ' | '
+            }
         } else { $depState }
         throw "Deployment '$DeploymentName' $depState`: $errMsg"
     }

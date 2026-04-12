@@ -812,4 +812,49 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $script:fakeBicep -DeploymentName 'dep' -PollIntervalSeconds 0 } |
             Should -Throw -ExpectedMessage "*Generic deployment failure*"
     }
+
+    It 'Throws with operation-level message when details are all generic ResourceDeploymentFailure wrappers' {
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') {
+                return [pscustomobject]@{
+                    properties = [pscustomobject]@{
+                        provisioningState = 'Failed'
+                        outputs           = $null
+                        error             = [pscustomobject]@{
+                            code    = 'DeploymentFailed'
+                            message = 'At least one resource deployment operation failed.'
+                            details = @(
+                                [pscustomobject]@{ code = 'ResourceDeploymentFailure'; message = 'The resource write operation failed to complete successfully, because it reached terminal provisioning state Failed.' }
+                            )
+                        }
+                    }
+                }
+            }
+            if ($ArgumentList -contains 'operation') {
+                # Return objects satisfying both the poll-loop (needs operationId + properties.provisioningState)
+                # and the error-path (needs properties.statusMessage.error)
+                return @(
+                    [pscustomobject]@{
+                        operationId = 'op-abc123'
+                        properties  = [pscustomobject]@{
+                            provisioningState    = 'Failed'
+                            provisioningOperation = 'Create'
+                            targetResource        = [pscustomobject]@{ resourceName = 'ade-postgres'; resourceType = 'Microsoft.DBforPostgreSQL/flexibleServers' }
+                            statusMessage         = [pscustomobject]@{
+                                error = [pscustomobject]@{
+                                    code    = 'LocationIsOfferRestricted'
+                                    message = "Subscriptions are restricted from provisioning in location 'westeurope'."
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            return $null
+        }
+
+        { Invoke-AdeBicepDeployment -ResourceGroup 'rg' -TemplatePath $script:fakeBicep -DeploymentName 'dep' -PollIntervalSeconds 0 } |
+            Should -Throw -ExpectedMessage "*LocationIsOfferRestricted*"
+    }
 }
