@@ -207,9 +207,10 @@ function Test-AdeProfile {
 
     Write-AdeLog "Validating profile: $($Profile.profileName)" -Level Info
 
-    # monitoring must be enabled if ANY other module is enabled
+    # monitoring must be enabled if ANY other module (except governance) is enabled.
+    # governance (Automation Account, budget, policy assignments) has no Log Analytics dependency.
     $anyNonMonitoring = $Profile.modules.PSObject.Properties |
-        Where-Object { $_.Name -ne 'monitoring' -and $_.Value.enabled -eq $true }
+        Where-Object { $_.Name -notin @('monitoring', 'governance') -and $_.Value.enabled -eq $true }
 
     if ($anyNonMonitoring -and $Profile.modules.monitoring.enabled -ne $true) {
         throw "Profile '$($Profile.profileName)': 'monitoring' must be enabled whenever any other module is enabled (Log Analytics is a shared dependency)."

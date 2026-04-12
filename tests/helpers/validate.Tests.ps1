@@ -87,6 +87,17 @@ Describe 'Test-AdeProfile' {
 
     Context 'Dependency violations — monitoring' {
 
+        It 'Allows governance-only deployment without monitoring (governance has no Log Analytics dependency)' {
+            $profile = [pscustomobject]@{
+                profileName = 'gov-only'
+                modules     = [pscustomobject]@{
+                    monitoring = [pscustomobject]@{ enabled = $false }
+                    governance = [pscustomobject]@{ enabled = $true }
+                }
+            }
+            { Test-AdeProfile -Profile $profile } | Should -Not -Throw
+        }
+
         It 'Throws when networking is enabled but monitoring is not' {
             $profile = [pscustomobject]@{
                 profileName = 'bad'
