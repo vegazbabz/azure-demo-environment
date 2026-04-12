@@ -55,6 +55,15 @@
         # New-EhSasToken (seed-data.ps1) and New-SucceededShowMock (test helper)
         # use New- prefix for clarity but neither modifies system state —
         # both are pure computation/factory helpers with no -WhatIf surface.
-        'PSUseShouldProcessForStateChangingFunctions'
+        'PSUseShouldProcessForStateChangingFunctions',
+
+        # Two intentional silent-swallow catch blocks:
+        #   deploy.ps1:927       — ConvertFrom-Json on az budget show output;
+        #                          parse failure simply means the budget is absent.
+        #   Get-AdeCostDashboard.ps1:126 — budget REST call is best-effort;
+        #                          the dashboard renders without cost alert data.
+        # In both cases Write-Error or throw would surface a false failure to
+        # the caller. The empty catch is the correct pattern here.
+        'PSAvoidUsingEmptyCatchBlock'
     )
 }
