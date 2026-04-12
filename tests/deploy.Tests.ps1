@@ -490,3 +490,23 @@ Describe 'deploy.ps1 – Bicep parameter contract (default mode)' -Tag 'unit' {
         )
     }
 }
+Describe 'deploy.ps1 – job schedule body serialisation' -Tag 'unit' {
+
+    It 'Uses ConvertTo-Json -Depth 5 (or greater) for jobSchedule body to avoid hashtable truncation' {
+        # Default ConvertTo-Json depth is 2. The jobSchedule body nests 3 levels:
+        # properties -> schedule/runbook -> name.
+        # Without -Depth >= 3 the inner @{name=...} serialises as "System.Collections.Hashtable"
+        # and ARM returns 400 Bad Request: "Model cannot be null."
+        $source = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
+        # Must NOT use plain ConvertTo-Json -Compress without -Depth in the jobSchedule section
+        $source | Should -Not -Match 'jobSchedules.*\r?\n.*ConvertTo-Json -Compress'
+        # Must use -Depth with a value >= 3
+        $source | Should -Match 'ConvertTo-Json -Depth [3-9]'
+    }
+
+    It 'jobSchedule PUT body contains schedule and runbook properties' {
+        $source = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
+        $source | Should -Match 'schedule\s*=\s*@\{'
+        $source | Should -Match 'runbook\s*=\s*@\{'
+    }
+}
