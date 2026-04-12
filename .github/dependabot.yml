@@ -14,7 +14,7 @@ updates:
       - "dependencies"
       - "github-actions"
     commit-message:
-      prefix: "chore(actions)"
+      prefix: "ci(actions)"
     groups:
       # Batch all action updates into a single PR per week
       github-actions:
