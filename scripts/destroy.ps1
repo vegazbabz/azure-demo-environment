@@ -159,6 +159,11 @@ if ($failedRgs.Count -gt 0) {
     exit 1
 }
 
+# Track KV purge background jobs so purging starts as soon as each vault becomes
+# soft-deleted — running in parallel with any still-deleting RGs.
+$kvPurgeJobs    = [System.Collections.Generic.List[pscustomobject]]::new()
+$kvPurgeStarted = [System.Collections.Generic.HashSet[string]]::new()
+
 if ($NoWait) {
     Write-AdeLog "Deletions running in background ($($allStarted.Count) RGs). Check status: az group list -o table" -Level Info
 } else {
@@ -176,6 +181,31 @@ if ($NoWait) {
         if ($remaining.Count -gt 0) {
             Write-AdeLog "Still deleting ($($remaining.Count) remaining): $($remaining -join ', ')" -Level Info
         }
+        # As soon as a vault appears in the soft-deleted registry, kick off its purge
+        # in the background so it runs in parallel with the remaining RG deletions.
+        $freshDeleted = az keyvault list-deleted --resource-type vault `
+            --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" `
+            -o tsv 2>$null
+        if ($freshDeleted) {
+            foreach ($kvLine in $freshDeleted) {
+                if (-not $kvLine) { continue }
+                $kvParts = $kvLine.Trim() -split '\t'
+                $kvName  = $kvParts[0]
+                $kvLoc   = if ($kvParts.Count -gt 1) { $kvParts[1] } else { '' }
+                if ($kvPurgeStarted.Contains($kvName)) { continue }
+                $null = $kvPurgeStarted.Add($kvName)
+                Write-AdeLog "Key Vault '$kvName' is soft-deleted — starting background purge in parallel..." -Level Warning
+                $kvNameArg = $kvName; $kvLocArg = $kvLoc
+                $kvJob = Start-Job -ScriptBlock {
+                    param($n, $loc)
+                    $a = @('keyvault', 'purge', '--name', $n, '--output', 'none')
+                    if ($loc) { $a += '--location'; $a += $loc }
+                    $null = & az @a 2>&1
+                    return $LASTEXITCODE
+                } -ArgumentList $kvNameArg, $kvLocArg
+                $kvPurgeJobs.Add([pscustomobject]@{ Job = $kvJob; Name = $kvName })
+            }
+        }
     }
     if ($remaining.Count -gt 0) {
         Write-AdeLog "Timed out waiting for: $($remaining -join ', ')" -Level Warning
@@ -192,22 +222,41 @@ if ($NoWait) {
 if (-not $NoWait -and $failedRgs.Count -eq 0) {
 
     # ── Key Vaults ──────────────────────────────────────────────────────────
-    Write-AdeLog "Purging any soft-deleted Key Vaults with prefix '$Prefix'..." -Level Info
-    $deletedVaults = az keyvault list-deleted --resource-type vault --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" -o tsv 2>$null
+    # Background purge jobs were started opportunistically during RG polling.
+    # Catch any vaults that only became soft-deleted after the last poll, then
+    # wait for all jobs and report results.
+    $deletedVaults = az keyvault list-deleted --resource-type vault `
+        --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" `
+        -o tsv 2>$null
     if ($deletedVaults) {
         foreach ($line in $deletedVaults) {
             if (-not $line) { continue }
-            $parts = ($line.Trim() -split '\t')
+            $parts         = ($line.Trim() -split '\t')
             $vaultName     = $parts[0]
             $vaultLocation = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            Write-AdeLog "Purging soft-deleted Key Vault: $vaultName (this can take several minutes)..." -Level Warning
-            $purgeArgs = @('keyvault', 'purge', '--name', $vaultName, '--output', 'none')
-            if ($vaultLocation) { $purgeArgs += '--location'; $purgeArgs += $vaultLocation }
-            az $purgeArgs 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "Key Vault purged: $vaultName. Safe to re-deploy immediately." -Level Success
+            if ($kvPurgeStarted.Contains($vaultName)) { continue }   # job already running
+            $null = $kvPurgeStarted.Add($vaultName)
+            Write-AdeLog "Starting purge of Key Vault: $vaultName (this can take several minutes)..." -Level Warning
+            $kvNameArg = $vaultName; $kvLocArg = $vaultLocation
+            $kvJob = Start-Job -ScriptBlock {
+                param($n, $loc)
+                $a = @('keyvault', 'purge', '--name', $n, '--output', 'none')
+                if ($loc) { $a += '--location'; $a += $loc }
+                $null = & az @a 2>&1
+                return $LASTEXITCODE
+            } -ArgumentList $kvNameArg, $kvLocArg
+            $kvPurgeJobs.Add([pscustomobject]@{ Job = $kvJob; Name = $vaultName })
+        }
+    }
+    if ($kvPurgeJobs.Count -gt 0) {
+        Write-AdeLog "Waiting for $($kvPurgeJobs.Count) Key Vault purge(s) to complete..." -Level Info
+        foreach ($kvEntry in $kvPurgeJobs) {
+            $kvExitCode = Receive-Job $kvEntry.Job -Wait
+            Remove-Job  $kvEntry.Job
+            if ($null -ne $kvExitCode -and [int]$kvExitCode -eq 0) {
+                Write-AdeLog "Key Vault purged: $($kvEntry.Name). Safe to re-deploy immediately." -Level Success
             } else {
-                Write-AdeLog "Could not purge '$vaultName' (non-fatal)." -Level Warning
+                Write-AdeLog "Could not purge '$($kvEntry.Name)' (non-fatal)." -Level Warning
             }
         }
     } else {
