@@ -739,10 +739,15 @@ foreach ($moduleName in $deploymentOrder) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
                     Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-                    Write-Host "║   AUTO-GENERATED VM PASSWORD : " -ForegroundColor Yellow -NoNewline
-                    Write-Host $pwPlain.PadRight(34) -ForegroundColor White -NoNewline
+                    Write-Host "║   AUTO-GENERATED ADMIN PASSWORD                                  ║" -ForegroundColor Yellow
+                    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
+                    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
                     Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   Save this now — it will not be shown again.                    ║" -ForegroundColor Yellow
+                    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
+                    Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
+                    Write-Host "║" -ForegroundColor Yellow
+                    Write-Host "║   This password is also used for SQL / PostgreSQL / MySQL.        ║" -ForegroundColor Yellow
+                    Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
                     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
                     Write-Host ""
                     $pwPlain = $null
@@ -805,6 +810,23 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
+                if ($script:_adePasswordWasGenerated -and $script:_adeModuleHadNewResources) {
+                    $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    Write-Host ""
+                    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+                    Write-Host "║   AUTO-GENERATED DATABASE ADMIN PASSWORD                         ║" -ForegroundColor Yellow
+                    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
+                    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
+                    Write-Host "║" -ForegroundColor Yellow
+                    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
+                    Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
+                    Write-Host "║" -ForegroundColor Yellow
+                    Write-Host "║   Pass this to seed-data.ps1 -DatabaseAdminPassword              ║" -ForegroundColor Yellow
+                    Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
+                    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+                    Write-Host ""
+                    $pwPlain = $null
+                }
             }
 
             # ── APP SERVICES ────────────────────────────────────────────────
