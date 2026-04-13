@@ -165,12 +165,11 @@ if ($seedAll -or $Modules -contains 'storage') {
     Write-AdeSection "Seeding: Blob Storage"
 
     $storageRg   = "$Prefix-storage-rg"
-    # az resource list returns [0] alphabetically — the Data Lake account (isHnsEnabled=true,
-    # name contains 'dl') can sort before the GP v2 account and lacks the 'data'/'logs'/'public'
-    # containers. Filter to the non-HNS account explicitly.
+    # isHnsEnabled is NULL (not false) on GP v2 accounts when HNS was never enabled.
+    # JMESPath `==\`false\`` does not match null — use `!=\`true\`` to catch both null and false.
     $rawAcct     = az storage account list `
         --resource-group $storageRg `
-        --query '[?isHnsEnabled==`false`].name | [0]' `
+        --query '[?isHnsEnabled!=`true`].name | [0]' `
         -o tsv 2>$null
     $accountName = if ($rawAcct) { $rawAcct.Trim() } else { '' }
 
@@ -622,15 +621,16 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         # Requires Key Vault Certificates Officer (or Administrator) on the vault.
         # Policy: Self-signed, RSA 2048, CN=ade-demo, 12-month validity, server+client EKU.
         $selfSignedPolicy = '{"issuerParameters":{"name":"Self"},"keyProperties":{"exportable":true,"keySize":2048,"keyType":"RSA","reuseKey":false},"lifetimeActions":[{"action":{"actionType":"AutoRenew"},"trigger":{"daysBeforeExpiry":90}}],"secretProperties":{"contentType":"application/x-pkcs12"},"x509CertificateProperties":{"ekus":["1.3.6.1.5.5.7.3.1","1.3.6.1.5.5.7.3.2"],"keyUsage":["digitalSignature","keyEncipherment"],"subject":"CN=ade-demo","validityInMonths":12}}'
-        az keyvault certificate create `
+        $certErr = az keyvault certificate create `
             --vault-name $vaultName `
             --name 'demo-tls-cert' `
             --policy $selfSignedPolicy `
-            --output none 2>$null
+            --output none 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-AdeLog "Certificate created: demo-tls-cert (self-signed, CN=ade-demo, RSA 2048)" -Level Success
         } else {
-            Write-AdeLog "Certificate 'demo-tls-cert' could not be created — ensure Key Vault Certificates Officer role is assigned." -Level Warning
+            $certErrMsg = ($certErr | Out-String).Trim()
+            Write-AdeLog "Certificate 'demo-tls-cert' could not be created: $certErrMsg" -Level Warning
         }
     }
 }

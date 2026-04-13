@@ -1097,6 +1097,29 @@ foreach ($mod in $deploymentOrder) {
 Write-Host ""
 Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to view costs and resource status." -Level Info
 Write-AdeLog "Run './scripts/destroy.ps1 -Prefix $Prefix' to tear down the entire environment." -Level Warning
+
+# ─── Admin password reminder ──────────────────────────────────────────────────
+# Print once more in the summary so it is visible even when the compute banner
+# scrolled away. Only shown when -AutoGeneratePassword was used and at least one
+# password-bearing module (compute / databases / data) was deployed.
+$pwModulesDeployed = $deploymentOrder | Where-Object { $_ -in @('compute', 'databases', 'data') }
+if ($script:_adePasswordWasGenerated -and $pwModulesDeployed -and $state.adminPassword) {
+    $pwSummary = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+    Write-Host ""
+    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "║   ADMIN PASSWORD (compute / databases / data)                    ║" -ForegroundColor Yellow
+    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
+    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
+    Write-Host "║" -ForegroundColor Yellow
+    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
+    Write-Host $pwSummary.PadRight(52) -ForegroundColor White -NoNewline
+    Write-Host "║" -ForegroundColor Yellow
+    Write-Host "║   Use -DatabaseAdminPassword with seed-data.ps1 to seed DBs.     ║" -ForegroundColor Yellow
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+    Write-Host ""
+    $pwSummary = $null
+}
+
 if ($failedModules.Count -gt 0) {
     exit 1
 }

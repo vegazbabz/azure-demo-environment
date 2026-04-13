@@ -397,11 +397,11 @@ Describe 'seed-data.ps1 – source analysis' -Tag 'unit' {
         $script:seedSource | Should -Match 'throw'
     }
 
-    It 'Discovers GP v2 storage account by filtering isHnsEnabled==false (avoids Data Lake account)' {
-        # az resource list [0] can return the Data Lake account (same resource type, name sorts first).
-        # The fix uses az storage account list with an isHnsEnabled filter.
+    It 'Discovers GP v2 storage account using isHnsEnabled!=true (null is not false in JMESPath)' {
+        # isHnsEnabled is NULL (not false) on GP v2 accounts — ==`false` never matches.
+        # Must use !=`true` to also match accounts where the property is absent/null.
         $script:seedSource | Should -Match 'storage account list'
-        $script:seedSource | Should -Match 'isHnsEnabled'
+        $script:seedSource | Should -Match 'isHnsEnabled!=.true.'
     }
 
     It 'Checks LASTEXITCODE after blob upload to detect silent container-not-found failures' {
@@ -415,5 +415,12 @@ Describe 'seed-data.ps1 – source analysis' -Tag 'unit' {
         # top-level field; querying properties.endpoint always returns null.
         $script:seedSource | Should -Match "query 'endpoint'"
         $script:seedSource | Should -Not -Match "query 'properties\.endpoint'"
+    }
+
+    It 'Captures cert creation stderr so the real error is shown in the warning' {
+        # Previously 2>$null swallowed the actual error message making diagnosis impossible.
+        # Fix: redirect 2>&1 and include output in the warning log.
+        $script:seedSource | Should -Match 'certificate create'
+        $script:seedSource | Should -Match 'certErrMsg'
     }
 }
