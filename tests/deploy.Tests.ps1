@@ -107,6 +107,23 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         $script:source | Should -Match 'ADMIN PASSWORD'
         $script:source | Should -Match 'Use -DatabaseAdminPassword with seed-data'
     }
+
+    It 'Shows a mid-deployment banner after the compute module with the correct messaging' {
+        # Banner should note that the same password is used for databases, and that
+        # it will be shown again — the old "will not be shown again" text was wrong.
+        $script:source | Should -Match 'AUTO-GENERATED ADMIN PASSWORD'
+        $script:source | Should -Match 'also used for SQL'
+        $script:source | Should -Match 'shown again in the deployment summary'
+        $script:source | Should -Not -Match 'will not be shown again'
+    }
+
+    It 'Shows a mid-deployment banner after the databases module with DatabaseAdminPassword hint' {
+        # When deploying databases without compute the compute banner does not fire.
+        # A dedicated databases banner ensures the password is always visible mid-deploy.
+        $script:source | Should -Match 'AUTO-GENERATED DATABASE ADMIN PASSWORD'
+        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,800}DATABASE ADMIN PASSWORD'
+        $script:source | Should -Match 'DatabaseAdminPassword'
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
