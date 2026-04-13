@@ -620,12 +620,28 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         # ─── Certificate: self-signed TLS demo certificate ────────────────────────
         # Requires Key Vault Certificates Officer (or Administrator) on the vault.
         # Policy: Self-signed, RSA 2048, CN=ade-demo, 12-month validity, server+client EKU.
-        $selfSignedPolicy = '{"issuerParameters":{"name":"Self"},"keyProperties":{"exportable":true,"keySize":2048,"keyType":"RSA","reuseKey":false},"lifetimeActions":[{"action":{"actionType":"AutoRenew"},"trigger":{"daysBeforeExpiry":90}}],"secretProperties":{"contentType":"application/x-pkcs12"},"x509CertificateProperties":{"ekus":["1.3.6.1.5.5.7.3.1","1.3.6.1.5.5.7.3.2"],"keyUsage":["digitalSignature","keyEncipherment"],"subject":"CN=ade-demo","validityInMonths":12}}'
+        # NOTE: Passing JSON via --policy inline on Windows PowerShell causes double-quote
+        #       stripping before az CLI receives it. Write to a temp file and use @path instead.
+        $selfSignedPolicy = @{
+            issuerParameters = @{ name = 'Self' }
+            keyProperties    = @{ exportable = $true; keySize = 2048; keyType = 'RSA'; reuseKey = $false }
+            lifetimeActions  = @(@{ action = @{ actionType = 'AutoRenew' }; trigger = @{ daysBeforeExpiry = 90 } })
+            secretProperties = @{ contentType = 'application/x-pkcs12' }
+            x509CertificateProperties = @{
+                ekus    = @('1.3.6.1.5.5.7.3.1', '1.3.6.1.5.5.7.3.2')
+                keyUsage = @('digitalSignature', 'keyEncipherment')
+                subject  = 'CN=ade-demo'
+                validityInMonths = 12
+            }
+        } | ConvertTo-Json -Depth 6 -Compress
+        $certPolicyFile = Join-Path ([System.IO.Path]::GetTempPath()) 'ade-cert-policy.json'
+        $selfSignedPolicy | Set-Content -Path $certPolicyFile -Encoding UTF8
         $certErr = az keyvault certificate create `
             --vault-name $vaultName `
             --name 'demo-tls-cert' `
-            --policy $selfSignedPolicy `
+            --policy "@$certPolicyFile" `
             --output none 2>&1
+        Remove-Item $certPolicyFile -Force -ErrorAction SilentlyContinue
         if ($LASTEXITCODE -eq 0) {
             Write-AdeLog "Certificate created: demo-tls-cert (self-signed, CN=ade-demo, RSA 2048)" -Level Success
         } else {
