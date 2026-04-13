@@ -423,4 +423,13 @@ Describe 'seed-data.ps1 – source analysis' -Tag 'unit' {
         $script:seedSource | Should -Match 'certificate create'
         $script:seedSource | Should -Match 'certErrMsg'
     }
+
+    It 'Passes KV certificate policy via temp file (@path) not inline to avoid PowerShell quote stripping' {
+        # Passing JSON inline via --policy on Windows PowerShell strips double quotes before
+        # az CLI receives the string, causing "Failed to parse string as JSON".
+        # Fix: write policy to a temp file and use --policy "@filepath".
+        $script:seedSource | Should -Match 'certPolicyFile'
+        $script:seedSource | Should -Match '@\$certPolicyFile'
+        $script:seedSource | Should -Not -Match "--policy '\{" -Because 'inline JSON string must not be used'
+    }
 }
