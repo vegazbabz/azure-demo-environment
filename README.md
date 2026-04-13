@@ -25,6 +25,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 - [All deploy.ps1 parameters](#all-deployps1-parameters)
 - [Tearing down](#tearing-down)
 - [Custom profiles](#custom-profiles)
+- [Known limitations](#known-limitations)
 - [Scripts reference](#scripts-reference)
 - [Cost guidance](#cost-guidance)
 - [Seed data](#seed-data)
@@ -165,7 +166,7 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 | `minimal` | monitoring, networking, security, compute (Windows VM), storage, governance | ~$15–30/month | First run, orientation, low-cost baseline |
 | `compute-only` | monitoring, networking, security, compute (Windows + Linux + VMSS), governance | ~$60–100/month | CIS Compute sections, VM hardening testing |
 | `networking-only` | monitoring, networking (+ App Gateway), governance | ~$200–300/month | Network topology and connectivity testing |
-| `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB + PostgreSQL + MySQL), governance | ~$80–150/month | Database benchmark testing |
+| `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB + PostgreSQL), governance | ~$80–150/month | Database benchmark testing |
 | `security-focus` | monitoring, networking, security (+ Defender + Sentinel), compute (Windows + Linux), storage, databases (SQL only), governance (+ locks) | ~$100–200/month | Security posture and Defender coverage testing |
 | `full` | All 12 modules (ai and data excluded) | ~$300–500/month | Complete CIS/MCSB coverage |
 | `hardened` | All 12 modules with all hardening flags enabled | ~$300–500/month | CIS v5.0.0/MCSB-aligned end-to-end hardened environment |
@@ -213,6 +214,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `managedIdentity` | `true` | User-assigned Managed Identity used by other modules |
 | `defenderForCloud` | varies | All Defender plans (Servers, Databases, Storage, AppServices, Containers, KeyVault, DNS) |
 | `sentinel` | varies | Microsoft Sentinel (requires Log Analytics Workspace) |
+| `allowedCidrRanges` | `[]` | IP/CIDR ranges permitted through the Key Vault firewall. Empty = no network rule (Azure default — open to all). |
 
 ### `compute`
 
@@ -221,7 +223,9 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `windowsVm` | `true` | Windows Server 2022 VM |
 | `linuxVm` | `false` | Ubuntu 22.04 LTS VM — opt-in only |
 | `vmss` | `false` | VM Scale Set |
+| `availabilitySet` | `true` | Deploy an Availability Set for the VMs |
 | `enableAutoShutdown` | varies per profile | Daily auto-shutdown at 19:00 UTC (saves cost) |
+| `enableBootDiagnostics` | `true` | Boot diagnostics (managed storage). Useful for diagnosing failed VM starts. |
 | `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
 | `domainController` | `false` | Deploy an Active Directory Domain Controller (Windows Server 2022). Installs AD DS and promotes the VM to a forest root DC. Static IP `10.0.15.4` in the management subnet. VNet DNS is automatically pointed at the DC when enabled. |
 | `domainName` | `""` | FQDN for the AD forest (e.g. `corp.contoso.local`). Defaults to `<prefix>.local` when left empty. |
@@ -235,6 +239,7 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | `dataLakeGen2` | varies | Hierarchical namespace (ADLS Gen2) storage account |
 | `enableSoftDelete` | `false` | Blob soft delete (7-day retention) |
 | `enableVersioning` | `false` | Blob versioning (independent of soft delete) |
+| `allowedCidrRanges` | `[]` | IP/CIDR ranges permitted through the storage account firewall. Empty = no network rule (Azure default — open to all). |
 
 ### `databases`
 
@@ -242,16 +247,18 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | --- | --- | --- |
 | `sqlDatabase` | `true` | Azure SQL Server + Serverless Database (AdventureWorksLT) |
 | `sqlVm` | `false` | SQL Server 2022 on a Windows VM (IaaS) — opt-in only |
-| `cosmosDb` | `false` | Cosmos DB (NoSQL, serverless) — opt-in only |
-| `postgresql` | `false` | PostgreSQL Flexible Server — opt-in only |
+| `cosmosDb` | `true` | Cosmos DB (NoSQL, serverless) |
+| `postgresql` | `true` | PostgreSQL Flexible Server |
 | `mysql` | `false` | MySQL Flexible Server — opt-in only |
-| `redis` | `false` | Redis Cache — opt-in only |
+| `redis` | `false` | Redis Cache (~$16/month Basic C0) — opt-in only |
+| `sqlManagedInstance` | `false` | Azure SQL Managed Instance (~$1,000+/month) — opt-in only, very expensive |
 
 ### `appservices`
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
+| `linuxWebApp` | `false` | Linux Web App — opt-in only |
 | `functionApp` | `true` | Function App (Consumption plan) |
 | `logicApp` | `true` | Logic App (Standard) |
 
@@ -290,7 +297,7 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `dataFactory` | `true` | Azure Data Factory with a sample linked service to the storage module |
+| `dataFactory` | `false` | Azure Data Factory with a sample linked service to the storage module |
 | `synapse` | `false` | Azure Synapse Analytics workspace (costs vary by usage) |
 | `databricks` | `false` | Azure Databricks workspace (costs vary by cluster usage) |
 | `purview` | `false` | Microsoft Purview account (~$50+/month) |
@@ -395,6 +402,17 @@ You can also deploy both side-by-side using different prefixes:
 ./scripts/destroy.ps1 -Prefix ade -NoWait -Force
 ```
 
+### destroy.ps1 parameters
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-Prefix` | string | `ade` | ADE prefix used at deploy time. Matches resource groups named `<prefix>-*-rg` that carry the `managedBy=ade` tag. |
+| `-Modules` | string[] | all | Specific modules to destroy. Example: `-Modules compute,containers` |
+| `-SubscriptionId` | string | current account | Target subscription |
+| `-NoWait` | switch | — | Delete resource groups asynchronously (faster, no per-group error confirmation) |
+| `-Force` | switch | — | Skip all confirmation prompts |
+| `-LogFile` | string | — | Path for a plain-text log file |
+
 The destroy script:
 
 1. Removes any resource locks on matching resource groups first.
@@ -486,13 +504,32 @@ To enable Cosmos DB and PostgreSQL in your custom profile's databases module:
 
 ---
 
+## Known limitations
+
+The following constraints are by design and cannot be changed via flags or parameters:
+
+| Area | Limitation |
+| --- | --- |
+| **Network topology** | VNet address space is fixed at `10.0.0.0/16`. All subnets are pre-allocated and cannot be resized or renamed without editing the Bicep directly. |
+| **Single region** | Each ADE deployment targets one Azure region. Multi-region is not supported. |
+| **One instance per module** | Each module deploys exactly one resource group per prefix. You cannot, for example, deploy two separate SQL modules to the same prefix. Use different prefixes for parallel environments. |
+| **Feature flags are JSON-only** | There is no CLI flag to override a single feature flag (e.g. `mysql: true`) without editing the profile JSON. `-EnableModules` / `-SkipModules` toggle whole modules on/off, not individual features. |
+| **Hardened mode seeding** | In `hardened` mode, SQL, PostgreSQL, and MySQL are behind private endpoints. `seed-data.ps1` must run from inside the VNet (Bastion or jump VM) to reach those databases. |
+| **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. |
+| **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
+| **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
+| **Governance module and monitoring** | The `governance` module requires `monitoring` to also be enabled when deploying a full environment. Deploying `governance` alone (without monitoring) is supported but Automation Account runbooks will lack a Log Analytics workspace destination. |
+| **`ai` and `data` not in any built-in profile** | Neither `ai` nor `data` modules are enabled in any built-in profile. Use a custom profile to enable them. |
+
+---
+
 ## Scripts reference
 
 | Script | Purpose |
 | --- | --- |
 | `scripts/deploy.ps1` | Main deployment orchestrator. See [All deploy.ps1 parameters](#all-deployps1-parameters). |
 | `scripts/destroy.ps1` | Deletes all ADE resource groups for a given prefix. |
-| `scripts/seed-data.ps1` | Seeds SQL, Cosmos DB, Blob storage, and Key Vault secrets after deployment. Called automatically by `deploy.ps1` when `seedDummyData: true` in the profile. |
+| `scripts/seed-data.ps1` | Seeds 13 resource targets (Blob, Queue, Table, File Share, Cosmos DB, SQL, PostgreSQL, MySQL, Redis, Key Vault, Service Bus, Event Hub, Event Grid) after deployment. Called automatically by `deploy.ps1` when `seedDummyData: true` in the profile. See [Seed data](#seed-data). |
 | `scripts/helpers/common.ps1` | Shared logging, Azure CLI wrappers, and utility functions. Sourced by all other scripts. Not meant to be called directly. |
 | `scripts/helpers/validate.ps1` | Pre-deployment validation: checks Azure CLI login, subscription access, resource group name availability, and expensive-resource warnings. |
 | `scripts/runbooks/Start-AdeResources.ps1` | Automation Account runbook — starts all ADE-tagged VMs and scale sets. |
@@ -538,17 +575,35 @@ When `seedDummyData: true` is set in a profile (or when the `seed_data` input is
 
 What gets seeded:
 
-| Target | Data |
-| --- | --- |
-| Azure Blob Storage | Sample text and JSON files (`data/blob/`) |
-| Cosmos DB | Sample JSON documents (`data/cosmos/`) |
-| Azure SQL | AdventureWorksLT sample database (built into the SQL resource itself — no script required) |
-| Key Vault | Demo secrets for connection strings (read by the web app at runtime) |
+| Target | Data | Notes |
+| --- | --- | --- |
+| Blob Storage | Sample JSON and CSV files (`data/blob/`) uploaded to `data`, `logs`, `public` containers | — |
+| Storage Queue | `demo-tasks` queue with sample task messages | — |
+| Storage Table | `demotable` with sample device and config entities | — |
+| Storage File Share | `welcome.txt` uploaded to the provisioned share | — |
+| Cosmos DB | Sample order documents from `data/cosmos/` | — |
+| Azure SQL | AdventureWorksLT sample database (built into the resource — no script needed) | Requires `-DatabaseAdminPassword` |
+| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Requires `-DatabaseAdminPassword` |
+| MySQL | `demo_events` + `demo_devices` tables with sample rows | Requires `-DatabaseAdminPassword` |
+| Redis Cache | Demo keys set via TLS RESP connection | — |
+| Key Vault | Demo secrets, RSA 2048 encryption key, and self-signed TLS certificate | Requires Key Vault Administrator role |
+| Service Bus | Test messages sent to the `orders` queue | — |
+| Event Hub | Telemetry events sent to the `telemetry` hub via REST | — |
+| Event Grid | Demo events published to the custom topic | — |
 
-You can also run the seed script manually against an already-deployed environment:
+> [!NOTE]
+> **Hardened-mode environments:** SQL, PostgreSQL, and MySQL are deployed behind private endpoints in `hardened` mode. Seeding requires running `seed-data.ps1` from within the VNet — for example, via Bastion or a jump VM. Seeding from a public workstation will result in connection timeouts for those three targets.
+
+SQL, PostgreSQL, and MySQL seed blocks are skipped automatically when `-DatabaseAdminPassword` is not provided. All other targets are seeded without credentials.
+
+You can run the seed script manually against an already-deployed environment:
 
 ```powershell
-./scripts/seed-data.ps1 -Prefix ade -SubscriptionId "<sub-id>"
+# Seed all targets
+./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword (Read-Host -AsSecureString 'DB password')
+
+# Seed only specific targets
+./scripts/seed-data.ps1 -Prefix ade -Modules storage,redis,keyvault -Force
 ```
 
 ---
@@ -610,7 +665,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **547 passing, 0 failing, 0 skipped**.
+Current state: **569 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -953,7 +1008,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (547 passing, 0 failing, 0 skipped)
+tests/              # Pester 5 unit tests (569 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 
