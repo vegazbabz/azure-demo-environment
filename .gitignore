@@ -8,6 +8,12 @@ docs/test-plan.md
 # ── Test output ───────────────────────────────────────────────────────────────
 tests/results/
 
+# ── CIS audit tool runtime outputs ───────────────────────────────────────────
+reports/
+cis_checkpoints/
+audit-debug.txt
+debug-tb.txt
+
 # ── Local environment / secrets ───────────────────────────────────────────────
 .env
 .env.*
