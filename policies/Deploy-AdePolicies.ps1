@@ -77,15 +77,29 @@ foreach ($defFile in $definitions) {
 
     Write-Step "az policy definition create: $name"
 
-    az policy definition create `
-        --subscription  $SubscriptionId `
-        --name          $name `
-        --display-name  $rawJson.properties.displayName `
-        --description   $rawJson.properties.description `
-        --mode          $rawJson.properties.mode `
-        --rules         (ConvertTo-Json $rawJson.properties.policyRule -Depth 20 -Compress) `
-        --params        (ConvertTo-Json $rawJson.properties.parameters  -Depth 20 -Compress) `
-        --output none
+    # Pass policyRule and parameters via temp files — inline JSON arguments lose
+    # double-quotes on Windows PowerShell 7.0-7.2 before az CLI receives them
+    # (same quoting issue fixed in PR #106 for az keyvault certificate create).
+    $rulesFile  = [System.IO.Path]::GetTempFileName() + '.json'
+    $paramsFile = [System.IO.Path]::GetTempFileName() + '.json'
+    try {
+        $rawJson.properties.policyRule | ConvertTo-Json -Depth 20 -Compress |
+            Set-Content -Path $rulesFile  -Encoding utf8NoBOM
+        $rawJson.properties.parameters | ConvertTo-Json -Depth 20 -Compress |
+            Set-Content -Path $paramsFile -Encoding utf8NoBOM
+
+        az policy definition create `
+            --subscription  $SubscriptionId `
+            --name          $name `
+            --display-name  $rawJson.properties.displayName `
+            --description   $rawJson.properties.description `
+            --mode          $rawJson.properties.mode `
+            --rules         "@$rulesFile" `
+            --params        "@$paramsFile" `
+            --output none
+    } finally {
+        Remove-Item $rulesFile, $paramsFile -Force -ErrorAction SilentlyContinue
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Failed to create policy definition: $name"
@@ -107,14 +121,26 @@ $initiative = $initiativeJson | ConvertFrom-Json
 
 Write-Step "az policy set-definition create: $($initiative.name)"
 
-az policy set-definition create `
-    --subscription    $SubscriptionId `
-    --name            $initiative.name `
-    --display-name    $initiative.properties.displayName `
-    --description     $initiative.properties.description `
-    --definitions     (ConvertTo-Json $initiative.properties.policyDefinitions -Depth 20 -Compress) `
-    --params          (ConvertTo-Json $initiative.properties.parameters         -Depth 20 -Compress) `
-    --output none
+# Same Windows JSON-quoting fix — pass definitions and parameters via temp files.
+$defsFile    = [System.IO.Path]::GetTempFileName() + '.json'
+$iParamsFile = [System.IO.Path]::GetTempFileName() + '.json'
+try {
+    $initiative.properties.policyDefinitions | ConvertTo-Json -Depth 20 -Compress |
+        Set-Content -Path $defsFile    -Encoding utf8NoBOM
+    $initiative.properties.parameters        | ConvertTo-Json -Depth 20 -Compress |
+        Set-Content -Path $iParamsFile -Encoding utf8NoBOM
+
+    az policy set-definition create `
+        --subscription    $SubscriptionId `
+        --name            $initiative.name `
+        --display-name    $initiative.properties.displayName `
+        --description     $initiative.properties.description `
+        --definitions     "@$defsFile" `
+        --params          "@$iParamsFile" `
+        --output none
+} finally {
+    Remove-Item $defsFile, $iParamsFile -Force -ErrorAction SilentlyContinue
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Failed to create initiative."
