@@ -905,6 +905,12 @@ foreach ($moduleName in $deploymentOrder) {
                     serviceBusDnsZoneId     = $state.serviceBusDnsZoneId
                     eventHubDnsZoneId       = $state.eventHubDnsZoneId
                 }
+                # Warn when APIM is enabled but the publisher email is still the placeholder.
+                # APIM provisioning succeeds with a placeholder, but notification emails won't work.
+                $apimEnabled = (Get-FeatureFlag -Features $intFeatures -Name 'apiManagement') -eq $true
+                if ($apimEnabled -and $params['apimPublisherEmail'] -eq 'admin@example.com') {
+                    Write-AdeLog "APIM publisherEmail is still 'admin@example.com' (placeholder). Set integration.features.apimPublisherEmail in your profile to receive APIM notifications." -Level Warning
+                }
                 $outputs = Deploy-AdeModule -ModuleName 'integration' -BicepFile $bicep -Parameters $params
                 $state.serviceBusId   = Get-AdeDeploymentOutput $outputs 'serviceBusId'
                 $state.eventHubId     = Get-AdeDeploymentOutput $outputs 'eventHubNamespaceId'
