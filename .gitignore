@@ -1,12 +1,19 @@
 # ── Internal QA / pre-release docs (not for public distribution) ─────────────
 docs/pre-release-checklist.md
 docs/test-plan.md
+docs/qa-review.md
 
 # ── PDFs (e.g. CIS Benchmark — redistribute separately) ──────────────────────
 *.pdf
 
 # ── Test output ───────────────────────────────────────────────────────────────
 tests/results/
+
+# ── CIS audit tool runtime outputs ───────────────────────────────────────────
+reports/
+cis_checkpoints/
+audit-debug.txt
+debug-tb.txt
 
 # ── Local environment / secrets ───────────────────────────────────────────────
 .env
