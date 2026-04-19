@@ -258,12 +258,14 @@ jobs:
         if: ${{ github.event.inputs.seed_data == 'true' && steps.deploy.outcome == 'success' }}
         shell: pwsh
         env:
-          ADE_PREFIX:       ${{ env.INPUT_PREFIX }}
-          ADE_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_PREFIX:         ${{ env.INPUT_PREFIX }}
+          ADE_SUBSCRIPTION:   ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ADE_ADMIN_PASSWORD: ${{ secrets.ADE_ADMIN_PASSWORD }}
         run: |
           ./scripts/seed-data.ps1 `
-            -Prefix         $env:ADE_PREFIX `
-            -SubscriptionId $env:ADE_SUBSCRIPTION `
+            -Prefix                $env:ADE_PREFIX `
+            -SubscriptionId        $env:ADE_SUBSCRIPTION `
+            -DatabaseAdminPassword (ConvertTo-SecureString $env:ADE_ADMIN_PASSWORD -AsPlainText -Force) `
             -Force
 
       - name: Write job summary
