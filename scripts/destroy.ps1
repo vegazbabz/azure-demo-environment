@@ -195,14 +195,16 @@ if ($NoWait) {
                 if ($kvPurgeStarted.Contains($kvName)) { continue }
                 $null = $kvPurgeStarted.Add($kvName)
                 Write-AdeLog "Key Vault '$kvName' is soft-deleted — starting background purge in parallel..." -Level Warning
-                $kvNameArg = $kvName; $kvLocArg = $kvLoc
+                $kvNameArg = $kvName
+                $kvLocArg  = $kvLoc
                 $kvJob = Start-Job -ScriptBlock {
-                    param($n, $loc)
+                    $n = $using:kvNameArg
+                    $loc = $using:kvLocArg
                     $a = @('keyvault', 'purge', '--name', $n, '--output', 'none')
                     if ($loc) { $a += '--location'; $a += $loc }
                     $null = & az @a 2>&1
                     return $LASTEXITCODE
-                } -ArgumentList $kvNameArg, $kvLocArg
+                }
                 $kvPurgeJobs.Add([pscustomobject]@{ Job = $kvJob; Name = $kvName })
             }
         }
@@ -237,14 +239,16 @@ if (-not $NoWait -and $failedRgs.Count -eq 0) {
             if ($kvPurgeStarted.Contains($vaultName)) { continue }   # job already running
             $null = $kvPurgeStarted.Add($vaultName)
             Write-AdeLog "Starting purge of Key Vault: $vaultName (this can take several minutes)..." -Level Warning
-            $kvNameArg = $vaultName; $kvLocArg = $vaultLocation
+            $kvNameArg = $vaultName
+            $kvLocArg  = $vaultLocation
             $kvJob = Start-Job -ScriptBlock {
-                param($n, $loc)
+                $n = $using:kvNameArg
+                $loc = $using:kvLocArg
                 $a = @('keyvault', 'purge', '--name', $n, '--output', 'none')
                 if ($loc) { $a += '--location'; $a += $loc }
                 $null = & az @a 2>&1
                 return $LASTEXITCODE
-            } -ArgumentList $kvNameArg, $kvLocArg
+            }
             $kvPurgeJobs.Add([pscustomobject]@{ Job = $kvJob; Name = $vaultName })
         }
     }

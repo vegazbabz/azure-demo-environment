@@ -140,6 +140,25 @@ jobs:
           fi
           echo "✓ prefix='$ADE_PREFIX' location='$ADE_LOCATION' — format OK"
 
+      - name: Validate skip_modules input
+        # Ensures each comma-separated module name is from the known set so
+        # a typo is surfaced as a CI error rather than silently skipped.
+        # Mirrors the equivalent validation step in destroy.yml.
+        if: ${{ github.event.inputs.skip_modules != '' }}
+        env:
+          ADE_SKIP_MODULES: ${{ github.event.inputs.skip_modules }}
+        run: |
+          VALID="monitoring networking security compute storage databases appservices containers integration ai data governance"
+          IFS=',' read -ra MODS <<< "$ADE_SKIP_MODULES"
+          for mod in "${MODS[@]}"; do
+            mod="${mod// /}"
+            if [[ ! " $VALID " =~ " $mod " ]]; then
+              echo "::error::Unknown module '$mod' in skip_modules. Valid modules: $VALID"
+              exit 1
+            fi
+          done
+          echo "✓ skip_modules='$ADE_SKIP_MODULES' — all valid"
+
 # ─── Job 2: Deploy (manual trigger only) ─────────────────────────────────────
   deploy:
     name: Deploy — ${{ github.event.inputs.profile }} @ ${{ github.event.inputs.location }}
