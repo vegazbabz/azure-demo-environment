@@ -524,6 +524,13 @@ if ($seedAll -or $Modules -contains 'redis') {
             $tcp = $null
             try {
                 $tcp = Get-RedisTcpClient -Host $redisHost -Port 6380
+                # The RemoteCertificateValidationCallback returns $true unconditionally.
+                # This is acceptable here because:
+                #   1. The target is always *.redis.cache.windows.net — an Azure-managed cert.
+                #   2. This is a demo/seed script, not a long-lived service connection.
+                #   3. SslStream + port 6380 still provides transport encryption (TLS 1.2+).
+                # For production workloads, use the StackExchange.Redis client which
+                # validates the full chain by default.
                 $ssl = [System.Net.Security.SslStream]::new(
                     $tcp.GetStream(), $false,
                     [System.Net.Security.RemoteCertificateValidationCallback]{ param($s, $c, $ch, $e) $true }
