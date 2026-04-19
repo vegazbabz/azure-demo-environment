@@ -1,6 +1,7 @@
 # ── Internal QA / pre-release docs (not for public distribution) ─────────────
 docs/pre-release-checklist.md
 docs/test-plan.md
+docs/qa-review.md
 
 # ── PDFs (e.g. CIS Benchmark — redistribute separately) ──────────────────────
 *.pdf
