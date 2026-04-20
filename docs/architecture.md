@@ -59,10 +59,21 @@ monitoring
 | `databases` | `{prefix}-databases-rg` | Azure SQL, Cosmos DB, PostgreSQL, MySQL, Redis |
 | `appservices` | `{prefix}-appservices-rg` | App Service Plan, Web App, Function App |
 | `containers` | `{prefix}-containers-rg` | AKS, Container Registry |
+| *(AKS node RG)* | `MC_{prefix}-containers-rg_{prefix}-aks_{region}` | **Auto-created by Azure** — see note below |
 | `integration` | `{prefix}-integration-rg` | Service Bus, Event Hub, API Management |
 | `ai` | `{prefix}-ai-rg` | OpenAI, Cognitive Services |
 | `data` | `{prefix}-data-rg` | Data Factory, Synapse, Databricks |
 | `governance` | `{prefix}-governance-rg` | Budgets, Policy Assignments, Activity Alerts |
+
+> **AKS node resource group:** When the `containers` module deploys an AKS cluster, the Azure AKS
+> resource provider **automatically creates a second resource group** named
+> `MC_<resourceGroup>_<clusterName>_<region>` (e.g. `MC_adetest-containers-rg_adetest-aks_swedencentral`).
+> This group holds the underlying node VMs, VMSS, disks, and NICs that AKS manages.
+> It does **not** follow the ADE `{prefix}-*-rg` convention because it is created and owned by the
+> Azure platform, not by this repo. Do not modify or delete it manually — AKS controls it.
+> `destroy.ps1` automatically discovers and deletes it via `az aks show --query nodeResourceGroup`
+> when the `containers` module is torn down.
+> See [Microsoft docs — Why are two resource groups created with AKS?](https://learn.microsoft.com/en-us/azure/aks/faq#why-are-two-resource-groups-created-with-aks-)
 
 ---
 
