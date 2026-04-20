@@ -19,6 +19,6 @@
   <ItemGroup>
     <!-- Keep versions in sync with scripts/seed-data.ps1 -->
     <PackageReference Include="Npgsql" Version="8.0.3" />
-    <PackageReference Include="MySqlConnector" Version="2.3.7" />
+    <PackageReference Include="MySqlConnector" Version="2.5.0" />
   </ItemGroup>
 </Project>
