@@ -345,7 +345,7 @@ function Invoke-AdeBicepDeployment {
         # az deployment group what-if requires the RG to exist. In WhatIf mode
         # New-AdeResourceGroup skips creation, so the RG may not be present.
         # Fall back to a descriptive log message in that case.
-        az group show --name $ResourceGroup --output none 2>$null
+        $null = Invoke-AzCmd -ArgumentList @('group', 'show', '--name', $ResourceGroup, '--output', 'none') -AllowFailure -Silent
         if ($LASTEXITCODE -ne 0) {
             Write-AdeLog "What if: would deploy '$([System.IO.Path]::GetFileName($TemplatePath))' to '$ResourceGroup' (resource group does not exist yet — would be created first)" -Level Info
             return $null
