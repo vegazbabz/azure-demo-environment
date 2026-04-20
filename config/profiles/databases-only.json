@@ -1,6 +1,6 @@
 {
   "profileName": "databases-only",
-  "description": "Database-focused profile. Azure SQL, Cosmos DB, PostgreSQL with supporting networking, security, and monitoring. Good for database benchmark testing.",
+  "description": "Database-focused profile. Azure SQL and Cosmos DB with supporting networking, security, and monitoring. Good for database benchmark testing.",
   "version": "2.0.0",
   "modules": {
     "monitoring": {
@@ -19,7 +19,7 @@
     "storage": { "enabled": false },
     "databases": {
       "enabled": true,
-      "features": { "sqlDatabase": true, "sqlVm": false, "cosmosDb": true, "postgresql": true, "mysql": false, "redis": false }
+      "features": { "sqlDatabase": true, "sqlVm": false, "cosmosDb": true, "postgresql": false, "mysql": false, "redis": false }
     },
     "appservices": { "enabled": false },
     "containers": { "enabled": false },

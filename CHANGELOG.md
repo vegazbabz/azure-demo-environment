@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- `seed-data.ps1`: replaced removed `az postgres/mysql flexible-server execute` commands (removed in Azure CLI 2.85.0) with native `psql`/`mysql` CLI calls; seeding is skipped automatically with an informational message when the client tool is not installed
+- `seed-data.ps1`: stripped `USE <db>;` statement before SQL batch execution to prevent Azure SQL parse errors
+- `postgresql` feature flag set to `false` by default in all profiles (`full`, `hardened`, `databases-only`) — now consistent with `mysql` (opt-in only)
+
+---
+
 ## [1.0.0] - 2026-04-09
 
 ### Added
