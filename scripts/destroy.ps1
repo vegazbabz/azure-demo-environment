@@ -139,10 +139,13 @@ foreach ($rg in $targetGroups) {
 }
 # AKS creates a node resource group outside the tagged set. Include it when
 # the containers module is being destroyed so it is not orphaned.
-$aksNodesRg = "$Prefix-aks-nodes-rg"
+# Query the actual name from the cluster — it is immutable and may differ
+# from any naming convention (e.g. the default MC_<rg>_<cluster>_<region>).
 if ("$Prefix-containers-rg" -in $ordered) {
-    $aksNodesRgExists = az group show --name $aksNodesRg --output none 2>$null
-    if ($LASTEXITCODE -eq 0 -and $aksNodesRg -notin $ordered) {
+    $aksName = "$Prefix-aks"
+    $aksNodesRg = az aks show --name $aksName --resource-group "$Prefix-containers-rg" --query nodeResourceGroup --output tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $aksNodesRg -and $aksNodesRg -notin $ordered) {
+        $aksNodesRg = $aksNodesRg.Trim()
         $ordered += $aksNodesRg
         Write-AdeLog "Including AKS node resource group: $aksNodesRg" -Level Info
     }
