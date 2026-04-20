@@ -746,7 +746,7 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
                     Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
                     Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   This password is also used for SQL / PostgreSQL / MySQL.        ║" -ForegroundColor Yellow
+                    Write-Host "║   This password is used for VM / VMSS / SQL / PostgreSQL / MySQL. ║" -ForegroundColor Yellow
                     Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
                     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
                     Write-Host ""
@@ -1065,7 +1065,13 @@ foreach ($moduleName in $deploymentOrder) {
                                 runbook  = @{ name = $link.Runbook }
                             }
                         } | ConvertTo-Json -Depth 5 -Compress
-                        az rest --method PUT --url $jsUrl --body $jsBody --headers 'Content-Type=application/json' --output none
+                        $jsTmp = [System.IO.Path]::GetTempFileName()
+                        try {
+                            [System.IO.File]::WriteAllText($jsTmp, $jsBody, [System.Text.UTF8Encoding]::new($false))
+                            az rest --method PUT --url $jsUrl --body "@$jsTmp" --headers 'Content-Type=application/json' --output none
+                        } finally {
+                            Remove-Item -LiteralPath $jsTmp -ErrorAction SilentlyContinue
+                        }
                         if ($LASTEXITCODE -eq 0) {
                             Write-AdeLog "Job schedule linked: $($link.Runbook) → $($link.Schedule)" -Level Success
                         } else {
