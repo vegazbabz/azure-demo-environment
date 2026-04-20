@@ -96,6 +96,8 @@ function Show-AdeDashboard {
     # ── Resource group costs ──────────────────────────────────────────────────
     Write-Host "  COSTS — Current Month ($($now.ToString('MMMM yyyy')))" -ForegroundColor Yellow
     Write-Host "  ─────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  Note: Azure Cost Management has an 8–48 h ingestion lag. Freshly" -ForegroundColor DarkGray
+    Write-Host "  deployed resources will show `$0.00 until billing data is processed." -ForegroundColor DarkGray
 
     $rgsRaw = az group list -o json 2>$null | ConvertFrom-Json
     $rgs = $rgsRaw | Where-Object { (Test-AdeManagedBy $_) -and $_.name -like "$Prefix-*" } |
