@@ -268,8 +268,10 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-postgres' }   # Get-AdeResource
-                # PostgreSQL seeding now uses psql — no second az call
+                # PostgreSQL seeding now uses Npgsql (.NET) — no second az call
             }
+            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName) }
+            Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
         }
 
         It 'Attempts PostgreSQL seeding when server is found and password is provided' {
@@ -277,7 +279,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list only) — PostgreSQL now uses psql, not az
+            # 1 (resource list only) — PostgreSQL now uses Npgsql, not az
             Should -Invoke az -Times 1 -Exactly
         }
     }
@@ -290,8 +292,10 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-mysql' }   # Get-AdeResource
-                # MySQL seeding now uses mysql CLI — no second az call
+                # MySQL seeding now uses MySqlConnector (.NET) — no second az call
             }
+            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName) }
+            Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
         }
 
         It 'Attempts MySQL seeding when server is found and password is provided' {
@@ -299,7 +303,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list only) — MySQL now uses mysql CLI, not az
+            # 1 (resource list only) — MySQL now uses MySqlConnector, not az
             Should -Invoke az -Times 1 -Exactly
         }
     }
