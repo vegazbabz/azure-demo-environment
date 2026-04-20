@@ -164,6 +164,18 @@ Describe 'destroy.ps1 – Remove-AdeResourceGroup helper' -Tag 'unit' {
         $deleteCalls = $script:AdeRmAzCalls | Where-Object { $_ -match 'lock delete' }
         $deleteCalls.Count | Should -Be 2
     }
+
+    It 'Does not call az group delete when -WhatIf is set' {
+        $script:AdeRmAzCalls = @()
+        Mock az {
+            $script:AdeRmAzCalls += ($args -join ' ')
+            $global:LASTEXITCODE = 0
+            ''
+        }
+        Remove-AdeResourceGroup -Name 'ade-whatif-rg' -WhatIf
+        $deleteCall = $script:AdeRmAzCalls | Where-Object { $_ -match 'group delete' }
+        $deleteCall | Should -BeNullOrEmpty -Because '-WhatIf must prevent az group delete from running'
+    }
 }
 
 Describe 'destroy.ps1 – source parses without errors' -Tag 'unit' {
@@ -313,5 +325,28 @@ Describe 'destroy.ps1 – subscription-scope budget cleanup' -Tag 'unit' {
     It 'Logs success after budget is deleted' {
         $source = Get-Content $script:destroyPs -Raw
         $source | Should -Match "Budget.*deleted"
+    }
+}
+
+Describe 'destroy.ps1 – WhatIf safety' -Tag 'unit' {
+
+    It 'Declares SupportsShouldProcess on the script to accept -WhatIf' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'SupportsShouldProcess'
+    }
+
+    It 'Skips the DELETE confirmation prompt when $WhatIfPreference is true' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'WhatIfPreference' -Because 'must not prompt for confirmation during -WhatIf'
+    }
+
+    It 'Skips purge and budget cleanup when $WhatIfPreference is true' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match '-not \$NoWait.*WhatIfPreference|WhatIfPreference.*-not \$NoWait' -Because 'purge block must not run during -WhatIf'
+    }
+
+    It 'Remove-AdeResourceGroup calls ShouldProcess before deleting the resource group' {
+        $commonSrc = Get-Content (Join-Path $script:repoRoot 'scripts\helpers\common.ps1') -Raw
+        $commonSrc | Should -Match "ShouldProcess.*Delete resource group" -Because 'missing ShouldProcess guard was root cause of WhatIf not working'
     }
 }
