@@ -20,21 +20,3 @@ updates:
       github-actions:
         patterns:
           - "*"
-
-  # Track NuGet packages downloaded on-demand by scripts/seed-data.ps1.
-  # When Dependabot opens a PR here, also update the -Version and
-  # -ExpectedSha512 arguments in the Get-AdeNuGetDll call sites in
-  # scripts/seed-data.ps1 (new hash from NuGet registration API).
-  - package-ecosystem: "nuget"
-    directory: "/tools"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "08:00"
-      timezone: "Europe/Berlin"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "security"
-    commit-message:
-      prefix: "fix(deps)"
