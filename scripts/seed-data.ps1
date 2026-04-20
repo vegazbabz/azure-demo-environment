@@ -397,23 +397,23 @@ if ($seedAll -or $Modules -contains 'sql') {
         $dbName     = "$Prefix-sqldb"
         Write-AdeLog "SQL Server: $sqlServer  DB: $dbName" -Level Info
 
-        $seedSql = Get-Content (Join-Path $PSScriptRoot '..\data\sql\seed.sql') -Raw
-        # Strip GO batch separators — az sql db query does not support them
-        $seedSql = ($seedSql -split '(?m)^\s*GO\s*$' | Where-Object { $_.Trim() }) -join "`n"
-
-        az sql db query `
-            --resource-group $dbRg `
-            --server $sqlServer `
-            --name $dbName `
-            --admin-user $AdminUsername `
-            --admin-password $dbAdminPwd `
-            --query-text $seedSql `
-            --output none 2>$null
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-AdeLog "SQL seed applied: $dbName (AdventureWorksLT + demo rows)" -Level Success
-        } else {
-            Write-AdeLog "SQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+        # az sql db query was removed from Azure CLI — use System.Data.SqlClient directly
+        $seedFile = Join-Path $PSScriptRoot '..\data\sql\seed.sql'
+        try {
+            $connStr = "Server=tcp:${sqlServer}.database.windows.net,1433;Initial Catalog=$dbName;User ID=$AdminUsername;Password=$dbAdminPwd;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30"
+            $conn    = New-Object System.Data.SqlClient.SqlConnection($connStr)
+            $conn.Open()
+            $batches = (Get-Content $seedFile -Raw) -split '(?m)^\s*GO\s*$'
+            foreach ($batch in ($batches | Where-Object { $_.Trim() })) {
+                $cmd             = $conn.CreateCommand()
+                $cmd.CommandText = $batch
+                $cmd.CommandTimeout = 60
+                $cmd.ExecuteNonQuery() | Out-Null
+            }
+            $conn.Close()
+            Write-AdeLog "SQL seed applied: $dbName" -Level Success
+        } catch {
+            Write-AdeLog "SQL seed failed: $_" -Level Warning
         }
     }
 }
@@ -435,21 +435,19 @@ if ($seedAll -or $Modules -contains 'postgresql') {
         $pgDbName   = "${Prefix}db"
         Write-AdeLog "PostgreSQL server: $pgServer  DB: $pgDbName" -Level Info
 
-        $pgSeed = Get-Content (Join-Path $PSScriptRoot '..\data\postgres\seed.sql') -Raw
-
-        az postgres flexible-server execute `
-            --resource-group $dbRg `
-            --name $pgServer `
-            --database-name $pgDbName `
-            --admin-user $AdminUsername `
-            --admin-password $dbAdminPwd `
-            --querytext $pgSeed `
-            --output none 2>$null
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
+        # az postgres flexible-server execute was removed from Azure CLI — use psql
+        $pgSeedFile = Join-Path $PSScriptRoot '..\data\postgres\seed.sql'
+        if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
+            Write-AdeLog "psql not found — install PostgreSQL client tools (https://www.postgresql.org/download/) to seed. Skipping." -Level Warning
         } else {
-            Write-AdeLog "PostgreSQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+            $env:PGPASSWORD = $dbAdminPwd
+            psql -h "$pgServer.postgres.database.azure.com" -p 5432 -U $AdminUsername -d $pgDbName -f $pgSeedFile 2>$null
+            Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
+            } else {
+                Write-AdeLog "PostgreSQL seed failed. Check connectivity and credentials." -Level Warning
+            }
         }
     }
 }
@@ -471,19 +469,17 @@ if ($seedAll -or $Modules -contains 'mysql') {
         $mysqlDbName = "${Prefix}db"
         Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
 
-        az mysql flexible-server execute `
-            --resource-group $dbRg `
-            --name $mysqlServer `
-            --database-name $mysqlDbName `
-            --admin-user $AdminUsername `
-            --admin-password $dbAdminPwd `
-            --file-path (Join-Path $PSScriptRoot '..\data\mysql\seed.sql') `
-            --output none 2>$null
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
+        # az mysql flexible-server execute was removed from Azure CLI — use mysql CLI
+        $mysqlSeedFile = Join-Path $PSScriptRoot '..\data\mysql\seed.sql'
+        if (-not (Get-Command mysql -ErrorAction SilentlyContinue)) {
+            Write-AdeLog "mysql CLI not found — install MySQL Shell (https://dev.mysql.com/downloads/shell/) to seed. Skipping." -Level Warning
         } else {
-            Write-AdeLog "MySQL seed returned non-zero exit. Check connectivity and credentials." -Level Warning
+            Get-Content $mysqlSeedFile | mysql -h "$mysqlServer.mysql.database.azure.com" -u $AdminUsername "-p$dbAdminPwd" --ssl-mode=REQUIRED $mysqlDbName 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
+            } else {
+                Write-AdeLog "MySQL seed failed. Check connectivity and credentials." -Level Warning
+            }
         }
     }
 }
