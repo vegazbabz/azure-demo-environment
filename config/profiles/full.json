@@ -59,7 +59,7 @@
         "sqlDatabase": true,
         "sqlVm": false,
         "cosmosDb": true,
-        "postgresql": true,
+        "postgresql": false,
         "mysql": false,
         "redis": false
       }

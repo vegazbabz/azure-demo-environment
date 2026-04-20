@@ -268,18 +268,17 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-postgres' }   # Get-AdeResource
-                # PostgreSQL seeding now uses Npgsql (.NET) — no second az call
             }
-            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName, [string]$ExpectedSha512) }
-            Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
+            # Ensure psql is not found so the script skips gracefully without a real connection
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'psql' }
         }
 
-        It 'Attempts PostgreSQL seeding when server is found and password is provided' {
+        It 'Skips PostgreSQL seeding gracefully when psql client is not installed' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
-            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list only) — PostgreSQL now uses Npgsql, not az
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd } | Should -Not -Throw
+            # 1 az call (resource list only) — seeding skipped because psql not found
             Should -Invoke az -Times 1 -Exactly
         }
     }
@@ -292,18 +291,17 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-mysql' }   # Get-AdeResource
-                # MySQL seeding now uses MySqlConnector (.NET) — no second az call
             }
-            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName, [string]$ExpectedSha512) }
-            Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
+            # Ensure mysql is not found so the script skips gracefully without a real connection
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mysql' }
         }
 
-        It 'Attempts MySQL seeding when server is found and password is provided' {
+        It 'Skips MySQL seeding gracefully when mysql client is not installed' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
-            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list only) — MySQL now uses MySqlConnector, not az
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd } | Should -Not -Throw
+            # 1 az call (resource list only) — seeding skipped because mysql not found
             Should -Invoke az -Times 1 -Exactly
         }
     }

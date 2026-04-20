@@ -166,7 +166,7 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 | `minimal` | monitoring, networking, security, compute (Windows VM), storage, governance | ~$15–30/month | First run, orientation, low-cost baseline |
 | `compute-only` | monitoring, networking, security, compute (Windows + Linux + VMSS), governance | ~$60–100/month | CIS Compute sections, VM hardening testing |
 | `networking-only` | monitoring, networking (+ App Gateway), governance | ~$200–300/month | Network topology and connectivity testing |
-| `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB + PostgreSQL), governance | ~$80–150/month | Database benchmark testing |
+| `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB), governance | ~$80–150/month | Database benchmark testing |
 | `security-focus` | monitoring, networking, security (+ Defender + Sentinel), compute (Windows + Linux), storage, databases (SQL only), governance (+ locks) | ~$100–200/month | Security posture and Defender coverage testing |
 | `full` | All 12 modules (ai and data excluded) | ~$300–500/month | Complete CIS/MCSB coverage |
 | `hardened` | All 12 modules with all hardening flags enabled | ~$300–500/month | CIS v5.0.0/MCSB-aligned end-to-end hardened environment |
@@ -248,7 +248,7 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | `sqlDatabase` | `true` | Azure SQL Server + Serverless Database (AdventureWorksLT) |
 | `sqlVm` | `false` | SQL Server 2022 on a Windows VM (IaaS) — opt-in only |
 | `cosmosDb` | `true` | Cosmos DB (NoSQL, serverless) |
-| `postgresql` | `true` | PostgreSQL Flexible Server |
+| `postgresql` | `false` | PostgreSQL Flexible Server — opt-in only |
 | `mysql` | `false` | MySQL Flexible Server — opt-in only |
 | `redis` | `false` | Redis Cache (~$16/month Basic C0) — opt-in only |
 | `sqlManagedInstance` | `false` | Azure SQL Managed Instance (~$1,000+/month) — opt-in only, very expensive |
@@ -514,7 +514,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **Single region** | Each ADE deployment targets one Azure region. Multi-region is not supported. |
 | **One instance per module** | Each module deploys exactly one resource group per prefix. You cannot, for example, deploy two separate SQL modules to the same prefix. Use different prefixes for parallel environments. |
 | **Feature flags are JSON-only** | There is no CLI flag to override a single feature flag (e.g. `mysql: true`) without editing the profile JSON. `-EnableModules` / `-SkipModules` toggle whole modules on/off, not individual features. |
-| **Hardened mode seeding** | In `hardened` mode, SQL, PostgreSQL, and MySQL are behind private endpoints. `seed-data.ps1` must run from inside the VNet (Bastion or jump VM) to reach those databases. |
+| **PostgreSQL / MySQL seeding** | `seed-data.ps1` skips these automatically if `psql` / `mysql` is not installed. See [Seed data](#seed-data) for options including Azure Cloud Shell. |
 | **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. |
 | **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
@@ -583,8 +583,8 @@ What gets seeded:
 | Storage File Share | `welcome.txt` uploaded to the provisioned share | — |
 | Cosmos DB | Sample order documents from `data/cosmos/` | — |
 | Azure SQL | AdventureWorksLT sample database (built into the resource — no script needed) | Requires `-DatabaseAdminPassword` |
-| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Requires `-DatabaseAdminPassword` |
-| MySQL | `demo_events` + `demo_devices` tables with sample rows | Requires `-DatabaseAdminPassword` |
+| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Requires `-DatabaseAdminPassword` and `psql` client — see note below |
+| MySQL | `demo_events` + `demo_devices` tables with sample rows | Requires `-DatabaseAdminPassword` and `mysql` client — see note below |
 | Redis Cache | Demo keys set via TLS RESP connection | — |
 | Key Vault | Demo secrets, RSA 2048 encryption key, and self-signed TLS certificate | Requires Key Vault Administrator role |
 | Service Bus | Test messages sent to the `orders` queue | — |
@@ -593,6 +593,16 @@ What gets seeded:
 
 > [!NOTE]
 > **Hardened-mode environments:** SQL, PostgreSQL, and MySQL are deployed behind private endpoints in `hardened` mode. Seeding requires running `seed-data.ps1` from within the VNet — for example, via Bastion or a jump VM. Seeding from a public workstation will result in connection timeouts for those three targets.
+
+> [!NOTE]
+> **PostgreSQL and MySQL seeding** requires the native client tools (`psql` for PostgreSQL, `mysql` for MySQL) to be installed on the machine running `seed-data.ps1`. If the tools are not found, seeding is skipped automatically with an informational message — no error is raised. These are **not** installed by this project.
+>
+> **Recommended alternatives if you don't have the clients installed:**
+> - **Azure Cloud Shell** — both `psql` and `mysql` are pre-installed. Run `seed-data.ps1` from there.
+> - **Install locally** — [PostgreSQL client tools](https://www.postgresql.org/download/) (includes `psql`) or [MySQL Shell](https://dev.mysql.com/downloads/shell/).
+> - **Azure Portal** — use the built-in query editor for PostgreSQL or MySQL to run the seed SQL files manually from `data/postgres/seed.sql` / `data/mysql/seed.sql`.
+>
+> PostgreSQL and MySQL are **opt-in** in all profiles (`postgresql: false`, `mysql: false` by default). Enable them explicitly in your profile's `databases.features` if needed.
 
 SQL, PostgreSQL, and MySQL seed blocks are skipped automatically when `-DatabaseAdminPassword` is not provided. All other targets are seeded without credentials.
 
