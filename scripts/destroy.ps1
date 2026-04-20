@@ -137,6 +137,16 @@ $destroyOrder = @('governance', 'data', 'ai', 'integration', 'containers',
 foreach ($rg in $targetGroups) {
     if ($rg -notin $ordered) { $ordered += $rg }
 }
+# AKS creates a node resource group outside the tagged set. Include it when
+# the containers module is being destroyed so it is not orphaned.
+$aksNodesRg = "$Prefix-aks-nodes-rg"
+if ("$Prefix-containers-rg" -in $ordered) {
+    $aksNodesRgExists = az group show --name $aksNodesRg --output none 2>$null
+    if ($LASTEXITCODE -eq 0 -and $aksNodesRg -notin $ordered) {
+        $ordered += $aksNodesRg
+        Write-AdeLog "Including AKS node resource group: $aksNodesRg" -Level Info
+    }
+}
 
 $failedRgs = @()
 

@@ -68,6 +68,9 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
   properties: {
     kubernetesVersion: '1.33'
     dnsPrefix: '${prefix}-aks'
+    // Override the default MC_<rg>_<cluster>_<region> naming so the node RG
+    // follows the ADE convention: <prefix>-aks-nodes-rg
+    nodeResourceGroup: '${prefix}-aks-nodes-rg'
     enableRBAC: true
     agentPoolProfiles: [
       {
