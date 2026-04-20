@@ -554,7 +554,12 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
     }
 
     It 'Uses deployment group what-if when -WhatIf is set' {
-        Mock Invoke-AzCmd { return $null }
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            # Simulate RG exists so the what-if branch proceeds
+            if ($ArgumentList -contains 'show') { return 'exists' }
+            return $null
+        }
 
         Invoke-AdeBicepDeployment `
             -ResourceGroup  'ade-rg' `
