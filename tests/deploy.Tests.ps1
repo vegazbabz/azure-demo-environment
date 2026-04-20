@@ -109,10 +109,10 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
     }
 
     It 'Shows a mid-deployment banner after the compute module with the correct messaging' {
-        # Banner should note that the same password is used for databases, and that
+        # Banner should note that the same password is used for VMs and databases, and that
         # it will be shown again — the old "will not be shown again" text was wrong.
         $script:source | Should -Match 'AUTO-GENERATED ADMIN PASSWORD'
-        $script:source | Should -Match 'also used for SQL'
+        $script:source | Should -Match 'used for VM / VMSS / SQL'
         $script:source | Should -Match 'shown again in the deployment summary'
         $script:source | Should -Not -Match 'will not be shown again'
     }

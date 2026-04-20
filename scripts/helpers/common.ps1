@@ -217,6 +217,12 @@ function New-AdeResourceGroup {
 
     Write-AdeLog "Ensuring resource group: $Name" -Level Info
 
+    # In WhatIf mode do not create or modify any real infrastructure.
+    if ([bool]$WhatIfPreference) {
+        Write-AdeLog "What if: would ensure resource group '$Name' in '$Location'" -Level Info
+        return
+    }
+
     # Check whether the RG already exists so we can detect a location conflict
     # before `az group create` emits an opaque API error.
     $existing = az group show --name $Name --output json 2>$null
@@ -325,7 +331,10 @@ function Invoke-AdeBicepDeployment {
 
     if ($fileParams.Count -gt 0) {
         $tempParamsFile = [System.IO.Path]::GetTempFileName() + '.json'
-        $fileParams | ConvertTo-Json -Depth 20 | Set-Content $tempParamsFile -Encoding utf8NoBOM
+        $json = $fileParams | ConvertTo-Json -Depth 20
+        # Use .NET WriteAllText rather than Set-Content so the write is not skipped
+        # when $WhatIfPreference is active (Set-Content honours ShouldProcess).
+        [System.IO.File]::WriteAllText($tempParamsFile, $json, [System.Text.UTF8Encoding]::new($false))
         $paramArgs = @("@$tempParamsFile") + $paramArgs
     }
 
@@ -333,6 +342,14 @@ function Invoke-AdeBicepDeployment {
 
     # What-if: run synchronously and return immediately
     if ([bool]$WhatIfPreference) {
+        # az deployment group what-if requires the RG to exist. In WhatIf mode
+        # New-AdeResourceGroup skips creation, so the RG may not be present.
+        # Fall back to a descriptive log message in that case.
+        $null = Invoke-AzCmd -ArgumentList @('group', 'show', '--name', $ResourceGroup, '--output', 'none') -AllowFailure -Silent
+        if ($LASTEXITCODE -ne 0) {
+            Write-AdeLog "What if: would deploy '$([System.IO.Path]::GetFileName($TemplatePath))' to '$ResourceGroup' (resource group does not exist yet — would be created first)" -Level Info
+            return $null
+        }
         $argList = @(
             'deployment', 'group', 'what-if',
             '--resource-group', $ResourceGroup,
