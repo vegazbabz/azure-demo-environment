@@ -66,7 +66,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-01-01' = if (deplo
     type: 'SystemAssigned'
   }
   properties: {
-    kubernetesVersion: '1.32'
+    kubernetesVersion: '1.33'
     dnsPrefix: '${prefix}-aks'
     enableRBAC: true
     agentPoolProfiles: [
