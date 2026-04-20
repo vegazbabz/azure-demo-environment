@@ -270,7 +270,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 if ($script:azCallCount -eq 1) { 'ade-postgres' }   # Get-AdeResource
                 # PostgreSQL seeding now uses Npgsql (.NET) — no second az call
             }
-            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName) }
+            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName, [string]$ExpectedSha512) }
             Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
         }
 
@@ -294,7 +294,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 if ($script:azCallCount -eq 1) { 'ade-mysql' }   # Get-AdeResource
                 # MySQL seeding now uses MySqlConnector (.NET) — no second az call
             }
-            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName) }
+            function Get-AdeNuGetDll { param([string]$Package, [string]$Version, [string]$DllName, [string]$ExpectedSha512) }
             Mock Get-AdeNuGetDll { $null }   # prevent network download during tests
         }
 
