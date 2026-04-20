@@ -72,13 +72,9 @@ var firewallEnabled    = enableFirewall != 'None'
 var bastionNeedsSubnet = bastionSku == 'Basic' || bastionSku == 'Standard'
 
 // ─── Network Watcher ──────────────────────────────────────────────────────────
-
-resource networkWatcher 'Microsoft.Network/networkWatchers@2023-09-01' = {
-  name: '${prefix}-networkwatcher'
-  location: location
-  tags: tags
-  properties: {}
-}
+// Azure automatically creates one NetworkWatcher per region (quota = 1).
+// Deploying a second one always fails. The platform-managed watcher is
+// sufficient for a demo environment; no resource is declared here.
 
 // ─── DDoS Protection Plan ─────────────────────────────────────────────────────
 // WARNING: ~$2,944/month. Only deploy when explicitly enabled.
@@ -681,7 +677,6 @@ output redisDnsZoneId string = enablePrivateDnsZones ? resourceId('Microsoft.Net
 output appGwSubnetId string = '${vnet.id}/subnets/AppGatewaySubnet'
 output firewallSubnetId string = '${vnet.id}/subnets/AzureFirewallSubnet'
 output gatewaySubnetId string = '${vnet.id}/subnets/GatewaySubnet'
-output networkWatcherId string = networkWatcher.id
 output firewallPrivateIp string = firewallEnabled ? azureFirewall!.properties.ipConfigurations[0].properties.privateIPAddress : ''
 output appGatewayPublicIp string = enableAppGateway ? appGwPublicIp!.properties.ipAddress : ''
 output vpnGatewayId string = enableVpnGateway ? vpnGateway.id : ''
