@@ -116,7 +116,7 @@ foreach ($rg in $targetGroups) {
 }
 Write-Host ""
 
-if (-not $Force) {
+if (-not $Force -and -not $WhatIfPreference) {
     $confirm = Read-Host "Type 'DELETE' to confirm destruction of all resources above"
     if ($confirm -ne 'DELETE') {
         Write-AdeLog "Teardown cancelled." -Level Warning
@@ -234,7 +234,7 @@ if ($NoWait) {
 # Key Vault and Cognitive Services (AI Services, OpenAI) use soft-delete.
 # After RG deletion the name is reserved in the deleted registry and blocks
 # re-deployment with the same prefix. We purge and wait for completion.
-if (-not $NoWait -and $failedRgs.Count -eq 0) {
+if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
 
     # ── Key Vaults ──────────────────────────────────────────────────────────
     # Background purge jobs were started opportunistically during RG polling.
