@@ -266,12 +266,13 @@ function Remove-AdeResourceGroup {
     # Remove any resource locks first so deletion doesn't fail
     $locks = az lock list --resource-group $Name --query "[].id" -o tsv 2>$null
     foreach ($lockId in $locks) {
-        if ($lockId) {
+        if ($lockId -and $PSCmdlet.ShouldProcess($lockId, 'Remove resource lock')) {
             Write-AdeLog "Removing lock: $lockId" -Level Warning
             az lock delete --ids $lockId --output none
         }
     }
 
+    if (-not $PSCmdlet.ShouldProcess($Name, 'Delete resource group')) { return }
     Write-AdeLog "Deleting resource group: $Name" -Level Warning
     if ($NoWait) { az group delete --name $Name --yes --no-wait --output none }
     else         { az group delete --name $Name --yes --output none }
