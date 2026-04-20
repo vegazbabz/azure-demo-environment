@@ -246,17 +246,17 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-sqlserver' }   # Get-AdeResource
-                # az sql db query succeeds silently
+                # SQL seeding now uses System.Data.SqlClient — no second az call
             }
         }
 
-        It 'Calls az sql db query when SQL Server is found and password is provided' {
+        It 'Attempts SQL seeding when SQL Server is found and password is provided' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list) + 1 (az sql db query)
-            Should -Invoke az -Times 2 -Exactly
+            # 1 (resource list only) — SQL now uses System.Data.SqlClient, not az
+            Should -Invoke az -Times 1 -Exactly
         }
     }
 
@@ -268,17 +268,17 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-postgres' }   # Get-AdeResource
-                # az postgres flexible-server execute succeeds silently
+                # PostgreSQL seeding now uses psql — no second az call
             }
         }
 
-        It 'Calls az postgres flexible-server execute when server is found and password is provided' {
+        It 'Attempts PostgreSQL seeding when server is found and password is provided' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list) + 1 (az postgres flexible-server execute)
-            Should -Invoke az -Times 2 -Exactly
+            # 1 (resource list only) — PostgreSQL now uses psql, not az
+            Should -Invoke az -Times 1 -Exactly
         }
     }
 
@@ -290,17 +290,17 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
                 if ($script:azCallCount -eq 1) { 'ade-mysql' }   # Get-AdeResource
-                # az mysql flexible-server execute succeeds silently
+                # MySQL seeding now uses mysql CLI — no second az call
             }
         }
 
-        It 'Calls az mysql flexible-server execute when server is found and password is provided' {
+        It 'Attempts MySQL seeding when server is found and password is provided' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd
-            # 1 (resource list) + 1 (az mysql flexible-server execute)
-            Should -Invoke az -Times 2 -Exactly
+            # 1 (resource list only) — MySQL now uses mysql CLI, not az
+            Should -Invoke az -Times 1 -Exactly
         }
     }
 
