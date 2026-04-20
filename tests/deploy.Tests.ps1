@@ -230,6 +230,12 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match "Unknown module.*-EnableModules"
     }
 
+    It 'Auto-enables boolean features when -EnableModules targets a disabled module' {
+        $script:source | Should -Match 'wasDisabled' -Because '-EnableModules must detect the module was disabled in the profile'
+        $script:source | Should -Match 'auto-enabling features' -Because 'a disabled module with all-false features must have them flipped to true'
+        $script:source | Should -Match 'feat\.Value -is \[bool\]' -Because 'only boolean flags should be auto-enabled; strings, numbers and arrays must be left alone'
+    }
+
     It 'Skips interactive Read-Host in CI environments (guards on env:CI / GITHUB_ACTIONS)' {
         $script:source | Should -Match 'isNonInteractive'
         $script:source | Should -Match 'GITHUB_ACTIONS'
