@@ -410,7 +410,7 @@ function Get-AdeNuGetDll {
     # end-user machine if a serious CVE has been published since last run.
     $vulnUrl = "https://api.nuget.org/v3/registration5-gz-semver2/$($Package.ToLower())/$Version.json"
     try {
-        $reg   = Invoke-RestMethod $vulnUrl -UseBasicParsing -TimeoutSec 10
+        $reg   = Invoke-RestMethod $vulnUrl -TimeoutSec 10
         $vulns = if ($reg.vulnerabilities) { @($reg.vulnerabilities) } else { @() }
         foreach ($v in $vulns) {
             $label = @('Low', 'Moderate', 'High', 'Critical')[[int]$v.severity]
@@ -426,7 +426,10 @@ function Get-AdeNuGetDll {
     }
 
     # ── 2. Return cached DLL if already extracted ────────────────────────────
-    $cacheDir = Join-Path $env:TEMP "ade-nuget\$Package.$Version"
+    # Use [System.IO.Path]::GetTempPath() instead of $env:TEMP — the latter can
+    # contain 8.3 short paths (e.g. N5BDB~1.MAD) on some Windows profiles, which
+    # Expand-Archive cannot resolve.
+    $cacheDir = Join-Path ([System.IO.Path]::GetTempPath().TrimEnd('\')) "ade-nuget\$Package.$Version"
     $tfmOrder = @('net8.0','net7.0','net6.0','net5.0','netstandard2.1','netstandard2.0')
     foreach ($tfm in $tfmOrder) {
         $dll = Join-Path $cacheDir "lib\$tfm\$DllName"
