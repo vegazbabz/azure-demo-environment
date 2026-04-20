@@ -982,7 +982,21 @@ foreach ($moduleName in $deploymentOrder) {
                         Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
                         $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
                     } else {
-                        Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile to activate cost alerts." -Level Warning
+                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
+                        if (-not $isNonInteractiveBudget) {
+                            Write-Host ""
+                            Write-Host "  Budget alert email is not set." -ForegroundColor Yellow
+                            $promptedEmail = Read-Host "  Enter an email for budget cost alerts (or press Enter to skip)"
+                            if (-not [string]::IsNullOrWhiteSpace($promptedEmail)) {
+                                $effectiveBudgetEmail = $promptedEmail.Trim()
+                                $budgetEmailSet = $true
+                                $budgetEnabled  = $true
+                            } else {
+                                Write-AdeLog "Budget alert email not provided — skipping budget deployment." -Level Warning
+                            }
+                        } else {
+                            Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile or pass -BudgetAlertEmail to activate cost alerts." -Level Warning
+                        }
                     }
                 }
 
