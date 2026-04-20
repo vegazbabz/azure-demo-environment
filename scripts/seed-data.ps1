@@ -403,7 +403,8 @@ if ($seedAll -or $Modules -contains 'sql') {
             $connStr = "Server=tcp:${sqlServer}.database.windows.net,1433;Initial Catalog=$dbName;User ID=$AdminUsername;Password=$dbAdminPwd;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30"
             $conn    = New-Object System.Data.SqlClient.SqlConnection($connStr)
             $conn.Open()
-            $batches = (Get-Content $seedFile -Raw) -split '(?m)^\s*GO\s*$'
+            $sqlRaw  = (Get-Content $seedFile -Raw) -replace '(?im)^\s*USE\s+\[?\w+\]?\s*;?\s*(\r?\n)', ''
+            $batches = $sqlRaw -split '(?m)^\s*GO\s*$'
             foreach ($batch in ($batches | Where-Object { $_.Trim() })) {
                 $cmd             = $conn.CreateCommand()
                 $cmd.CommandText = $batch
