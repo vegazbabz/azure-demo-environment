@@ -383,26 +383,75 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
 # ─── NuGet helper ────────────────────────────────────────────────────────────
 # Downloads a NuGet package to $env:TEMP on first run (cached for subsequent
 # runs) and returns the path to the requested DLL.  No permanent install.
+#
+# Security controls:
+#   1. CVE check   — queries the NuGet registration API on every call.
+#                    Aborts on High/Critical vulnerabilities so end-user
+#                    machines are never exposed to known-bad packages.
+#   2. SHA512 verify — validates the downloaded .nupkg against the official
+#                    hash from the NuGet catalog before extraction.
+#
+# To upgrade a package: bump $Version, get the new hash from:
+#   https://api.nuget.org/v3/registration5-gz-semver2/<id>/<version>.json
+#   (.packageHash field, SHA512 base64)
+# Dependabot (tools/nuget-seed-deps.csproj) will open a PR when a new version
+# is available — update both the version and hash in the call sites below.
 function Get-AdeNuGetDll {
     param(
         [string]$Package,
         [string]$Version,
-        [string]$DllName
+        [string]$DllName,
+        [string]$ExpectedSha512
     )
+
+    # ── 1. CVE check (runs every call, including when DLL is already cached) ─
+    # Queries NuGet's registration API for known vulnerabilities in this exact
+    # version.  Aborts on High/Critical so the package is never loaded on an
+    # end-user machine if a serious CVE has been published since last run.
+    $vulnUrl = "https://api.nuget.org/v3/registration5-gz-semver2/$($Package.ToLower())/$Version.json"
+    try {
+        $reg   = Invoke-RestMethod $vulnUrl -UseBasicParsing -TimeoutSec 10
+        $vulns = if ($reg.vulnerabilities) { @($reg.vulnerabilities) } else { @() }
+        foreach ($v in $vulns) {
+            $label = @('Low', 'Moderate', 'High', 'Critical')[[int]$v.severity]
+            if ([int]$v.severity -ge 2) {
+                throw "SECURITY: $Package $Version has a known $label CVE — refusing to load. " +
+                      "Update the pinned version in scripts/seed-data.ps1. Advisory: $($v.advisoryUrl)"
+            }
+            Write-AdeLog "$Package $Version has a known $label vulnerability: $($v.advisoryUrl)" -Level Warning
+        }
+    } catch {
+        if ($_.Exception.Message -like 'SECURITY:*') { throw }
+        Write-AdeLog "CVE check skipped (NuGet API unreachable): $($_.Exception.Message)" -Level Warning
+    }
+
+    # ── 2. Return cached DLL if already extracted ────────────────────────────
     $cacheDir = Join-Path $env:TEMP "ade-nuget\$Package.$Version"
     $tfmOrder = @('net8.0','net7.0','net6.0','net5.0','netstandard2.1','netstandard2.0')
     foreach ($tfm in $tfmOrder) {
         $dll = Join-Path $cacheDir "lib\$tfm\$DllName"
         if (Test-Path $dll) { return $dll }
     }
+
+    # ── 3. Download, verify SHA512, then extract ─────────────────────────────
     try {
         New-Item $cacheDir -ItemType Directory -Force | Out-Null
         $nupkg = Join-Path $cacheDir 'pkg.nupkg'
         $url   = "https://api.nuget.org/v3-flatcontainer/$($Package.ToLower())/$Version/$($Package.ToLower()).$Version.nupkg"
         Invoke-WebRequest $url -OutFile $nupkg -UseBasicParsing
+        $sha512    = [System.Security.Cryptography.SHA512]::Create()
+        $stream    = [System.IO.File]::OpenRead($nupkg)
+        $hashBytes = $sha512.ComputeHash($stream)
+        $stream.Dispose(); $sha512.Dispose()
+        $actualHash = [System.Convert]::ToBase64String($hashBytes)
+        if ($actualHash -ne $ExpectedSha512) {
+            Remove-Item $nupkg -Force -ErrorAction SilentlyContinue
+            throw "SHA512 mismatch for $Package $Version. Expected: $ExpectedSha512  Got: $actualHash"
+        }
         Expand-Archive $nupkg -DestinationPath $cacheDir -Force
         Remove-Item $nupkg -ErrorAction SilentlyContinue
     } catch {
+        Write-AdeLog "NuGet download failed: $_" -Level Warning
         return $null
     }
     foreach ($tfm in $tfmOrder) {
@@ -470,8 +519,11 @@ if ($seedAll -or $Modules -contains 'postgresql') {
 
         # az postgres flexible-server execute was removed from Azure CLI.
         # Use Npgsql — downloaded on-demand from NuGet to $env:TEMP (no install required).
+        # To upgrade: bump the version and get the new SHA512 from:
+        #   https://api.nuget.org/v3/registration5-gz-semver2/npgsql/<version>.json  (.packageHash field)
         $pgSeedFile = Join-Path $PSScriptRoot '..\data\postgres\seed.sql'
-        $npgsqlDll  = Get-AdeNuGetDll -Package 'Npgsql' -Version '8.0.3' -DllName 'Npgsql.dll'
+        $npgsqlDll  = Get-AdeNuGetDll -Package 'Npgsql' -Version '8.0.3' -DllName 'Npgsql.dll' `
+                          -ExpectedSha512 'M2PNKYrFlkYEOCISyRfH2EFN7FAnLz7NeEDwU2B9Q6TjdveeGYYX7rLxJqchV2OUXHrO85KSpGnnx7kTQPgpg=='
         try {
             if (-not $npgsqlDll) { throw 'Could not download Npgsql from NuGet. Check internet connectivity.' }
             if (-not ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Npgsql' })) {
@@ -512,8 +564,11 @@ if ($seedAll -or $Modules -contains 'mysql') {
 
         # az mysql flexible-server execute was removed from Azure CLI.
         # Use MySqlConnector — downloaded on-demand from NuGet to $env:TEMP (no install required).
+        # To upgrade: bump the version and get the new SHA512 from:
+        #   https://api.nuget.org/v3/registration5-gz-semver2/mysqlconnector/<version>.json  (.packageHash field)
         $mysqlSeedFile = Join-Path $PSScriptRoot '..\data\mysql\seed.sql'
-        $mysqlDll      = Get-AdeNuGetDll -Package 'MySqlConnector' -Version '2.3.7' -DllName 'MySqlConnector.dll'
+        $mysqlDll      = Get-AdeNuGetDll -Package 'MySqlConnector' -Version '2.3.7' -DllName 'MySqlConnector.dll' `
+                             -ExpectedSha512 'nhOsAyRWK+U8QrOshdz4IMDB3JIK2ceZbLkC/d77zQavnyIIGrg8dYss+BlCJ7+IK7mab+O0ZIwJhlDKgApUvA=='
         try {
             if (-not $mysqlDll) { throw 'Could not download MySqlConnector from NuGet. Check internet connectivity.' }
             if (-not ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'MySqlConnector' })) {
