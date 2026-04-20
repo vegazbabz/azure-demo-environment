@@ -380,6 +380,38 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
     }
 }
 
+# ─── NuGet helper ────────────────────────────────────────────────────────────
+# Downloads a NuGet package to $env:TEMP on first run (cached for subsequent
+# runs) and returns the path to the requested DLL.  No permanent install.
+function Get-AdeNuGetDll {
+    param(
+        [string]$Package,
+        [string]$Version,
+        [string]$DllName
+    )
+    $cacheDir = Join-Path $env:TEMP "ade-nuget\$Package.$Version"
+    $tfmOrder = @('net8.0','net7.0','net6.0','net5.0','netstandard2.1','netstandard2.0')
+    foreach ($tfm in $tfmOrder) {
+        $dll = Join-Path $cacheDir "lib\$tfm\$DllName"
+        if (Test-Path $dll) { return $dll }
+    }
+    try {
+        New-Item $cacheDir -ItemType Directory -Force | Out-Null
+        $nupkg = Join-Path $cacheDir 'pkg.nupkg'
+        $url   = "https://api.nuget.org/v3-flatcontainer/$($Package.ToLower())/$Version/$($Package.ToLower()).$Version.nupkg"
+        Invoke-WebRequest $url -OutFile $nupkg -UseBasicParsing
+        Expand-Archive $nupkg -DestinationPath $cacheDir -Force
+        Remove-Item $nupkg -ErrorAction SilentlyContinue
+    } catch {
+        return $null
+    }
+    foreach ($tfm in $tfmOrder) {
+        $dll = Join-Path $cacheDir "lib\$tfm\$DllName"
+        if (Test-Path $dll) { return $dll }
+    }
+    return $null
+}
+
 # ─── Azure SQL ───────────────────────────────────────────────────────────────
 
 if ($seedAll -or $Modules -contains 'sql') {
@@ -436,19 +468,27 @@ if ($seedAll -or $Modules -contains 'postgresql') {
         $pgDbName   = "${Prefix}db"
         Write-AdeLog "PostgreSQL server: $pgServer  DB: $pgDbName" -Level Info
 
-        # az postgres flexible-server execute was removed from Azure CLI — use psql
+        # az postgres flexible-server execute was removed from Azure CLI.
+        # Use Npgsql — downloaded on-demand from NuGet to $env:TEMP (no install required).
         $pgSeedFile = Join-Path $PSScriptRoot '..\data\postgres\seed.sql'
-        if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
-            Write-AdeLog "psql not found — install PostgreSQL client tools (https://www.postgresql.org/download/) to seed. Skipping." -Level Warning
-        } else {
-            $env:PGPASSWORD = $dbAdminPwd
-            psql -h "$pgServer.postgres.database.azure.com" -p 5432 -U $AdminUsername -d $pgDbName -f $pgSeedFile 2>$null
-            Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
-            } else {
-                Write-AdeLog "PostgreSQL seed failed. Check connectivity and credentials." -Level Warning
+        $npgsqlDll  = Get-AdeNuGetDll -Package 'Npgsql' -Version '8.0.3' -DllName 'Npgsql.dll'
+        try {
+            if (-not $npgsqlDll) { throw 'Could not download Npgsql from NuGet. Check internet connectivity.' }
+            if (-not ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Npgsql' })) {
+                Add-Type -Path $npgsqlDll
             }
+            $connStr = "Host=$pgServer.postgres.database.azure.com;Port=5432;Database=$pgDbName;Username=$AdminUsername;Password=$dbAdminPwd;SSL Mode=Require;Trust Server Certificate=true"
+            $conn    = New-Object Npgsql.NpgsqlConnection($connStr)
+            $conn.Open()
+            $pgSql   = Get-Content $pgSeedFile -Raw
+            $cmd     = $conn.CreateCommand()
+            $cmd.CommandText    = $pgSql
+            $cmd.CommandTimeout = 60
+            $cmd.ExecuteNonQuery() | Out-Null
+            $conn.Close()
+            Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
+        } catch {
+            Write-AdeLog "PostgreSQL seed failed: $_" -Level Warning
         }
     }
 }
@@ -470,17 +510,27 @@ if ($seedAll -or $Modules -contains 'mysql') {
         $mysqlDbName = "${Prefix}db"
         Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
 
-        # az mysql flexible-server execute was removed from Azure CLI — use mysql CLI
+        # az mysql flexible-server execute was removed from Azure CLI.
+        # Use MySqlConnector — downloaded on-demand from NuGet to $env:TEMP (no install required).
         $mysqlSeedFile = Join-Path $PSScriptRoot '..\data\mysql\seed.sql'
-        if (-not (Get-Command mysql -ErrorAction SilentlyContinue)) {
-            Write-AdeLog "mysql CLI not found — install MySQL Shell (https://dev.mysql.com/downloads/shell/) to seed. Skipping." -Level Warning
-        } else {
-            Get-Content $mysqlSeedFile | mysql -h "$mysqlServer.mysql.database.azure.com" -u $AdminUsername "-p$dbAdminPwd" --ssl-mode=REQUIRED $mysqlDbName 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
-            } else {
-                Write-AdeLog "MySQL seed failed. Check connectivity and credentials." -Level Warning
+        $mysqlDll      = Get-AdeNuGetDll -Package 'MySqlConnector' -Version '2.3.7' -DllName 'MySqlConnector.dll'
+        try {
+            if (-not $mysqlDll) { throw 'Could not download MySqlConnector from NuGet. Check internet connectivity.' }
+            if (-not ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'MySqlConnector' })) {
+                Add-Type -Path $mysqlDll
             }
+            $connStr = "Server=$mysqlServer.mysql.database.azure.com;Port=3306;Database=$mysqlDbName;User=$AdminUsername;Password=$dbAdminPwd;SslMode=Required"
+            $conn    = New-Object MySqlConnector.MySqlConnection($connStr)
+            $conn.Open()
+            $mySql   = Get-Content $mysqlSeedFile -Raw
+            $cmd     = $conn.CreateCommand()
+            $cmd.CommandText    = $mySql
+            $cmd.CommandTimeout = 60
+            $cmd.ExecuteNonQuery() | Out-Null
+            $conn.Close()
+            Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
+        } catch {
+            Write-AdeLog "MySQL seed failed: $_" -Level Warning
         }
     }
 }
