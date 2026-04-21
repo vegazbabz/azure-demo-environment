@@ -214,7 +214,23 @@ foreach ($mod in $SkipModules) {
 }
 foreach ($mod in $EnableModules) {
     if ($deployProfile.modules.PSObject.Properties[$mod]) {
+        $wasDisabled = ($deployProfile.modules.$mod.enabled -eq $false)
         $deployProfile.modules.$mod.enabled = $true
+        # When a module was disabled in the profile, its feature flags are typically all false
+        # (nothing to deploy). Auto-enable every boolean false feature so that an explicit
+        # -EnableModules request actually provisions resources, not just an empty resource group.
+        if ($wasDisabled -and $deployProfile.modules.$mod.PSObject.Properties['features']) {
+            $autoEnabled = [System.Collections.Generic.List[string]]::new()
+            foreach ($feat in $deployProfile.modules.$mod.features.PSObject.Properties) {
+                if ($feat.Value -is [bool] -and $feat.Value -eq $false) {
+                    $deployProfile.modules.$mod.features.$($feat.Name) = $true
+                    $autoEnabled.Add($feat.Name)
+                }
+            }
+            if ($autoEnabled.Count -gt 0) {
+                Write-AdeLog "Module '$mod' was disabled in profile — auto-enabling features: $($autoEnabled -join ', ')" -Level Info
+            }
+        }
         Write-AdeLog "Module '$mod' ENABLED via -EnableModules" -Level Info
     } else {
         Write-AdeLog "Unknown module '$mod' in -EnableModules (ignored)" -Level Warning
