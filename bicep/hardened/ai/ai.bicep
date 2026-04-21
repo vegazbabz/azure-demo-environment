@@ -25,7 +25,7 @@ param deployCognitiveSearch bool = false
 
 @description('Azure Cognitive Search SKU. Use \'free\' (1 per subscription, limited) or \'basic\' / \'standard\' based on regional availability.')
 @allowed(['free', 'basic', 'standard', 'standard2', 'standard3'])
-param cognitiveSearchSku string = 'basic'
+param cognitiveSearchSku string = 'standard'
 
 @description('Deploy Azure Machine Learning workspace.')
 param deployMachineLearning bool = false
