@@ -106,6 +106,7 @@ if (-not $Force) {
 }
 
 $seedAll = $Modules -contains 'all'
+$script:_seedFailed = $false
 
 # ─── Discover resource names ──────────────────────────────────────────────────
 
@@ -415,6 +416,7 @@ if ($seedAll -or $Modules -contains 'sql') {
             Write-AdeLog "SQL seed applied: $dbName" -Level Success
         } catch {
             Write-AdeLog "SQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         }
     }
 }
@@ -447,6 +449,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
             Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
         } catch {
             Write-AdeLog "PostgreSQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         } finally {
             Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
         }
@@ -481,6 +484,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
             Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
         } catch {
             Write-AdeLog "MySQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         }
     }
 }
@@ -808,6 +812,12 @@ if ($seedAll -or $Modules -contains 'eventgrid') {
 # ─── Complete ─────────────────────────────────────────────────────────────────
 
 Write-AdeSection "Data Seeding Complete"
-Write-AdeLog "Dummy data has been seeded into deployed ADE resources." -Level Success
-Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
-exit 0
+if ($script:_seedFailed) {
+    Write-AdeLog "One or more seeding steps failed (see [WARN] lines above)." -Level Warning
+    Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
+    exit 1
+} else {
+    Write-AdeLog "Dummy data has been seeded into deployed ADE resources." -Level Success
+    Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
+    exit 0
+}
