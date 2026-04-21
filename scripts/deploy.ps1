@@ -998,7 +998,7 @@ foreach ($moduleName in $deploymentOrder) {
                         Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
                         $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
                     } else {
-                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
+                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS
                         if (-not $isNonInteractiveBudget) {
                             Write-Host ""
                             Write-Host "  Budget alert email is not set." -ForegroundColor Yellow
