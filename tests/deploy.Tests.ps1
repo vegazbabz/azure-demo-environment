@@ -105,7 +105,8 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         # sees it for databases/data seeding (seed-data.ps1 -DatabaseAdminPassword).
         $script:source | Should -Match '_adePasswordWasGenerated[\s\S]{1,600}pwModulesDeployed'
         $script:source | Should -Match 'ADMIN PASSWORD'
-        $script:source | Should -Match 'Use -DatabaseAdminPassword with seed-data'
+        $script:source | Should -Match 'seedLine1[\s\S]{1,200}seedLine2'
+        $script:source | Should -Match '-DatabaseAdminPassword'
     }
 
     It 'Shows a mid-deployment banner after the compute module with the correct messaging' {

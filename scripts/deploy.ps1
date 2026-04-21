@@ -835,8 +835,10 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
                     Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
                     Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   Pass this to seed-data.ps1 -DatabaseAdminPassword              ║" -ForegroundColor Yellow
-                    Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
+                    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
+                    $seedLine2 = "     -DatabaseAdminPassword '$pwPlain'"
+                    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
+                    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
                     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
                     Write-Host ""
                     $pwPlain = $null
@@ -1176,7 +1178,10 @@ if ($script:_adePasswordWasGenerated -and $pwModulesDeployed -and $state.adminPa
     Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
     Write-Host $pwSummary.PadRight(52) -ForegroundColor White -NoNewline
     Write-Host "║" -ForegroundColor Yellow
-    Write-Host "║   Use -DatabaseAdminPassword with seed-data.ps1 to seed DBs.     ║" -ForegroundColor Yellow
+    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
+    $seedLine2 = "     -DatabaseAdminPassword '$pwSummary'"
+    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
+    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
     Write-Host ""
     $pwSummary = $null
