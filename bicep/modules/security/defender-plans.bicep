@@ -21,10 +21,9 @@ resource pricingTiers 'Microsoft.Security/pricings@2023-01-01' = [
 // CIS 2.13 — Set Security Contact email
 // Note: patch this via az security contact after deployment if needed
 
-// CIS 2.14 — Ensure auto-provisioning of monitoring agent is On
-resource autoProvisioning 'Microsoft.Security/autoProvisioningSettings@2017-08-01-preview' = {
-  name: 'mma'
-  properties: {
-    autoProvision: 'On'
-  }
-}
+// NOTE: MMA (Microsoft Monitoring Agent) auto-provisioning is intentionally
+// NOT set here.  The MMA agent was retired by Microsoft in August 2024.
+// Enabling autoProvisioningSettings 'mma' = 'On' causes Azure Defender for
+// Cloud to silently create an unmanaged DefaultResourceGroup-{REGION} resource
+// group and a default Log Analytics workspace outside ADE's control.
+// For CIS 2.14 compliance use the Azure Monitor Agent (AMA) instead.

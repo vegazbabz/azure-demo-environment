@@ -86,9 +86,7 @@
                 "windowsVm":            { "type": "boolean" },
                 "linuxVm":              { "type": "boolean" },
                 "vmss":                 { "type": "boolean" },
-                "availabilitySet":      { "type": "boolean" },
                 "enableAutoShutdown":   { "type": "boolean" },
-                "enableBootDiagnostics":{ "type": "boolean" },
                 "vmSku":                { "type": "string" },
                 "domainController":     { "type": "boolean" },
                 "domainName":           { "type": "string" }
@@ -140,7 +138,6 @@
               "additionalProperties": false,
               "properties": {
                 "windowsWebApp": { "type": "boolean" },
-                "linuxWebApp":   { "type": "boolean" },
                 "functionApp":   { "type": "boolean" },
                 "logicApp":      { "type": "boolean" }
               }

@@ -223,9 +223,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `windowsVm` | `true` | Windows Server 2022 VM |
 | `linuxVm` | `false` | Ubuntu 22.04 LTS VM — opt-in only |
 | `vmss` | `false` | VM Scale Set |
-| `availabilitySet` | `true` | Deploy an Availability Set for the VMs |
 | `enableAutoShutdown` | varies per profile | Daily auto-shutdown at 19:00 UTC (saves cost) |
-| `enableBootDiagnostics` | `true` | Boot diagnostics (managed storage). Useful for diagnosing failed VM starts. |
 | `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
 | `domainController` | `false` | Deploy an Active Directory Domain Controller (Windows Server 2022). Installs AD DS and promotes the VM to a forest root DC. Static IP `10.0.15.4` in the management subnet. VNet DNS is automatically pointed at the DC when enabled. |
 | `domainName` | `""` | FQDN for the AD forest (e.g. `corp.contoso.local`). Defaults to `<prefix>.local` when left empty. |
@@ -258,7 +256,6 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | Flag | Default | Description |
 | --- | --- | --- |
 | `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
-| `linuxWebApp` | `false` | Linux Web App — opt-in only |
 | `functionApp` | `true` | Function App (Consumption plan) |
 | `logicApp` | `true` | Logic App (Standard) |
 
@@ -675,7 +672,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **577 passing, 0 failing, 0 skipped**.
+Current state: **581 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -1018,7 +1015,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (569 passing, 0 failing, 0 skipped)
+tests/              # Pester 5 unit tests (581 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 

@@ -349,4 +349,24 @@ Describe 'destroy.ps1 – WhatIf safety' -Tag 'unit' {
         $commonSrc = Get-Content (Join-Path $script:repoRoot 'scripts\helpers\common.ps1') -Raw
         $commonSrc | Should -Match "ShouldProcess.*Delete resource group" -Because 'missing ShouldProcess guard was root cause of WhatIf not working'
     }
+
+    It 'Skips the deletion-poll loop entirely when $WhatIfPreference is true (elseif branch)' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The polling block must have an elseif ($WhatIfPreference) branch that
+        # skips waiting — otherwise a -WhatIf run hangs polling for RGs that were
+        # never actually deleted.
+        $source | Should -Match 'elseif.*WhatIfPreference' -Because '-WhatIf must bypass the deletion poll loop'
+    }
+
+    It 'Guards the KV purge-job startup loop with $WhatIfPreference to prevent job creation' {
+        $source = Get-Content $script:destroyPs -Raw
+        # Inside the polling while-loop there must be a continue guard so the
+        # soft-delete registry is never queried and no purge jobs are started.
+        $source | Should -Match 'WhatIfPreference.*continue' -Because '-WhatIf must prevent purge job creation inside the poll loop'
+    }
+
+    It 'Calls Remove-Job with -WhatIf:$false to suppress spurious WhatIf output' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'Remove-Job.*-WhatIf:\$false' -Because 'Remove-Job emits a WhatIf echo unless suppressed'
+    }
 }

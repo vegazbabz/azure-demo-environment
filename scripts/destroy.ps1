@@ -179,6 +179,8 @@ $kvPurgeStarted = [System.Collections.Generic.HashSet[string]]::new()
 
 if ($NoWait) {
     Write-AdeLog "Deletions running in background ($($allStarted.Count) RGs). Check status: az group list -o table" -Level Info
+} elseif ($WhatIfPreference) {
+    Write-AdeLog "WhatIf: skipping deletion poll (no resource groups were actually deleted)." -Level Info
 } else {
     # Phase 2: Poll until every started RG is gone (or timeout after 30 min).
     Write-AdeLog "Waiting for $($allStarted.Count) resource group(s) to delete in parallel..." -Level Info
@@ -196,6 +198,7 @@ if ($NoWait) {
         }
         # As soon as a vault appears in the soft-deleted registry, kick off its purge
         # in the background so it runs in parallel with the remaining RG deletions.
+        if ($WhatIfPreference) { continue }
         $freshDeleted = az keyvault list-deleted --resource-type vault `
             --query "[?starts_with(name, '${Prefix}-kv-') || starts_with(name, '${Prefix}-ml-kv-')].[name, properties.location]" `
             -o tsv 2>$null
@@ -269,7 +272,7 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
         Write-AdeLog "Waiting for $($kvPurgeJobs.Count) Key Vault purge(s) to complete..." -Level Info
         foreach ($kvEntry in $kvPurgeJobs) {
             $kvExitCode = Receive-Job $kvEntry.Job -Wait
-            Remove-Job  $kvEntry.Job
+            Remove-Job  $kvEntry.Job -WhatIf:$false
             if ($null -ne $kvExitCode -and [int]$kvExitCode -eq 0) {
                 Write-AdeLog "Key Vault purged: $($kvEntry.Name). Safe to re-deploy immediately." -Level Success
             } else {
