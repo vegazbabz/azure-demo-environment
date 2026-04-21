@@ -22,7 +22,7 @@
       full             All resource types (complete CIS coverage)
       minimal          VM + storage + monitoring (low cost)
       compute-only     VMs, VMSS (CIS Compute benchmark)
-      databases-only   SQL, Cosmos, PostgreSQL, MySQL, Redis
+      databases-only   SQL + Cosmos DB
       networking-only  VNet, NSGs, AppGW, Bastion
       security-focus   Key Vault, Defender, Sentinel (CIS Security sections)
     Or pass an absolute/relative path to a custom JSON profile.
