@@ -824,7 +824,7 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
-                if ($script:_adePasswordWasGenerated -and $script:_adeModuleHadNewResources) {
+                if ($script:_adePasswordWasGenerated) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
                     Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
