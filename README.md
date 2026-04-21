@@ -963,7 +963,7 @@ Profiles live in `config/profiles/` and control which modules and features are e
 
 | Profile | Description |
 | --- | --- |
-| `full` | All 12 modules — complete CIS coverage |
+| `full` | All 12 modules — `ai` and `data` disabled (require quota + cost approval) |
 | `minimal` | Monitoring + networking + security + one Windows VM |
 | `compute-only` | VMs and VMSS — CIS Compute sections |
 | `databases-only` | SQL, Cosmos DB, PostgreSQL |
