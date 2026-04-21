@@ -55,7 +55,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 | `containers` | Container Registry (Basic), AKS (1-node, free tier), Container Apps, Container Instances | — |
 | `integration` | Service Bus (Standard), Event Hub (Basic), Event Grid, SignalR | API Management |
 | `ai` | — (all resources opt-in due to cost and quota) | Azure AI Services, Azure OpenAI, Cognitive Search, Machine Learning |
-| `data` | Data Factory | Synapse Analytics, Databricks, Microsoft Purview |
+| `data` | — (all resources opt-in due to cost and quota) | Data Factory, Synapse Analytics, Databricks, Microsoft Purview |
 | `governance` | Automation Account (auto-stop/start), Budget alerts | Resource locks, Azure Policy initiative assignments |
 
 > `ai` and `data` are disabled in all built-in profiles by default due to cost and quota requirements. Enable them in a custom profile when needed.
@@ -196,7 +196,7 @@ Log Analytics Workspace, Application Insights, and Action Group are **always dep
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `bastionSku` | `"Developer"` | `Developer` = free (shared, no dedicated subnet). `Basic`/`Standard` = dedicated subnet + hourly cost |
+| `bastionSku` | `"Developer"` | `None` = no Bastion deployed. `Developer` = free (shared, no dedicated subnet). `Basic`/`Standard` = dedicated subnet + hourly cost |
 | `enableAppGateway` | `false` | Application Gateway WAF v2 (~$200–300/month) |
 | `enableFirewall` | `"None"` | `Standard` (~$900/month) or `Premium` (~$1,500/month) |
 | `enableVpnGateway` | `false` | VPN Gateway for Point-to-Site (~$140/month) |
@@ -515,7 +515,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **One instance per module** | Each module deploys exactly one resource group per prefix. You cannot, for example, deploy two separate SQL modules to the same prefix. Use different prefixes for parallel environments. |
 | **Feature flags are JSON-only** | There is no CLI flag to override a single feature flag (e.g. `mysql: true`) without editing the profile JSON. `-EnableModules` / `-SkipModules` toggle whole modules on/off, not individual features. |
 | **PostgreSQL / MySQL seeding** | `seed-data.ps1` skips these automatically if `psql` / `mysql` is not installed. See [Seed data](#seed-data) for options including Azure Cloud Shell. |
-| **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. |
+| **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. Using `-EnableModules data` on the command line auto-enables **all** features including Synapse Analytics, Databricks, and Microsoft Purview — which carry significant cost. |
 | **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
 | **Governance module and monitoring** | The `governance` module requires `monitoring` to also be enabled when deploying a full environment. Deploying `governance` alone (without monitoring) is supported but Automation Account runbooks will lack a Log Analytics workspace destination. |
@@ -675,7 +675,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **569 passing, 0 failing, 0 skipped**.
+Current state: **577 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 

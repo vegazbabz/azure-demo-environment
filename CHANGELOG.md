@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `seed-data.ps1`: replaced removed `az postgres/mysql flexible-server execute` commands (removed in Azure CLI 2.85.0) with native `psql`/`mysql` CLI calls; seeding is skipped automatically with an informational message when the client tool is not installed
 - `seed-data.ps1`: stripped `USE <db>;` statement before SQL batch execution to prevent Azure SQL parse errors
 - `postgresql` feature flag set to `false` by default in all profiles (`full`, `hardened`, `databases-only`) — now consistent with `mysql` (opt-in only)
+- `destroy.ps1`: `-WhatIf` no longer deletes real resources — `Remove-AdeResourceGroup` now wraps `az group delete` and lock removal in `$PSCmdlet.ShouldProcess()` guards
+- `deploy.ps1`: `-EnableModules` no longer creates empty resource groups — all `false` boolean features in a previously-disabled module are auto-enabled when the module is force-enabled via `-EnableModules`
+- `deploy.ps1`: interactive prompt added when `budget: true` but `budgetAlertEmail` is not set and running outside CI
+
+### Documentation
+- `deploy.ps1` help block: corrected `databases-only` profile description (`SQL + Cosmos DB`, not `SQL, Cosmos, PostgreSQL, MySQL, Redis`)
+- `README.md`: corrected `data` module default resources column — all features are opt-in (matches `ai` module)
+- `README.md`: updated test count to 577
+- `README.md`: documented `bastionSku: "None"` as valid value to skip Bastion deployment
+- `README.md`: added cost warning for `-EnableModules data` (auto-enables Synapse, Databricks, Purview)
+- `config/schema.json`: added missing feature properties (`alertEmail`, `allowedCidrRanges`, `domainController`, `domainName`, `sqlVm`, `aksAuthorizedIpRanges`, `budgetAlertEmail`, `autoShutdownTime`, `autoShutdownTimezone`, `autoStartEnabled`, `apimPublisherEmail`, `apimPublisherName`) so the schema accurately reflects all valid profile properties
 
 ---
 
