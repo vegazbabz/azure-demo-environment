@@ -33,10 +33,8 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "logAnalyticsWorkspace": { "type": "boolean" },
-                "applicationInsights":   { "type": "boolean" },
-                "actionGroup":           { "type": "boolean" },
-                "alertRules":            { "type": "boolean" }
+                "alertRules": { "type": "boolean" },
+                "alertEmail": { "type": "string" }
               }
             }
           }
@@ -71,7 +69,8 @@
                 "keyVault":          { "type": "boolean" },
                 "managedIdentity":   { "type": "boolean" },
                 "defenderForCloud":  { "type": "boolean" },
-                "sentinel":          { "type": "boolean" }
+                "sentinel":          { "type": "boolean" },
+                "allowedCidrRanges": { "type": "array", "items": { "type": "string" } }
               }
             },
             "costWarnings": { "$ref": "#/definitions/costWarnings" }
@@ -90,7 +89,9 @@
                 "availabilitySet":      { "type": "boolean" },
                 "enableAutoShutdown":   { "type": "boolean" },
                 "enableBootDiagnostics":{ "type": "boolean" },
-                "vmSku":                { "type": "string" }
+                "vmSku":                { "type": "string" },
+                "domainController":     { "type": "boolean" },
+                "domainName":           { "type": "string" }
               }
             }
           }
@@ -106,7 +107,8 @@
                 "dataLakeGen2":          { "type": "boolean" },
                 "fileShares":            { "type": "boolean" },
                 "enableSoftDelete":      { "type": "boolean" },
-                "enableVersioning":      { "type": "boolean" }
+                "enableVersioning":      { "type": "boolean" },
+                "allowedCidrRanges":     { "type": "array", "items": { "type": "string" } }
               }
             }
           }
@@ -119,6 +121,7 @@
               "additionalProperties": false,
               "properties": {
                 "sqlDatabase":        { "type": "boolean" },
+                "sqlVm":              { "type": "boolean" },
                 "cosmosDb":           { "type": "boolean" },
                 "postgresql":         { "type": "boolean" },
                 "mysql":              { "type": "boolean" },
@@ -151,10 +154,11 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "containerRegistry":  { "type": "boolean" },
-                "kubernetesService":  { "type": "boolean" },
-                "containerApps":      { "type": "boolean" },
-                "containerInstances": { "type": "boolean" }
+                "containerRegistry":    { "type": "boolean" },
+                "kubernetesService":    { "type": "boolean" },
+                "containerApps":        { "type": "boolean" },
+                "containerInstances":   { "type": "boolean" },
+                "aksAuthorizedIpRanges":{ "type": "array", "items": { "type": "string" } }
               }
             }
           }
@@ -166,12 +170,14 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "serviceBus":    { "type": "boolean" },
-                "eventHub":      { "type": "boolean" },
-                "eventGrid":     { "type": "boolean" },
-                "signalR":       { "type": "boolean" },
-                "apiManagement": { "type": "boolean" },
-                "apimSku":       { "type": "string", "enum": ["Developer", "Basic", "Standard", "Premium"] }
+                "serviceBus":         { "type": "boolean" },
+                "eventHub":           { "type": "boolean" },
+                "eventGrid":          { "type": "boolean" },
+                "signalR":            { "type": "boolean" },
+                "apiManagement":      { "type": "boolean" },
+                "apimSku":            { "type": "string", "enum": ["Developer", "Basic", "Standard", "Premium"] },
+                "apimPublisherEmail": { "type": "string" },
+                "apimPublisherName":  { "type": "string" }
               }
             },
             "costWarnings": { "$ref": "#/definitions/costWarnings" }
@@ -216,11 +222,15 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "automationAccount": { "type": "boolean" },
-                "budget":            { "type": "boolean" },
-                "budgetAmount":      { "type": "number", "minimum": 1 },
-                "resourceLocks":     { "type": "boolean" },
-                "policyAssignments": { "type": "boolean" }
+                "automationAccount":     { "type": "boolean" },
+                "budget":                { "type": "boolean" },
+                "budgetAmount":          { "type": "number", "minimum": 1 },
+                "budgetAlertEmail":      { "type": "string" },
+                "resourceLocks":         { "type": "boolean" },
+                "policyAssignments":     { "type": "boolean" },
+                "autoShutdownTime":      { "type": "string", "pattern": "^\\d{4}$" },
+                "autoShutdownTimezone":  { "type": "string" },
+                "autoStartEnabled":      { "type": "boolean" }
               }
             }
           }
