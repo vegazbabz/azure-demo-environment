@@ -287,7 +287,8 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | --- | --- | --- |
 | `aiServices` | `false` | Azure AI Services multi-service account (S0) |
 | `openAi` | `false` | Azure OpenAI Service with GPT-4o deployment. Requires quota approval in your subscription. |
-| `cognitiveSearch` | `false` | Azure Cognitive Search (Basic ~$75/month) |
+| `cognitiveSearch` | `false` | Azure Cognitive Search (~$250/month Standard) |
+| `cognitiveSearchSku` | `"standard"` | Cognitive Search SKU: `free` (1 per subscription), `basic` (~$75/mo), `standard` (~$250/mo), `standard2`, `standard3`. `basic` is frequently capacity-constrained in newer regions — use `standard` or `free` if you hit `ResourcesForSkuUnavailable`. |
 | `machineLearning` | `false` | Azure Machine Learning workspace |
 
 ### `data`
@@ -353,6 +354,7 @@ You can also deploy both side-by-side using different prefixes:
 | `-SubscriptionId` | string | current account | Target subscription. Defaults to whatever `az account show` returns. |
 | `-AdminUsername` | string | `adeadmin` | VM and database administrator username |
 | `-AdminPassword` | SecureString | prompted | VM admin password. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. |
+| `-AutoGeneratePassword` | switch | — | Generate a cryptographically random password automatically. The password is printed in a highlighted box at the mid-deploy banner and again in the final summary — copy it before the terminal scrolls. Cannot be combined with `-AdminPassword`. |
 | `-Mode` | string | `default` | `default` or `hardened` |
 | `-WhatIf` | switch | — | Run Bicep what-if on each module without actually deploying anything |
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
@@ -607,11 +609,14 @@ You can run the seed script manually against an already-deployed environment:
 
 ```powershell
 # Seed all targets
-./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword (Read-Host -AsSecureString 'DB password')
+./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword123!'
 
 # Seed only specific targets
 ./scripts/seed-data.ps1 -Prefix ade -Modules storage,redis,keyvault -Force
 ```
+
+> [!NOTE]
+> Wrap the password in **single quotes** so PowerShell does not expand special characters such as `$`. The script exits with code **1** and prints a `[WARN]` summary if any SQL / PostgreSQL / MySQL seed step fails, so callers and CI pipelines can detect partial failures.
 
 ---
 
