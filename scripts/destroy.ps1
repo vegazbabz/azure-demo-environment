@@ -70,7 +70,7 @@ $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 if ($LogFile) {
     $resolvedLog = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogFile)
     $null = New-Item -ItemType Directory -Force -Path (Split-Path $resolvedLog)
-    Set-Content -LiteralPath $resolvedLog -Value @(
+    Add-Content -LiteralPath $resolvedLog -Value @(
         "# ADE Teardown Log",
         "# Started  : $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss UTC'))",
         "# Prefix   : $Prefix",
@@ -320,10 +320,14 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
     if ($kvPurgeJobs.Count -gt 0) {
         Write-AdeLog "Waiting for $($kvPurgeJobs.Count) Key Vault purge(s) to complete..." -Level Info
         foreach ($kvEntry in $kvPurgeJobs) {
-            $kvExitCode = Receive-Job $kvEntry.Job -Wait
+            # -Timeout 900: Azure purge API rarely takes longer than 15 min;
+            # without a timeout the script can block indefinitely on a slow/unresponsive endpoint.
+            $kvExitCode = Receive-Job $kvEntry.Job -Wait -Timeout 900
             Remove-Job  $kvEntry.Job -WhatIf:$false
             if ($null -ne $kvExitCode -and [int]$kvExitCode -eq 0) {
                 Write-AdeLog "Key Vault purged: $($kvEntry.Name). Safe to re-deploy immediately." -Level Success
+            } elseif ($null -eq $kvExitCode) {
+                Write-AdeLog "Purge of '$($kvEntry.Name)' timed out after 15 min (non-fatal). It may still complete in the background." -Level Warning
             } else {
                 Write-AdeLog "Could not purge '$($kvEntry.Name)' (non-fatal)." -Level Warning
             }

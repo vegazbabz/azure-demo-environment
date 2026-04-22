@@ -525,17 +525,19 @@ if ($seedAll -or $Modules -contains 'redis') {
             $tcp = $null
             try {
                 $tcp = Get-RedisTcpClient -Host $redisHost -Port 6380
-                # The RemoteCertificateValidationCallback returns $true unconditionally.
+                #region DEMO ONLY — DO NOT COPY TO PRODUCTION
+                # RemoteCertificateValidationCallback returns $true unconditionally.
                 # This is acceptable here because:
                 #   1. The target is always *.redis.cache.windows.net — an Azure-managed cert.
-                #   2. This is a demo/seed script, not a long-lived service connection.
+                #   2. This is a one-shot demo seed script, not a long-lived service connection.
                 #   3. SslStream + port 6380 still provides transport encryption (TLS 1.2+).
-                # For production workloads, use the StackExchange.Redis client which
-                # validates the full chain by default.
+                # For production workloads use the StackExchange.Redis NuGet package, which
+                # validates the full certificate chain by default.
                 $ssl = [System.Net.Security.SslStream]::new(
                     $tcp.GetStream(), $false,
                     [System.Net.Security.RemoteCertificateValidationCallback]{ param($s, $c, $ch, $e) $true }
                 )
+                #endregion DEMO ONLY
                 $ssl.AuthenticateAsClient($redisHost)
 
                 # Authenticate
@@ -590,11 +592,15 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         $kvSecrets = @{
             'db-connection-string'  = $dbConnString
             'app-client-id'        = 'demo-client-id-00000000-0000-0000-0000-000000000001'
-            'app-client-secret'    = 'demo-secret-value-replace-in-production'
+            # Randomised per-seed so each deployment gets a unique placeholder value.
+            # These are NOT real credentials — replace with actual secrets before production use.
+            'app-client-secret'    = "demo-secret-$([guid]::NewGuid().ToString('N').Substring(0,16))"
             'app-tenant-id'        = $kvTenantId
-            'smtp-password'        = 'demo-smtp-password-replace-in-production'
-            'third-party-api-key'  = 'demo-api-key-abc123xyz-replace-in-production'
-            'jwt-signing-key'      = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('demo-jwt-signing-key-replace-in-production'))
+            'smtp-password'        = "demo-smtp-$([guid]::NewGuid().ToString('N').Substring(0,16))"
+            'third-party-api-key'  = "demo-apikey-$([guid]::NewGuid().ToString('N').Substring(0,16))"
+            'jwt-signing-key'      = [System.Convert]::ToBase64String(
+                                        [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+                                    )
         }
 
         foreach ($secret in $kvSecrets.GetEnumerator()) {

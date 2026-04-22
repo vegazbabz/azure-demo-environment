@@ -36,6 +36,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 - [Repository structure](#repository-structure)
 - [CIS / MCSB benchmark guide](#cis--mcsb-benchmark-guide)
 - [License](#license)
+- [Contributing](#contributing)
 
 ---
 
@@ -1136,3 +1137,9 @@ Cost warnings are surfaced during deployment confirmation.
 ## License
 
 MIT
+
+---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on branching, commit style, and running the test suite locally before opening a PR.

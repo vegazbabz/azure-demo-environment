@@ -44,7 +44,9 @@
 .PARAMETER AdminPassword
     Override the VM admin password (SecureString). Must meet Azure complexity requirements
     (min 12 chars, upper + lower + digit + symbol).
-    If omitted, a secure 12-character password is auto-generated and printed to the terminal.
+    If omitted and a password-bearing module (compute, databases, or data) is enabled,
+    a secure 12-character password is auto-generated and printed to the terminal.
+    Use -AutoGeneratePassword to explicitly request generation even when those modules are disabled.
 
 .PARAMETER Mode
     Deployment mode.
@@ -824,6 +826,12 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
+                if ($Mode -ne 'hardened') {
+                    $deploySqlFlag = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase')
+                    if ($deploySqlFlag) {
+                        Write-AdeLog "SQL Server deployed in default mode: the 'AllowAll' firewall rule (0.0.0.0-255.255.255.255) is ACTIVE. This is intentional for CIS baseline auditing. Remove it before using this environment for anything other than benchmark testing." -Level Warning
+                    }
+                }
                 if ($script:_adePasswordWasGenerated) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
