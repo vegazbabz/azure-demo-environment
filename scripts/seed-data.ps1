@@ -365,17 +365,24 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
 
         foreach ($doc in $sampleDocs) {
             $docJson = $doc | ConvertTo-Json -Depth 5 -Compress
-            $tmpDoc  = Join-Path ([System.IO.Path]::GetTempPath()) "cosmosDoc-$($doc.id).json"
-            $docJson | Set-Content -Path $tmpDoc -Encoding UTF8
-            az cosmosdb sql document create `
-                --account-name $accountName `
-                --resource-group $dbRg `
-                --database-name "${Prefix}-db" `
-                --container-name 'items' `
-                --body $tmpDoc `
-                --output none 2>$null
-            Remove-Item $tmpDoc -Force
-            Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
+            $tmpDoc  = [System.IO.Path]::GetTempFileName()
+            try {
+                [System.IO.File]::WriteAllText($tmpDoc, $docJson, [System.Text.UTF8Encoding]::new($false))
+                az cosmosdb sql document create `
+                    --account-name $accountName `
+                    --resource-group $dbRg `
+                    --database-name "${Prefix}-db" `
+                    --container-name 'items' `
+                    --body $tmpDoc `
+                    --output none 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
+                } else {
+                    Write-AdeLog "Failed to insert Cosmos document: $($doc.id)" -Level Warning
+                }
+            } finally {
+                Remove-Item -LiteralPath $tmpDoc -ErrorAction SilentlyContinue
+            }
         }
         } # end else (local auth enabled)
     }
