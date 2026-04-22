@@ -383,34 +383,6 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
         Write-AdeLog "No soft-deleted Key Vaults found for prefix '$Prefix'." -Level Info
     }
 
-    # ── Cognitive Services (AI Services + OpenAI) ────────────────────────────
-    # Purge endpoint requires: name + location + original resource-group name.
-    # We extract all three from the deleted account's ARM resource ID:
-    #   .../providers/Microsoft.CognitiveServices/locations/{loc}/resourceGroups/{rg}/deletedAccounts/{name}
-    Write-AdeLog "Purging any soft-deleted Cognitive Services accounts with prefix '$Prefix'..." -Level Info
-    $deletedCognitive = az cognitiveservices account list-deleted --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" -o tsv 2>$null
-    if ($deletedCognitive) {
-        foreach ($line in $deletedCognitive) {
-            if (-not $line) { continue }
-            $parts    = ($line.Trim() -split '\t')
-            $acctName = $parts[0]
-            $acctLoc  = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            $acctId   = if ($parts.Count -gt 2) { $parts[2] } else { '' }
-            # Extract original RG name from ARM ID
-            $acctRg   = if ($acctId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
-            if (-not $acctLoc -or -not $acctRg) {
-                Write-AdeLog "Could not determine location/RG for '$acctName' — skipping." -Level Warning
-                continue
-            }
-            Write-AdeLog "Purging soft-deleted Cognitive Services account: $acctName (rg: $acctRg)" -Level Warning
-            az cognitiveservices account purge --name $acctName --resource-group $acctRg --location $acctLoc --output none 2>$null
-            if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged: $acctName" -Level Success }
-            else { Write-AdeLog "Could not purge '$acctName' (non-fatal)." -Level Warning }
-        }
-    } else {
-        Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
-    }
-
     # ── Subscription-scope Budget ────────────────────────────────────────────
     # Budgets live at subscription scope (Microsoft.Consumption/budgets) and are
     # NOT deleted when resource groups are removed. Delete it explicitly so that
@@ -434,6 +406,39 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
         }
     } else {
         Write-AdeLog "Could not determine subscription ID — skipping budget cleanup." -Level Warning
+    }
+}
+
+# ── Cognitive Services (AI Services + OpenAI) ────────────────────────────────
+# Purge endpoint requires: name + location + original resource-group name.
+# We extract all three from the deleted account's ARM resource ID:
+#   .../providers/Microsoft.CognitiveServices/locations/{loc}/resourceGroups/{rg}/deletedAccounts/{name}
+# NOTE: This block intentionally runs even when some RGs failed to delete.
+# The failedRgs gate that guards KV/Budget would skip this purge, causing
+# FlagMustBeSetForRestore errors on the next redeploy into the same RG.
+if (-not $NoWait -and -not $WhatIfPreference) {
+    Write-AdeLog "Purging any soft-deleted Cognitive Services accounts with prefix '$Prefix'..." -Level Info
+    $deletedCognitive = az cognitiveservices account list-deleted --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" -o tsv 2>$null
+    if ($deletedCognitive) {
+        foreach ($line in $deletedCognitive) {
+            if (-not $line) { continue }
+            $parts    = ($line.Trim() -split '\t')
+            $acctName = $parts[0]
+            $acctLoc  = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+            $acctId   = if ($parts.Count -gt 2) { $parts[2] } else { '' }
+            # Extract original RG name from ARM ID
+            $acctRg   = if ($acctId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
+            if (-not $acctLoc -or -not $acctRg) {
+                Write-AdeLog "Could not determine location/RG for '$acctName' — skipping." -Level Warning
+                continue
+            }
+            Write-AdeLog "Purging soft-deleted Cognitive Services account: $acctName (rg: $acctRg)" -Level Warning
+            az cognitiveservices account purge --name $acctName --resource-group $acctRg --location $acctLoc --output none 2>$null
+            if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged: $acctName" -Level Success }
+            else { Write-AdeLog "Could not purge '$acctName' (non-fatal)." -Level Warning }
+        }
+    } else {
+        Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
     }
 }
 

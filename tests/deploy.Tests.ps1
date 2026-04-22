@@ -280,6 +280,18 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $purgeIdx | Should -BeLessThan $deployIdx -Because 'soft-delete purge must run before the Bicep deployment'
     }
 
+    It 'Retries ai module without Cognitive Search when SKU is unavailable in the region' {
+        # Azure Cognitive Search has per-region capacity limits. Rather than failing the
+        # entire AI deployment, detect ResourcesForSkuUnavailable and retry with
+        # deployCognitiveSearch=false so AI Services, OpenAI and ML still deploy.
+        $aiIdx     = $script:source.IndexOf("'ai' {")
+        $dataIdx   = $script:source.IndexOf("'data' {")
+        $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
+        $aiBlock | Should -Match 'ResourcesForSkuUnavailable' -Because 'SKU error must be detected'
+        $aiBlock | Should -Match "deployCognitiveSearch.*false" -Because 'retry must disable Cognitive Search'
+        $aiBlock | Should -Match 'Deploy-AdeModule.*ai.*BicepFile' -Because 'retry must call Deploy-AdeModule again'
+    }
+
     It 'Does not contain dead bastionSubnetId state key' {
         $script:source | Should -Not -Match 'bastionSubnetId'
     }

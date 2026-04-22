@@ -991,7 +991,21 @@ foreach ($moduleName in $deploymentOrder) {
                     # auto-create an unmanaged managed RG (ai_<name>_<guid>_managed).
                     logAnalyticsId          = if ($state.logAnalyticsId) { $state.logAnalyticsId } else { '' }
                 }
-                $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                try {
+                    $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                } catch {
+                    # Azure Cognitive Search has regional SKU capacity limits. If the requested
+                    # SKU (typically 'basic') is unavailable in the target region, retry the
+                    # entire AI module deployment without Cognitive Search so the remaining
+                    # AI resources (AI Services, OpenAI, Machine Learning) still deploy.
+                    if ($_ -match 'ResourcesForSkuUnavailable') {
+                        Write-AdeLog "Cognitive Search SKU '$($params.cognitiveSearchSku)' is not available in '$Location' — retrying AI module without Cognitive Search." -Level Warning
+                        $params['deployCognitiveSearch'] = 'false'
+                        $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                    } else {
+                        throw
+                    }
+                }
             }
 
             # ── DATA ────────────────────────────────────────────────────────
