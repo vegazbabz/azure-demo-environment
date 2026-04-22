@@ -298,11 +298,16 @@ Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
         $source | Should -Match '--location.*acctLoc'
     }
 
-    It 'Guards the CogSvc purge block with the same -NoWait / failedRgs conditions as KV purge' {
+    It 'Cog Services purge runs even when some RGs failed (not gated on failedRgs.Count -eq 0)' {
         $source = Get-Content $script:destroyPs -Raw
-        # Both purge sections must be inside the same outer if block
-        $source | Should -Match '-not \$NoWait'
-        $source | Should -Match 'failedRgs.Count -eq 0'
+        # CogSvc purge has its own guard that omits the failedRgs check, so that a
+        # partial destroy (e.g. Databricks deny-assignment left one RG) still purges
+        # soft-deleted accounts and avoids FlagMustBeSetForRestore on the next deploy.
+        $csIdx = $source.IndexOf('cognitiveservices account list-deleted')
+        $csIdx | Should -BeGreaterThan 0 -Because 'purge call must exist'
+        # The 400 chars immediately before the purge call must NOT contain failedRgs.Count
+        $contextBefore = $source.Substring([Math]::Max(0, $csIdx - 400), [Math]::Min(400, $csIdx))
+        $contextBefore | Should -Not -Match 'failedRgs\.Count' -Because 'Cog Services purge must not be inside the failedRgs guard'
     }
 }
 
