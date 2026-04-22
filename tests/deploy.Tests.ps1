@@ -280,21 +280,25 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $purgeIdx | Should -BeLessThan $deployIdx -Because 'soft-delete purge must run before the Bicep deployment'
     }
 
-    It 'Purges soft-deleted ML workspace before deploying the ai module' {
-        # ML workspace name is deterministic (${prefix}-mlworkspace), so it hits the same
-        # soft-delete block after a destroy and fails with "Soft-deleted workspace exists."
-        # The purge REST call is async (202), so we must poll until the workspace is gone.
+    It 'Handles soft-deleted ML workspace gracefully in ai module' {
+        # A soft-deleted ML workspace (left over from a prior destroy cycle) blocks
+        # redeployment with "Soft-deleted workspace exists. Please purge or recover it."
+        # The ARM deletedWorkspaces list endpoint does not exist in this subscription's
+        # ML provider manifest, and forceToPurge=true is only valid for active workspaces.
+        # The correct approach is:
+        #  1. Best-effort pre-flight: az ml workspace delete --permanently-delete (silently
+        #     fails when workspace is already soft-deleted or absent).
+        #  2. Catch block: detect "Soft-deleted workspace exists" and retry the AI module
+        #     without Machine Learning so AI Services, OpenAI and Search still deploy.
         $aiIdx     = $script:source.IndexOf("'ai' {")
         $dataIdx   = $script:source.IndexOf("'data' {")
         $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
         $aiBlock | Should -Match 'mlworkspace' -Because 'ML workspace name must be referenced'
-        $aiBlock | Should -Match 'MachineLearningServices/deletedWorkspaces' -Because 'must list soft-deleted workspaces to confirm the workspace is there'
-        $aiBlock | Should -Match 'forceToPurge=true' -Because 'must use forceToPurge=true per REST API docs (api-version=2024-04-01)'
-        $aiBlock | Should -Match 'Start-Sleep|mlMaxWait|mlElapsed' -Because 'must wait for async purge to complete'
-        # Purge attempt must appear before Deploy-AdeModule
-        $mlPurgeIdx = $aiBlock.IndexOf('MachineLearningServices')
-        $deployIdx  = $aiBlock.IndexOf('Deploy-AdeModule')
-        $mlPurgeIdx | Should -BeLessThan $deployIdx -Because 'ML workspace purge must run before the Bicep deployment'
+        $aiBlock | Should -Match 'permanently-delete' -Because 'pre-flight must attempt permanent deletion'
+        $aiBlock | Should -Match 'Soft-deleted workspace exists' -Because 'catch block must detect the soft-delete conflict error'
+        $aiBlock | Should -Match "deployMachineLearning.*false" -Because 'retry must disable Machine Learning when workspace is soft-deleted'
+        # The catch-and-retry must call Deploy-AdeModule again
+        $aiBlock | Should -Match 'Deploy-AdeModule.*ai.*BicepFile' -Because 'retry must call Deploy-AdeModule for the ai module'
     }
 
     It 'Retries ai module without Cognitive Search when SKU is unavailable in the region' {

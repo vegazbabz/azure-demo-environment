@@ -256,13 +256,14 @@ if ("${Prefix}-ai-rg" -in $ordered) {
         --resource-type 'Microsoft.MachineLearningServices/workspaces' `
         --query '[].name' -o tsv 2>$null
     if ($LASTEXITCODE -eq 0 -and $mlPreList) {
-        $mlPreSubId = (az account show --query id -o tsv 2>$null).Trim()
         foreach ($mlPreWsName in ($mlPreList -split [System.Environment]::NewLine | Where-Object { $_ })) {
             $mlPreWsName = $mlPreWsName.Trim()
-            if (-not $mlPreWsName -or -not $mlPreSubId) { continue }
-            Write-AdeLog "Pre-deleting ML workspace '$mlPreWsName' with forceToPurge (bypasses soft-delete)..." -Level Warning
-            $mlPreUrl = "https://management.azure.com/subscriptions/$mlPreSubId/resourceGroups/${Prefix}-ai-rg/providers/Microsoft.MachineLearningServices/workspaces/${mlPreWsName}?api-version=2024-04-01&forceToPurge=true"
-            az rest --method DELETE --url $mlPreUrl --output none 2>$null
+            if (-not $mlPreWsName) { continue }
+            Write-AdeLog "Pre-deleting ML workspace '$mlPreWsName' permanently (bypasses soft-delete)..." -Level Warning
+            az ml workspace delete `
+                --name $mlPreWsName `
+                --resource-group "${Prefix}-ai-rg" `
+                --permanently-delete --yes --no-wait 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 Write-AdeLog "ML workspace '$mlPreWsName' permanently deleted — will not enter soft-delete on RG removal." -Level Success
             } else {
@@ -469,38 +470,17 @@ if (-not $NoWait -and -not $WhatIfPreference) {
     }
 
     # ── ML Workspaces ────────────────────────────────────────────────────────────
-    # ML workspace name is deterministic (${prefix}-mlworkspace — no uniqueString).
-    # Soft-deleted workspaces block redeployment with:
-    #   "Soft-deleted workspace exists. Please purge or recover it."
-    # The pre-delete block above handles the common case (workspace exists in the RG).
-    # This block is a safety net for workspaces that entered soft-delete state anyway.
-    # The correct purge API is DELETE .../workspaces/{name}?forceToPurge=true
-    # (api-version=2024-04-01, documented at /rest/api/azureml/workspaces/delete).
-    # Location is not a destroy.ps1 param, so we list all deleted workspaces first.
+    # The pre-delete block above permanently deletes any active ML workspace before
+    # the RG is removed, preventing it from entering soft-delete state.
+    # Once an ML workspace is already soft-deleted (i.e. the RG was deleted first),
+    # there is no programmatic purge path available via ARM REST or the az ml CLI —
+    # the workspace is tracked only by the ML service backend and is not accessible
+    # as an ARM resource. The pre-delete block is the only reliable mitigation.
+    # On the next deploy.ps1 run, the ai module catch block will detect
+    # "Soft-deleted workspace exists" and retry without Machine Learning automatically.
     $mlSubId = (az account show --query id -o tsv 2>$null).Trim()
     if ($mlSubId) {
-        $mlListUrl = "https://management.azure.com/subscriptions/$mlSubId/providers/Microsoft.MachineLearningServices/deletedWorkspaces?api-version=2024-04-01"
-        $mlListRaw = az rest --method GET --url $mlListUrl --output json 2>$null
-        if ($LASTEXITCODE -eq 0 -and $mlListRaw) {
-            try {
-                $mlDeleted = ($mlListRaw | ConvertFrom-Json -ErrorAction Stop).value |
-                    Where-Object { $_.name -like "${Prefix}-*" }
-            } catch { $mlDeleted = $null }
-            if ($mlDeleted) {
-                foreach ($mlWs in $mlDeleted) {
-                    $mlWsName = $mlWs.name
-                    # Extract original RG from ARM resource ID (e.g. /resourceGroups/{rg}/)
-                    $mlWsRg   = if ($mlWs.id -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { "${Prefix}-ai-rg" }
-                    Write-AdeLog "Purging soft-deleted ML workspace: $mlWsName (original RG: $mlWsRg)" -Level Warning
-                    $mlPurgeUrl = "https://management.azure.com/subscriptions/$mlSubId/resourceGroups/$mlWsRg/providers/Microsoft.MachineLearningServices/workspaces/${mlWsName}?api-version=2024-04-01&forceToPurge=true"
-                    az rest --method DELETE --url $mlPurgeUrl --output none 2>$null
-                    if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged ML workspace: $mlWsName" -Level Success }
-                    else { Write-AdeLog "Could not purge ML workspace '$mlWsName' (non-fatal)." -Level Warning }
-                }
-            } else {
-                Write-AdeLog "No soft-deleted ML workspaces found for prefix '$Prefix'." -Level Info
-            }
-        }
+        Write-AdeLog "ML workspace soft-delete purge: relying on pre-delete block above; no REST purge path for already-soft-deleted workspaces." -Level Info
     }
 }
 
