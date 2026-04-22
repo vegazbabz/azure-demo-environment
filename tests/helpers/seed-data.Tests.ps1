@@ -200,17 +200,20 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
             Mock az {
                 $script:azCallCount++
                 $global:LASTEXITCODE = 0
-                if ($script:azCallCount -eq 1) { 'demo-cosmos' }     # Get-AdeResource
-                # cosmosdb sql document create calls succeed silently
+                if    ($script:azCallCount -eq 1) { 'demo-cosmos'    }  # Get-AdeResource
+                elseif ($script:azCallCount -eq 3) { 'dGVzdGtleQ==' }  # keys list → primaryMasterKey (base64)
+                # call 2: cosmosdb show disableLocalAuth → nothing (= not disabled)
             }
+            Mock Invoke-RestMethod { @{} }
         }
 
-        It 'Calls az cosmosdb sql document create once per sample document' {
+        It 'Calls Invoke-RestMethod once per sample document' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
             . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules cosmosdb -Force
-            # 1 (resource list) + 1 (cosmosdb show for disableLocalAuth check) + 3 (document creates)
-            Should -Invoke az -Times 5 -Exactly
+            # 1 (resource list) + 1 (cosmosdb show for disableLocalAuth check) + 1 (keys list)
+            Should -Invoke az -Times 3 -Exactly
+            Should -Invoke Invoke-RestMethod -Times 3 -Exactly
         }
     }
 
