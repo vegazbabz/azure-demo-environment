@@ -955,13 +955,45 @@ foreach ($moduleName in $deploymentOrder) {
                 $bicep = Join-Path $bicepRoot 'data\data.bicep'
                 $dataFeatProp = $deployProfile.modules.data.PSObject.Properties['features']
                 $dataFeatures = if ($null -ne $dataFeatProp) { $dataFeatProp.Value } else { [pscustomobject]@{} }
+
+                # ── Purview pre-flight: detect tenant-level location conflict ──────
+                # Azure only allows one free-tier Purview account per tenant. Attempting
+                # to create one in a region that differs from an existing free-tier account
+                # fails with error 39002. Check before deploying and auto-skip if needed.
+                $deployPurviewFlag = Get-FeatureFlag -Features $dataFeatures -Name 'purview'
+                if ($deployPurviewFlag) {
+                    $existingPurview = $null
+                    # Prefer Resource Graph (tenant-wide, single call). Falls back to
+                    # az resource list (current subscription only) if Graph is unavailable.
+                    $graphJson = az graph query -q "Resources | where type =~ 'microsoft.purview/accounts' | project name, location" --output json 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $graphJson) {
+                        try {
+                            $graphResult = $graphJson | ConvertFrom-Json -ErrorAction Stop
+                            $existingPurview = $graphResult.data | Where-Object { $_.location -ne $Location } | Select-Object -First 1
+                        } catch {}
+                    }
+                    if (-not $existingPurview) {
+                        $pvJson = az resource list --resource-type Microsoft.Purview/accounts --output json 2>$null
+                        if ($LASTEXITCODE -eq 0 -and $pvJson) {
+                            try {
+                                $pvList = $pvJson | ConvertFrom-Json -ErrorAction Stop
+                                $existingPurview = $pvList | Where-Object { $_.location -ne $Location } | Select-Object -First 1
+                            } catch {}
+                        }
+                    }
+                    if ($existingPurview) {
+                        Write-AdeLog "Purview account '$($existingPurview.name)' already exists in location '$($existingPurview.location)'. Azure only allows one free-tier Purview account per tenant and it cannot be moved to a different region. Skipping Purview for this deployment. To deploy Purview, re-run in region '$($existingPurview.location)' or set 'purview: false' in your profile." -Level Warning
+                        $deployPurviewFlag = $false
+                    }
+                }
+
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
                     deployDataFactory   = (Get-FeatureFlag -Features $dataFeatures -Name 'dataFactory').ToString().ToLower()
                     deploySynapse       = (Get-FeatureFlag -Features $dataFeatures -Name 'synapse').ToString().ToLower()
                     deployDatabricks    = (Get-FeatureFlag -Features $dataFeatures -Name 'databricks').ToString().ToLower()
-                    deployPurview       = (Get-FeatureFlag -Features $dataFeatures -Name 'purview').ToString().ToLower()
+                    deployPurview       = $deployPurviewFlag.ToString().ToLower()
                     storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
                     subnetId            = $state.dataSubnetId
                 }
