@@ -356,7 +356,18 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
             Write-AdeLog "Cosmos DB local auth is disabled (hardened mode). Skipping document seeding via CLI." -Level Warning
             Write-AdeLog "To seed manually: assign 'Cosmos DB Built-in Data Contributor' to your identity, then use the Azure Portal Data Explorer or the Cosmos REST API with an Entra Bearer token." -Level Info
         } else {
-        # Use az cosmosdb sql document create for simplicity
+        # az cosmosdb sql document does not exist in az CLI core; use the Cosmos DB
+        # Data Plane REST API with master-key HMAC-SHA256 authentication instead.
+        $cosmosKey = az cosmosdb keys list `
+            --name $accountName `
+            --resource-group $dbRg `
+            --query primaryMasterKey `
+            --output tsv 2>$null
+
+        $dbName        = "${Prefix}-db"
+        $containerName = 'items'
+        $resourceLink  = "dbs/$dbName/colls/$containerName"
+
         $sampleDocs = @(
             @{ id = 'order-001'; customerId = 1; total = 149.99; status = 'completed'; items = @(@{ sku = 'WIDGET-A'; qty = 2 }) }
             @{ id = 'order-002'; customerId = 2; total = 299.50; status = 'pending';   items = @(@{ sku = 'WIDGET-B'; qty = 5 }) }
@@ -364,24 +375,34 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
         )
 
         foreach ($doc in $sampleDocs) {
-            $docJson = $doc | ConvertTo-Json -Depth 5 -Compress
-            $tmpDoc  = [System.IO.Path]::GetTempFileName()
+            $docJson  = $doc | ConvertTo-Json -Depth 5 -Compress
+            $dateUtc  = [datetime]::UtcNow.ToString('R')
+
+            # Build Cosmos DB master-key authorization token (HMAC-SHA256)
+            $stringToSign = "post`ndocs`n$resourceLink`n$($dateUtc.ToLower())`n`n"
+            $keyBytes  = [System.Convert]::FromBase64String($cosmosKey)
+            $hmac      = [System.Security.Cryptography.HMACSHA256]::new($keyBytes)
+            $sig       = [System.Convert]::ToBase64String(
+                             $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($stringToSign)))
+            $authToken = [uri]::EscapeDataString("type=master&ver=1.0&sig=$sig")
+
             try {
-                [System.IO.File]::WriteAllText($tmpDoc, $docJson, [System.Text.UTF8Encoding]::new($false))
-                az cosmosdb sql document create `
-                    --account-name $accountName `
-                    --resource-group $dbRg `
-                    --database-name "${Prefix}-db" `
-                    --container-name 'items' `
-                    --body $tmpDoc `
-                    --output none 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
-                } else {
-                    Write-AdeLog "Failed to insert Cosmos document: $($doc.id)" -Level Warning
-                }
-            } finally {
-                Remove-Item -LiteralPath $tmpDoc -ErrorAction SilentlyContinue
+                $null = Invoke-RestMethod `
+                    -Uri     "https://$accountName.documents.azure.com/$resourceLink/docs" `
+                    -Method  POST `
+                    -Headers @{
+                        'Authorization'                    = $authToken
+                        'x-ms-date'                        = $dateUtc
+                        'x-ms-version'                     = '2018-12-31'
+                        'x-ms-documentdb-partitionkey'     = "[`"$($doc.id)`"]"
+                        'x-ms-documentdb-is-upsert'        = 'true'
+                    } `
+                    -ContentType 'application/json' `
+                    -Body        $docJson `
+                    -ErrorAction Stop
+                Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
+            } catch {
+                Write-AdeLog "Failed to insert Cosmos document: $($doc.id) — $($_.Exception.Message)" -Level Warning
             }
         }
         } # end else (local auth enabled)
