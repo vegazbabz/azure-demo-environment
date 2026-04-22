@@ -150,6 +150,7 @@ module defenderModule '../../modules/security/defender-plans.bicep' = if (enable
   scope: subscription()
   params: {
     plans: defenderPlans
+    logAnalyticsId: logAnalyticsId
   }
 }
 

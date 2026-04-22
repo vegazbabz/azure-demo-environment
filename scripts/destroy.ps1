@@ -151,6 +151,55 @@ if ("$Prefix-containers-rg" -in $ordered) {
     }
 }
 
+# Application Insights (ML workspace) creates a managed resource group when it is
+# deployed without an explicit Log Analytics workspace (classic/managed-workspace mode).
+# The naming pattern is: ai_<appInsightsName>_<resourceId-guid>_managed
+# This RG is NOT tagged with managedBy=ade so it will not appear in $allGroups.
+# It is deleted automatically when Application Insights is deleted, but only in
+# workspace-based mode — in managed-workspace mode Azure may leave it behind.
+# Query explicitly and include it when the ai module is being destroyed.
+if ("$Prefix-ai-rg" -in $ordered) {
+    $mlAppiName = "$Prefix-ml-appi"
+    $mlManagedRg = az group list --query "[?starts_with(name, 'ai_${mlAppiName}_') && ends_with(name, '_managed')].name" --output tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $mlManagedRg) {
+        $mlManagedRg = $mlManagedRg.Trim()
+        if ($mlManagedRg -and $mlManagedRg -notin $ordered) {
+            $ordered += $mlManagedRg
+            Write-AdeLog "Including ML App Insights managed resource group: $mlManagedRg" -Level Info
+        }
+    }
+}
+
+# Defender for Cloud creates DefaultResourceGroup-{REGION} with a default Log Analytics
+# workspace (DefaultWorkspace-{subscriptionId}-{REGION}) when no workspace setting is
+# configured. Once the workspace setting points to our own LAW (set by the security
+# module), new deployments will not create this RG. For existing deployments it may
+# still exist — clean it up when the security module is being destroyed.
+if ("$Prefix-security-rg" -in $ordered) {
+    # Derive the region code from the security RG's location (e.g. swedencentral -> SEC).
+    # Azure uses a short code suffix in the RG name; reverse-map by querying the RG.
+    $secRgLocation = az group show --name "$Prefix-security-rg" --query location -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $secRgLocation) {
+        # Try the standard DefaultResourceGroup-{LOCATIONCODE} pattern. Azure uses
+        # a 2–4 char uppercase abbreviation (e.g. WEU, SEC, EUS2, SCUS).
+        # Enumerate all resource groups and look for the known default-workspace pattern.
+        $subId = (az account show --query id -o tsv 2>$null).Trim()
+        $defenderDefaultRg = az group list --query "[?contains(name, 'DefaultResourceGroup-') && starts_with(name, 'DefaultResourceGroup-')].name" -o tsv 2>$null |
+            Where-Object { $_ } |
+            Select-Object -First 1
+        if ($defenderDefaultRg -and $defenderDefaultRg.Trim() -notin $ordered) {
+            $defenderDefaultRg = $defenderDefaultRg.Trim()
+            # Verify it actually contains the default Defender workspace (not user-created)
+            $defWorkspace = az resource list --resource-group $defenderDefaultRg `
+                --query "[?contains(name, 'DefaultWorkspace-$subId')].name" -o tsv 2>$null
+            if ($defWorkspace) {
+                $ordered += $defenderDefaultRg
+                Write-AdeLog "Including Defender for Cloud default resource group: $defenderDefaultRg" -Level Info
+            }
+        }
+    }
+}
+
 $failedRgs = @()
 
 # Phase 1: Remove locks and start ALL deletions in parallel (no-wait).

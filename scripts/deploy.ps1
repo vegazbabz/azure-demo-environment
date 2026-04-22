@@ -946,6 +946,9 @@ foreach ($moduleName in $deploymentOrder) {
                     deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
                     cognitiveSearchSku      = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearchSku' -Default 'basic')
                     subnetId                = $state.aiSubnetId
+                    # Pass our LAW so App Insights uses workspace-based mode and does NOT
+                    # auto-create an unmanaged managed RG (ai_<name>_<guid>_managed).
+                    logAnalyticsId          = if ($state.logAnalyticsId) { $state.logAnalyticsId } else { '' }
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
             }
@@ -1007,7 +1010,21 @@ foreach ($moduleName in $deploymentOrder) {
                 if ($Mode -eq 'hardened') {
                     $params['synapseAdminPassword'] = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                 }
-                $outputs = Deploy-AdeModule -ModuleName 'data' -BicepFile $bicep -Parameters $params
+                try {
+                    $outputs = Deploy-AdeModule -ModuleName 'data' -BicepFile $bicep -Parameters $params
+                } catch {
+                    # Error 39002: Azure tracks free-tier Purview tenancy in a region even after
+                    # the account is deleted. The ghost record can't be found via resource list,
+                    # so the pre-flight check misses it. Detect the error here and auto-retry
+                    # without Purview — all other data resources still deploy successfully.
+                    if ($_.Exception.Message -match '39002') {
+                        Write-AdeLog "Purview deployment failed with tenant-level location conflict (error 39002). The tenant already has a free-tier Purview record in a different region. Auto-retrying without Purview. To deploy Purview, re-run from the region shown in the error above." -Level Warning
+                        $params['deployPurview'] = 'false'
+                        $outputs = Deploy-AdeModule -ModuleName 'data' -BicepFile $bicep -Parameters $params
+                    } else {
+                        throw
+                    }
+                }
                 $state.dataFactoryId = Get-AdeDeploymentOutput $outputs 'dataFactoryId'
             }
 
