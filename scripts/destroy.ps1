@@ -440,5 +440,36 @@ if (-not $NoWait -and -not $WhatIfPreference) {
     } else {
         Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
     }
+
+    # ── ML Workspaces ────────────────────────────────────────────────────────────
+    # ML workspace name is deterministic (${prefix}-mlworkspace — no uniqueString).
+    # Soft-deleted workspaces block redeployment with:
+    #   "Soft-deleted workspace exists. Please purge or recover it."
+    # Purge endpoint: DELETE .../MachineLearningServices/locations/{loc}/deletedWorkspaces/{name}/purge
+    # Location is not a destroy.ps1 param, so we list all deleted workspaces first.
+    $mlSubId = (az account show --query id -o tsv 2>$null).Trim()
+    if ($mlSubId) {
+        $mlListUrl = "https://management.azure.com/subscriptions/$mlSubId/providers/Microsoft.MachineLearningServices/deletedWorkspaces?api-version=2024-01-01-preview"
+        $mlListRaw = az rest --method GET --url $mlListUrl --output json 2>$null
+        if ($LASTEXITCODE -eq 0 -and $mlListRaw) {
+            try {
+                $mlDeleted = ($mlListRaw | ConvertFrom-Json -ErrorAction Stop).value |
+                    Where-Object { $_.name -like "${Prefix}-*" }
+            } catch { $mlDeleted = $null }
+            if ($mlDeleted) {
+                foreach ($mlWs in $mlDeleted) {
+                    $mlWsName = $mlWs.name
+                    $mlWsLoc  = $mlWs.location
+                    Write-AdeLog "Purging soft-deleted ML workspace: $mlWsName (location: $mlWsLoc)" -Level Warning
+                    $mlPurgeUrl = "https://management.azure.com/subscriptions/$mlSubId/providers/Microsoft.MachineLearningServices/locations/$mlWsLoc/deletedWorkspaces/${mlWsName}/purge?api-version=2024-01-01-preview"
+                    az rest --method DELETE --url $mlPurgeUrl --output none 2>$null
+                    if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged ML workspace: $mlWsName" -Level Success }
+                    else { Write-AdeLog "Could not purge ML workspace '$mlWsName' (non-fatal)." -Level Warning }
+                }
+            } else {
+                Write-AdeLog "No soft-deleted ML workspaces found for prefix '$Prefix'." -Level Info
+            }
+        }
+    }
 }
 
