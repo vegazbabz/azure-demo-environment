@@ -314,13 +314,23 @@ Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
         $source = Get-Content $script:destroyPs -Raw
         # ML workspace soft-delete also blocks redeployment
         $source | Should -Match 'MachineLearningServices.*deletedWorkspaces'
-        $source | Should -Match 'deletedWorkspaces.*purge'
+        $source | Should -Match 'forceToPurge=true' -Because 'must use forceToPurge=true per REST API docs (api-version=2024-04-01)'
     }
 
     It 'Lists all deleted ML workspaces subscription-wide before purging' {
         $source = Get-Content $script:destroyPs -Raw
         # destroy.ps1 has no -Location param so it must list first to get location per workspace
         $source | Should -Match 'MachineLearningServices/deletedWorkspaces\?api-version'
+    }
+
+    It 'Pre-deletes ML workspace with forceToPurge before Phase 1 to prevent soft-delete' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The pre-delete block must appear before Phase 1 RG deletions — prevents soft-delete
+        # from occurring at all, so the post-RG purge block is only a safety net.
+        $preDeleteIdx = $source.IndexOf('Pre-delete: Azure ML workspaces')
+        $phase1Idx    = $source.IndexOf('Phase 1:')
+        $preDeleteIdx | Should -BeGreaterThan 0 -Because 'ML workspace pre-delete block must exist'
+        $preDeleteIdx | Should -BeLessThan $phase1Idx -Because 'ML pre-delete must run before Phase 1 RG deletions'
     }
 }
 
