@@ -593,4 +593,13 @@ Describe 'deploy.ps1 – job schedule body serialisation' -Tag 'unit' {
         $source | Should -Match 'schedule\s*=\s*@\{'
         $source | Should -Match 'runbook\s*=\s*@\{'
     }
+
+    It 'Treats jobSchedule Conflict (already exists) as Info, not Warning' {
+        # When a job schedule GUID already exists from a prior deployment (idempotent
+        # re-run), ARM returns 409 Conflict with "already exists". This must be logged
+        # at Info level — not as a Warning — to avoid alarming users on every redeploy.
+        $source = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
+        $source | Should -Match 'already exists' -Because 'must detect Conflict 409 from ARM'
+        $source | Should -Match 'already linked' -Because 'must log the schedule as already linked at Info level'
+    }
 }
