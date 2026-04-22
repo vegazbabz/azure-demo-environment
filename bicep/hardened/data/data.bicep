@@ -66,10 +66,9 @@ resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@20
       accountKind: 'StorageV2'
       // Hardened: managed identity authentication (no SAS or connection string)
     }
-    connectVia: {
-      referenceName: 'AutoResolveIntegrationRuntime'
-      type: 'IntegrationRuntimeReference'
-    }
+    // connectVia omitted — ADF uses AutoResolveIntegrationRuntime by default.
+    // Explicitly referencing it during initial deployment causes a race condition
+    // (ARM error: "Could not get integration runtime details").
   }
 }
 

@@ -62,10 +62,9 @@ resource adfLinkedServiceBlob 'Microsoft.DataFactory/factories/linkedservices@20
       serviceEndpoint: 'https://${storageAccountName}.blob.${environment().suffixes.storage}'
       accountKind: 'StorageV2'
     }
-    connectVia: {
-      referenceName: 'AutoResolveIntegrationRuntime'
-      type: 'IntegrationRuntimeReference'
-    }
+    // connectVia omitted — ADF uses AutoResolveIntegrationRuntime by default.
+    // Explicitly referencing it during initial deployment causes a race condition
+    // (ARM error: "Could not get integration runtime details").
   }
 }
 
@@ -105,7 +104,7 @@ resource databricks 'Microsoft.Databricks/workspaces@2023-02-01' = if (deployDat
   name: '${prefix}-databricks'
   location: location
   tags: tags
-  sku: { name: 'standard' }
+  sku: { name: 'premium' }  // Standard SKU deprecated by Azure; Premium required
   properties: {
     managedResourceGroupId: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${prefix}-databricks-managed-rg'
     publicNetworkAccess: 'Enabled'
