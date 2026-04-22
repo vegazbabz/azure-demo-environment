@@ -4,10 +4,11 @@
 # Runs on every PR targeting main/feature/fix branches, and on direct pushes
 # to main (guards against maintainer bypassing the PR flow). No Azure credentials required.
 #
-# Checks:
+# Checks (each job reports its own pass/fail independently):
 #   1. Bicep lint        — all *.bicep files (az bicep lint)
 #   2. PSScriptAnalyzer  — all *.ps1 files (errors fail CI, warnings reported)
 #   3. JSON validation   — all *.json files under config/ and data/
+#   4. Pester unit tests — tests/Invoke-PesterSuite.ps1 -CI
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: ADE — Lint
@@ -213,34 +214,3 @@ jobs:
               issue_number: context.issue.number,
               body: '## ❌ Pester Tests Failed\n\nOne or more unit tests failed. Download the `pester-results` artifact from this run for the full JUnit XML report.'
             });
-
-  summary:
-    name: Lint Summary
-    runs-on: ubuntu-latest
-    needs: [bicep-lint, ps-lint, json-validate, pester-tests]
-    if: always()
-    steps:
-      - name: Report overall result
-        run: |
-          BICEP="${{ needs.bicep-lint.result }}"
-          PS="${{ needs.ps-lint.result }}"
-          JSON="${{ needs.json-validate.result }}"
-          PESTER="${{ needs.pester-tests.result }}"
-
-          bicep_ok()  { [ "$BICEP"   = "success" ] || [ "$BICEP"   = "skipped" ]; }
-          ps_ok()     { [ "$PS"      = "success" ] || [ "$PS"      = "skipped" ]; }
-          json_ok()   { [ "$JSON"    = "success" ] || [ "$JSON"    = "skipped" ]; }
-          pester_ok() { [ "$PESTER"  = "success" ] || [ "$PESTER"  = "skipped" ]; }
-
-          echo "| Check        | Result |"                                              >> "$GITHUB_STEP_SUMMARY"
-          echo "| ------------ | ------ |"                                             >> "$GITHUB_STEP_SUMMARY"
-          echo "| Bicep lint   | $( bicep_ok  && echo '✅' || echo '❌' ) $BICEP   |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| PS lint      | $( ps_ok     && echo '✅' || echo '❌' ) $PS      |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| JSON valid   | $( json_ok   && echo '✅' || echo '❌' ) $JSON    |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Pester tests | $( pester_ok && echo '✅' || echo '❌' ) $PESTER  |" >> "$GITHUB_STEP_SUMMARY"
-
-          if ! bicep_ok || ! ps_ok || ! json_ok || ! pester_ok; then
-            echo "> [!CAUTION]" >> "$GITHUB_STEP_SUMMARY"
-            echo "> One or more checks failed. Fix the errors above before merging." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
