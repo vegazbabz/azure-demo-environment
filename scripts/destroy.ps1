@@ -365,9 +365,11 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
     if ($kvPurgeJobs.Count -gt 0) {
         Write-AdeLog "Waiting for $($kvPurgeJobs.Count) Key Vault purge(s) to complete..." -Level Info
         foreach ($kvEntry in $kvPurgeJobs) {
-            # -Timeout 900: Azure purge API rarely takes longer than 15 min;
+            # Wait-Job -Timeout 900: Azure purge API rarely takes longer than 15 min;
             # without a timeout the script can block indefinitely on a slow/unresponsive endpoint.
-            $kvExitCode = Receive-Job $kvEntry.Job -Wait -Timeout 900
+            # Receive-Job does not have a -Timeout parameter — use Wait-Job first.
+            $null = Wait-Job $kvEntry.Job -Timeout 900
+            $kvExitCode = Receive-Job $kvEntry.Job
             Remove-Job  $kvEntry.Job -WhatIf:$false
             if ($null -ne $kvExitCode -and [int]$kvExitCode -eq 0) {
                 Write-AdeLog "Key Vault purged: $($kvEntry.Name). Safe to re-deploy immediately." -Level Success
