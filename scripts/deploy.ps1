@@ -1229,14 +1229,18 @@ foreach ($moduleName in $deploymentOrder) {
                             }
                         } | ConvertTo-Json -Depth 5 -Compress
                         $jsTmp = [System.IO.Path]::GetTempFileName()
+                        $jsOut = $null
                         try {
                             [System.IO.File]::WriteAllText($jsTmp, $jsBody, [System.Text.UTF8Encoding]::new($false))
-                            az rest --method PUT --url $jsUrl --body "@$jsTmp" --headers 'Content-Type=application/json' --output none
+                            $jsOut = az rest --method PUT --url $jsUrl --body "@$jsTmp" --headers 'Content-Type=application/json' 2>&1
                         } finally {
                             Remove-Item -LiteralPath $jsTmp -ErrorAction SilentlyContinue
                         }
                         if ($LASTEXITCODE -eq 0) {
                             Write-AdeLog "Job schedule linked: $($link.Runbook) → $($link.Schedule)" -Level Success
+                        } elseif ($jsOut -match 'already exists') {
+                            # The schedule was linked in a previous deployment — idempotent.
+                            Write-AdeLog "Job schedule already linked: $($link.Runbook) → $($link.Schedule)" -Level Info
                         } else {
                             Write-AdeLog "Job schedule link failed ($($link.Runbook) → $($link.Schedule)) — non-fatal." -Level Warning
                         }
