@@ -946,6 +946,9 @@ foreach ($moduleName in $deploymentOrder) {
                     deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
                     cognitiveSearchSku      = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearchSku' -Default 'basic')
                     subnetId                = $state.aiSubnetId
+                    # Pass our LAW so App Insights uses workspace-based mode and does NOT
+                    # auto-create an unmanaged managed RG (ai_<name>_<guid>_managed).
+                    logAnalyticsId          = if ($state.logAnalyticsId) { $state.logAnalyticsId } else { '' }
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
             }

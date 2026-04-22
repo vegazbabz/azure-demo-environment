@@ -34,6 +34,9 @@ param deployMachineLearning bool = false
 #disable-next-line no-unused-params
 param subnetId string = ''
 
+@description('Log Analytics Workspace resource ID. When provided, Application Insights is created in workspace-based mode, which prevents Azure from auto-creating a managed resource group (ai_<name>_<guid>_managed) with its own LAW.')
+param logAnalyticsId string = ''
+
 @description('Resource tags.')
 param tags object = {}
 
@@ -140,6 +143,10 @@ resource mlAppInsights 'Microsoft.Insights/components@2020-02-02' = if (deployMa
     Application_Type: 'web'
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
+    // Link to our Log Analytics workspace (workspace-based mode).
+    // Without this, Azure auto-creates a managed RG (ai_<name>_<guid>_managed)
+    // with its own unmanaged LAW — outside ADE's control and not cleaned up by destroy.ps1.
+    WorkspaceResourceId: empty(logAnalyticsId) ? null : logAnalyticsId
   }
 }
 
