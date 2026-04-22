@@ -288,7 +288,7 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | `aiServices` | `false` | Azure AI Services multi-service account (S0) |
 | `openAi` | `false` | Azure OpenAI Service with GPT-4o deployment. Requires quota approval in your subscription. |
 | `cognitiveSearch` | `false` | Azure Cognitive Search (~$250/month Standard) |
-| `cognitiveSearchSku` | `"standard"` | Cognitive Search SKU: `free` (1 per subscription), `basic` (~$75/mo), `standard` (~$250/mo), `standard2`, `standard3`. `basic` is frequently capacity-constrained in newer regions — use `standard` or `free` if you hit `ResourcesForSkuUnavailable`. |
+| `cognitiveSearchSku` | `"basic"` | Cognitive Search SKU: `free` (1 per subscription), `basic` (~$75/mo), `standard` (~$250/mo), `standard2`, `standard3`. All paid SKUs have limited availability in some regions — if you hit `ResourcesForSkuUnavailable`, try a different SKU or deploy to a different region. |
 | `machineLearning` | `false` | Azure Machine Learning workspace |
 
 ### `data`

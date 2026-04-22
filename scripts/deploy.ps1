@@ -944,7 +944,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployOpenAi            = (Get-FeatureFlag -Features $aiFeatures -Name 'openAi').ToString().ToLower()
                     deployCognitiveSearch   = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearch').ToString().ToLower()
                     deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
-                    cognitiveSearchSku      = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearchSku' -Default 'standard')
+                    cognitiveSearchSku      = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearchSku' -Default 'basic')
                     subnetId                = $state.aiSubnetId
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
