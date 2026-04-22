@@ -45,13 +45,13 @@
 .PARAMETER DatabaseAdminPassword
     Admin password for Azure SQL, PostgreSQL, and MySQL seeding.
     Required for those three blocks; omit to skip them.
-    Use: -DatabaseAdminPassword (Read-Host -AsSecureString 'DB password')
+    Use: -DatabaseAdminPassword 'YourPassword'
 
 .PARAMETER Force
     Skip confirmation prompts.
 
 .EXAMPLE
-    ./seed-data.ps1 -Prefix ade -DatabaseAdminPassword (Read-Host -AsSecureString 'DB pwd')
+    ./seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword'
 
 .EXAMPLE
     ./seed-data.ps1 -Prefix ade -Modules storage,cosmosdb,redis -Force
@@ -74,7 +74,7 @@ param(
     [string]$AdminUsername = 'adeadmin',
 
     [Parameter(Mandatory = $false)]
-    [securestring]$DatabaseAdminPassword,
+    [string]$DatabaseAdminPassword,
 
     [Parameter(Mandatory = $false)]
     [switch]$Force
@@ -106,6 +106,7 @@ if (-not $Force) {
 }
 
 $seedAll = $Modules -contains 'all'
+$script:_seedFailed = $false
 
 # ─── Discover resource names ──────────────────────────────────────────────────
 
@@ -393,7 +394,7 @@ if ($seedAll -or $Modules -contains 'sql') {
     } elseif (-not $DatabaseAdminPassword) {
         Write-AdeLog "SQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
     } else {
-        $dbAdminPwd = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $dbAdminPwd = $DatabaseAdminPassword
         $dbName     = "$Prefix-sqldb"
         Write-AdeLog "SQL Server: $sqlServer  DB: $dbName" -Level Info
 
@@ -415,6 +416,7 @@ if ($seedAll -or $Modules -contains 'sql') {
             Write-AdeLog "SQL seed applied: $dbName" -Level Success
         } catch {
             Write-AdeLog "SQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         }
     }
 }
@@ -434,7 +436,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
     } elseif (-not (Get-Command 'psql' -ErrorAction SilentlyContinue)) {
         Write-AdeLog "PostgreSQL seeding skipped — 'psql' client not found. See README § Seed data for options." -Level Info
     } else {
-        $dbAdminPwd = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $dbAdminPwd = $DatabaseAdminPassword
         $pgDbName   = "${Prefix}db"
         $pgSeedFile = Join-Path $PSScriptRoot '..\data\postgres\seed.sql'
         Write-AdeLog "PostgreSQL server: $pgServer  DB: $pgDbName" -Level Info
@@ -447,6 +449,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
             Write-AdeLog "PostgreSQL seed applied: $pgDbName" -Level Success
         } catch {
             Write-AdeLog "PostgreSQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         } finally {
             Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
         }
@@ -468,7 +471,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
     } elseif (-not (Get-Command 'mysql' -ErrorAction SilentlyContinue)) {
         Write-AdeLog "MySQL seeding skipped — 'mysql' client not found. See README § Seed data for options." -Level Info
     } else {
-        $dbAdminPwd  = [System.Net.NetworkCredential]::new('', $DatabaseAdminPassword).Password
+        $dbAdminPwd  = $DatabaseAdminPassword
         $mysqlDbName = "${Prefix}db"
         $mysqlSeedFile = Join-Path $PSScriptRoot '..\data\mysql\seed.sql'
         Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
@@ -481,6 +484,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
             Write-AdeLog "MySQL seed applied: $mysqlDbName" -Level Success
         } catch {
             Write-AdeLog "MySQL seed failed: $_" -Level Warning
+            $script:_seedFailed = $true
         }
     }
 }
@@ -808,6 +812,12 @@ if ($seedAll -or $Modules -contains 'eventgrid') {
 # ─── Complete ─────────────────────────────────────────────────────────────────
 
 Write-AdeSection "Data Seeding Complete"
-Write-AdeLog "Dummy data has been seeded into deployed ADE resources." -Level Success
-Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
-exit 0
+if ($script:_seedFailed) {
+    Write-AdeLog "One or more seeding steps failed (see [WARN] lines above)." -Level Warning
+    Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
+    exit 1
+} else {
+    Write-AdeLog "Dummy data has been seeded into deployed ADE resources." -Level Success
+    Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to review resource status." -Level Info
+    exit 0
+}

@@ -76,7 +76,6 @@ function Test-AdeManagedBy {
 
 function Show-AdeDashboard {
 
-    Clear-Host
     $now    = Get-Date
     $year   = $now.Year
     $month  = $now.Month

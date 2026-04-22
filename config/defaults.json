@@ -59,9 +59,7 @@
         "windowsVm": true,
         "linuxVm": true,
         "vmss": false,
-        "availabilitySet": true,
         "enableAutoShutdown": false,
-        "enableBootDiagnostics": true,
         "vmSku": "Standard_B2s"
       }
     },
@@ -94,10 +92,9 @@
     },
     "appservices": {
       "enabled": true,
-      "description": "App Service Plan (B1), Windows Web App, Linux Web App, Function App (Consumption), Logic App. Default settings — no forced HTTPS, no TLS minimum.",
+      "description": "App Service Plan (B1), Windows Web App, Function App (Consumption), Logic App. Default settings — no forced HTTPS, no TLS minimum.",
       "features": {
         "windowsWebApp": true,
-        "linuxWebApp": false,
         "functionApp": true,
         "logicApp": true
       }

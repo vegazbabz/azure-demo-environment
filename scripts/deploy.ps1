@@ -824,7 +824,7 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
-                if ($script:_adePasswordWasGenerated -and $script:_adeModuleHadNewResources) {
+                if ($script:_adePasswordWasGenerated) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
                     Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
@@ -835,8 +835,10 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
                     Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
                     Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   Pass this to seed-data.ps1 -DatabaseAdminPassword              ║" -ForegroundColor Yellow
-                    Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
+                    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
+                    $seedLine2 = "     -DatabaseAdminPassword '$pwPlain'"
+                    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
+                    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
                     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
                     Write-Host ""
                     $pwPlain = $null
@@ -942,6 +944,7 @@ foreach ($moduleName in $deploymentOrder) {
                     deployOpenAi            = (Get-FeatureFlag -Features $aiFeatures -Name 'openAi').ToString().ToLower()
                     deployCognitiveSearch   = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearch').ToString().ToLower()
                     deployMachineLearning   = (Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning').ToString().ToLower()
+                    cognitiveSearchSku      = (Get-FeatureFlag -Features $aiFeatures -Name 'cognitiveSearchSku' -Default 'basic')
                     subnetId                = $state.aiSubnetId
                 }
                 $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
@@ -952,13 +955,52 @@ foreach ($moduleName in $deploymentOrder) {
                 $bicep = Join-Path $bicepRoot 'data\data.bicep'
                 $dataFeatProp = $deployProfile.modules.data.PSObject.Properties['features']
                 $dataFeatures = if ($null -ne $dataFeatProp) { $dataFeatProp.Value } else { [pscustomobject]@{} }
+
+                # ── Purview pre-flight: detect tenant-level location conflict ──────
+                # Azure only allows one free-tier Purview account per tenant. Attempting
+                # to create one in a region that differs from an existing free-tier account
+                # fails with error 39002. Check before deploying and auto-skip if needed.
+                $deployPurviewFlag = Get-FeatureFlag -Features $dataFeatures -Name 'purview'
+                if ($deployPurviewFlag) {
+                    $existingPurview = $null
+                    # Use Resource Graph REST API directly (tenant-wide, no extension needed).
+                    # az graph query requires the resource-graph CLI extension and only searches
+                    # the default subscription scope; az rest hits the ARM endpoint directly and
+                    # returns accounts from all accessible subscriptions in the tenant.
+                    $graphBody = '{"query":"Resources | where type =~ ''microsoft.purview/accounts'' | project name, location"}'
+                    $graphRaw = az rest --method POST `
+                        --url 'https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01' `
+                        --body $graphBody --output json 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $graphRaw) {
+                        try {
+                            $graphResult = $graphRaw | ConvertFrom-Json -ErrorAction Stop
+                            $existingPurview = $graphResult.data | Where-Object { $_.location -ne $Location } | Select-Object -First 1
+                        } catch {}
+                    }
+                    if (-not $existingPurview) {
+                        # Fallback: subscription-level list (catches same-subscription accounts
+                        # if the REST call above fails for any reason).
+                        $pvJson = az resource list --resource-type Microsoft.Purview/accounts --output json 2>$null
+                        if ($LASTEXITCODE -eq 0 -and $pvJson) {
+                            try {
+                                $pvList = $pvJson | ConvertFrom-Json -ErrorAction Stop
+                                $existingPurview = $pvList | Where-Object { $_.location -ne $Location } | Select-Object -First 1
+                            } catch {}
+                        }
+                    }
+                    if ($existingPurview) {
+                        Write-AdeLog "Purview account '$($existingPurview.name)' already exists in location '$($existingPurview.location)'. Azure only allows one free-tier Purview account per tenant and it cannot be moved to a different region. Skipping Purview for this deployment. To deploy Purview, re-run in region '$($existingPurview.location)' or set 'purview: false' in your profile." -Level Warning
+                        $deployPurviewFlag = $false
+                    }
+                }
+
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
                     deployDataFactory   = (Get-FeatureFlag -Features $dataFeatures -Name 'dataFactory').ToString().ToLower()
                     deploySynapse       = (Get-FeatureFlag -Features $dataFeatures -Name 'synapse').ToString().ToLower()
                     deployDatabricks    = (Get-FeatureFlag -Features $dataFeatures -Name 'databricks').ToString().ToLower()
-                    deployPurview       = (Get-FeatureFlag -Features $dataFeatures -Name 'purview').ToString().ToLower()
+                    deployPurview       = $deployPurviewFlag.ToString().ToLower()
                     storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
                     subnetId            = $state.dataSubnetId
                 }
@@ -998,7 +1040,7 @@ foreach ($moduleName in $deploymentOrder) {
                         Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
                         $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
                     } else {
-                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force
+                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS
                         if (-not $isNonInteractiveBudget) {
                             Write-Host ""
                             Write-Host "  Budget alert email is not set." -ForegroundColor Yellow
@@ -1176,7 +1218,10 @@ if ($script:_adePasswordWasGenerated -and $pwModulesDeployed -and $state.adminPa
     Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
     Write-Host $pwSummary.PadRight(52) -ForegroundColor White -NoNewline
     Write-Host "║" -ForegroundColor Yellow
-    Write-Host "║   Use -DatabaseAdminPassword with seed-data.ps1 to seed DBs.     ║" -ForegroundColor Yellow
+    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
+    $seedLine2 = "     -DatabaseAdminPassword '$pwSummary'"
+    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
+    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
     Write-Host ""
     $pwSummary = $null

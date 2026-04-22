@@ -23,6 +23,10 @@ param deployOpenAi bool = false
 @description('Deploy Azure Cognitive Search (Basic ~$75/month).')
 param deployCognitiveSearch bool = false
 
+@description('Azure Cognitive Search SKU. Use \'free\' (1 per subscription, limited) or \'basic\' / \'standard\' based on regional availability.')
+@allowed(['free', 'basic', 'standard', 'standard2', 'standard3'])
+param cognitiveSearchSku string = 'basic'
+
 @description('Deploy Azure Machine Learning workspace.')
 param deployMachineLearning bool = false
 
@@ -98,7 +102,7 @@ resource cognitiveSearch 'Microsoft.Search/searchServices@2023-11-01' = if (depl
   name: '${prefix}-search'
   location: location
   tags: tags
-  sku: { name: 'basic' }
+  sku: { name: cognitiveSearchSku }
   properties: {
     replicaCount: 1
     partitionCount: 1
@@ -143,8 +147,11 @@ resource mlStorage 'Microsoft.Storage/storageAccounts@2023-04-01' = if (deployMa
   }
 }
 
+var mlKvRaw = '${prefix}-ml-kv-${uniqueString(resourceGroup().id)}'
+var mlKvName = substring(mlKvRaw, 0, min(length(mlKvRaw), 24))
+
 resource mlKeyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (deployMachineLearning) {
-  name: '${prefix}-ml-kv-${uniqueString(resourceGroup().id)}'
+  name: mlKvName
   location: location
   tags: tags
   properties: {

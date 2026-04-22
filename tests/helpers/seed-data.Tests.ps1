@@ -253,8 +253,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
         It 'Attempts SQL seeding when SQL Server is found and password is provided' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
-            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
-            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force -DatabaseAdminPassword $secPwd
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force -DatabaseAdminPassword 'TestPass1!'
             # 1 (resource list only) — SQL now uses System.Data.SqlClient, not az
             Should -Invoke az -Times 1 -Exactly
         }
@@ -276,8 +275,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
         It 'Skips PostgreSQL seeding gracefully when psql client is not installed' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
-            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
-            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword $secPwd } | Should -Not -Throw
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules postgresql -Force -DatabaseAdminPassword 'TestPass1!' } | Should -Not -Throw
             # 1 az call (resource list only) — seeding skipped because psql not found
             Should -Invoke az -Times 1 -Exactly
         }
@@ -299,8 +297,7 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
         It 'Skips MySQL seeding gracefully when mysql client is not installed' {
             function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
             function Write-AdeSection { param([string]$Title) }
-            $secPwd = ConvertTo-SecureString 'TestPass1!' -AsPlainText -Force
-            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword $secPwd } | Should -Not -Throw
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules mysql -Force -DatabaseAdminPassword 'TestPass1!' } | Should -Not -Throw
             # 1 az call (resource list only) — seeding skipped because mysql not found
             Should -Invoke az -Times 1 -Exactly
         }
