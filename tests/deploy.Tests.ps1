@@ -283,11 +283,14 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
     It 'Purges soft-deleted ML workspace before deploying the ai module' {
         # ML workspace name is deterministic (${prefix}-mlworkspace), so it hits the same
         # soft-delete block after a destroy and fails with "Soft-deleted workspace exists."
+        # The purge REST call is async (202), so we must poll until the workspace is gone.
         $aiIdx     = $script:source.IndexOf("'ai' {")
         $dataIdx   = $script:source.IndexOf("'data' {")
         $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
         $aiBlock | Should -Match 'mlworkspace' -Because 'ML workspace name must be referenced'
         $aiBlock | Should -Match 'MachineLearningServices.*deletedWorkspaces.*purge' -Because 'ML workspace purge URL must be constructed'
+        $aiBlock | Should -Match 'deletedWorkspaces.*\?' -Because 'must poll the deleted workspace GET endpoint to confirm purge'
+        $aiBlock | Should -Match 'Start-Sleep|mlMaxWait|mlElapsed' -Because 'must wait for async purge to complete'
         # Purge attempt must appear before Deploy-AdeModule
         $mlPurgeIdx = $aiBlock.IndexOf('MachineLearningServices')
         $deployIdx  = $aiBlock.IndexOf('Deploy-AdeModule')
