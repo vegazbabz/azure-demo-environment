@@ -280,6 +280,20 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $purgeIdx | Should -BeLessThan $deployIdx -Because 'soft-delete purge must run before the Bicep deployment'
     }
 
+    It 'Purges soft-deleted ML workspace before deploying the ai module' {
+        # ML workspace name is deterministic (${prefix}-mlworkspace), so it hits the same
+        # soft-delete block after a destroy and fails with "Soft-deleted workspace exists."
+        $aiIdx     = $script:source.IndexOf("'ai' {")
+        $dataIdx   = $script:source.IndexOf("'data' {")
+        $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
+        $aiBlock | Should -Match 'mlworkspace' -Because 'ML workspace name must be referenced'
+        $aiBlock | Should -Match 'MachineLearningServices.*deletedWorkspaces.*purge' -Because 'ML workspace purge URL must be constructed'
+        # Purge attempt must appear before Deploy-AdeModule
+        $mlPurgeIdx = $aiBlock.IndexOf('MachineLearningServices')
+        $deployIdx  = $aiBlock.IndexOf('Deploy-AdeModule')
+        $mlPurgeIdx | Should -BeLessThan $deployIdx -Because 'ML workspace purge must run before the Bicep deployment'
+    }
+
     It 'Retries ai module without Cognitive Search when SKU is unavailable in the region' {
         # Azure Cognitive Search has per-region capacity limits. Rather than failing the
         # entire AI deployment, detect ResourcesForSkuUnavailable and retry with

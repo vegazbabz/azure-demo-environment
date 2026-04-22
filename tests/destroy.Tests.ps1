@@ -309,6 +309,19 @@ Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
         $contextBefore = $source.Substring([Math]::Max(0, $csIdx - 400), [Math]::Min(400, $csIdx))
         $contextBefore | Should -Not -Match 'failedRgs\.Count' -Because 'Cog Services purge must not be inside the failedRgs guard'
     }
+
+    It 'Purges soft-deleted ML workspaces after deletion' {
+        $source = Get-Content $script:destroyPs -Raw
+        # ML workspace soft-delete also blocks redeployment
+        $source | Should -Match 'MachineLearningServices.*deletedWorkspaces'
+        $source | Should -Match 'deletedWorkspaces.*purge'
+    }
+
+    It 'Lists all deleted ML workspaces subscription-wide before purging' {
+        $source = Get-Content $script:destroyPs -Raw
+        # destroy.ps1 has no -Location param so it must list first to get location per workspace
+        $source | Should -Match 'MachineLearningServices/deletedWorkspaces\?api-version'
+    }
 }
 
 Describe 'destroy.ps1 – parallel deletion loop' -Tag 'unit' {

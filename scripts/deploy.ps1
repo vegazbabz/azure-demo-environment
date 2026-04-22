@@ -978,6 +978,19 @@ foreach ($moduleName in $deploymentOrder) {
                         }
                     }
                 }
+                # Pre-flight: purge any soft-deleted ML workspace.
+                # The workspace name is deterministic (${prefix}-mlworkspace — no uniqueString).
+                # A soft-deleted workspace blocks Bicep with:
+                # "Soft-deleted workspace exists. Please purge or recover it."
+                $mlWsName   = "${Prefix}-mlworkspace"
+                $mlPurgeUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}/purge?api-version=2024-01-01-preview"
+                $mlPurgeStderr = az rest --method DELETE --url $mlPurgeUrl --output none 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-AdeLog "Purged soft-deleted ML workspace: $mlWsName (required before redeploy)." -Level Warning
+                } elseif ($mlPurgeStderr -notmatch 'ResourceNotFound|WorkspaceNotFound|not found') {
+                    Write-AdeLog "ML workspace purge attempt for '$mlWsName': $mlPurgeStderr" -Level Warning
+                }
+
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
