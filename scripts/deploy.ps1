@@ -945,6 +945,39 @@ foreach ($moduleName in $deploymentOrder) {
                 $bicep = Join-Path $bicepRoot 'ai\ai.bicep'
                 $aiFeatProp = $deployProfile.modules.ai.PSObject.Properties['features']
                 $aiFeatures = if ($null -ne $aiFeatProp) { $aiFeatProp.Value } else { [pscustomobject]@{} }
+
+                # Pre-flight: purge any soft-deleted Cognitive Services accounts that share
+                # this prefix. Bicep names them with uniqueString(resourceGroup().id), which
+                # is deterministic — the same name is generated on every redeploy into the
+                # same RG. If a previous destroy left them in soft-deleted state, ARM returns
+                # FlagMustBeSetForRestore and the deployment fails immediately.
+                $softDeletedCogSvc = az cognitiveservices account list-deleted `
+                    --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" `
+                    -o tsv 2>$null
+                if ($LASTEXITCODE -eq 0 -and $softDeletedCogSvc) {
+                    foreach ($csLine in ($softDeletedCogSvc -split [System.Environment]::NewLine | Where-Object { $_ })) {
+                        $csParts = $csLine.Trim() -split '\t'
+                        $csName  = $csParts[0]
+                        $csLoc   = if ($csParts.Count -gt 1) { $csParts[1] } else { '' }
+                        $csId    = if ($csParts.Count -gt 2) { $csParts[2] } else { '' }
+                        $csRg    = if ($csId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
+                        if (-not $csLoc -or -not $csRg) {
+                            Write-AdeLog "Soft-deleted Cognitive Services '$csName': could not determine location/RG — skipping purge." -Level Warning
+                            continue
+                        }
+                        Write-AdeLog "Purging soft-deleted Cognitive Services account '$csName' (required before redeploy)..." -Level Warning
+                        az cognitiveservices account purge `
+                            --name $csName `
+                            --resource-group $csRg `
+                            --location $csLoc `
+                            --output none 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-AdeLog "Purged soft-deleted Cognitive Services account: $csName" -Level Success
+                        } else {
+                            Write-AdeLog "Could not purge '$csName' — deployment may fail with FlagMustBeSetForRestore." -Level Warning
+                        }
+                    }
+                }
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location

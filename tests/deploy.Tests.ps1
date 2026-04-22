@@ -267,6 +267,19 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match 'ManagedEnvironmentNotReadyForAppCreation|Failed state|containerapp env delete'
     }
 
+    It 'Purges soft-deleted Cognitive Services accounts before deploying the ai module' {
+        # FlagMustBeSetForRestore: same name is generated via uniqueString(rg().id) on every
+        # redeploy into the same RG. Pre-purge prevents ARM from rejecting the deployment.
+        $script:source | Should -Match 'cognitiveservices account list-deleted'
+        $script:source | Should -Match 'cognitiveservices account purge'
+        $script:source | Should -Match 'FlagMustBeSetForRestore'
+        # Purge must appear inside the ai case block, before Deploy-AdeModule ai is called
+        $aiIdx    = $script:source.IndexOf("'ai' {")
+        $purgeIdx = $script:source.IndexOf('cognitiveservices account purge', $aiIdx)
+        $deployIdx = $script:source.IndexOf("Deploy-AdeModule -ModuleName 'ai'", $aiIdx)
+        $purgeIdx | Should -BeLessThan $deployIdx -Because 'soft-delete purge must run before the Bicep deployment'
+    }
+
     It 'Does not contain dead bastionSubnetId state key' {
         $script:source | Should -Not -Match 'bastionSubnetId'
     }
