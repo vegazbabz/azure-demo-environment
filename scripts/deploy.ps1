@@ -963,16 +963,23 @@ foreach ($moduleName in $deploymentOrder) {
                 $deployPurviewFlag = Get-FeatureFlag -Features $dataFeatures -Name 'purview'
                 if ($deployPurviewFlag) {
                     $existingPurview = $null
-                    # Prefer Resource Graph (tenant-wide, single call). Falls back to
-                    # az resource list (current subscription only) if Graph is unavailable.
-                    $graphJson = az graph query -q "Resources | where type =~ 'microsoft.purview/accounts' | project name, location" --output json 2>$null
-                    if ($LASTEXITCODE -eq 0 -and $graphJson) {
+                    # Use Resource Graph REST API directly (tenant-wide, no extension needed).
+                    # az graph query requires the resource-graph CLI extension and only searches
+                    # the default subscription scope; az rest hits the ARM endpoint directly and
+                    # returns accounts from all accessible subscriptions in the tenant.
+                    $graphBody = '{"query":"Resources | where type =~ ''microsoft.purview/accounts'' | project name, location"}'
+                    $graphRaw = az rest --method POST `
+                        --url 'https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01' `
+                        --body $graphBody --output json 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $graphRaw) {
                         try {
-                            $graphResult = $graphJson | ConvertFrom-Json -ErrorAction Stop
+                            $graphResult = $graphRaw | ConvertFrom-Json -ErrorAction Stop
                             $existingPurview = $graphResult.data | Where-Object { $_.location -ne $Location } | Select-Object -First 1
                         } catch {}
                     }
                     if (-not $existingPurview) {
+                        # Fallback: subscription-level list (catches same-subscription accounts
+                        # if the REST call above fails for any reason).
                         $pvJson = az resource list --resource-type Microsoft.Purview/accounts --output json 2>$null
                         if ($LASTEXITCODE -eq 0 -and $pvJson) {
                             try {
