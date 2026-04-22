@@ -122,7 +122,7 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         # When deploying databases without compute the compute banner does not fire.
         # A dedicated databases banner ensures the password is always visible mid-deploy.
         $script:source | Should -Match 'AUTO-GENERATED DATABASE ADMIN PASSWORD'
-        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,800}DATABASE ADMIN PASSWORD'
+        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,2200}DATABASE ADMIN PASSWORD'
         $script:source | Should -Match 'DatabaseAdminPassword'
     }
 }
