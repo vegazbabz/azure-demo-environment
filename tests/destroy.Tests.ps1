@@ -238,6 +238,37 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
     }
 }
 
+Describe 'destroy.ps1 – Databricks deny-assignment pre-delete' -Tag 'unit' {
+
+    It 'Queries Microsoft.Databricks/workspaces in data-rg before parallel delete' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'Microsoft\.Databricks/workspaces'
+    }
+
+    It 'Retrieves the managed RG ID from the workspace properties' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'managedResourceGroupId'
+    }
+
+    It 'Removes the Databricks managed RG from the ordered delete list' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'ordered.*Where-Object.*managedRgName'
+    }
+
+    It 'Pre-deletes the workspace resource before Phase 1' {
+        $source = Get-Content $script:destroyPs -Raw
+        # workspace delete must appear before $failedRgs = @()
+        $wsDeleteIdx   = $source.IndexOf('Microsoft.Databricks/workspaces')
+        $failedRgsIdx  = $source.IndexOf('$failedRgs = @()')
+        $wsDeleteIdx   | Should -BeLessThan $failedRgsIdx -Because 'Databricks workspace must be deleted before the parallel delete loop'
+    }
+
+    It 'Uses az resource delete (no extension required) to remove the workspace' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'az resource delete[\s\S]{1,200}Microsoft\.Databricks/workspaces'
+    }
+}
+
 Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
 
     It 'Calls az cognitiveservices account list-deleted after deletions succeed' {

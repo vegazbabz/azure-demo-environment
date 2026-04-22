@@ -200,6 +200,51 @@ if ("$Prefix-security-rg" -in $ordered) {
     }
 }
 
+# ─── Pre-delete: Azure Databricks workspaces ─────────────────────────────────
+# Databricks attaches a system deny assignment to its managed resource group,
+# which causes az group delete to fail with DenyAssignmentAuthorizationFailed.
+# Deleting the workspace resource first causes Azure to remove the deny
+# assignment and clean up the managed RG automatically.
+# We also strip the managed RG from $ordered so we don't try to delete it
+# directly (it may already be gone, and a 404 would re-populate $failedRgs).
+if ("$Prefix-data-rg" -in $ordered) {
+    $dbWsList = az resource list `
+        --resource-group "$Prefix-data-rg" `
+        --resource-type 'Microsoft.Databricks/workspaces' `
+        --query '[].name' -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $dbWsList) {
+        foreach ($wsName in ($dbWsList -split [System.Environment]::NewLine | Where-Object { $_ })) {
+            $wsName = $wsName.Trim()
+            if (-not $wsName) { continue }
+
+            # Retrieve the managed RG name from the workspace properties.
+            $managedRgId = az resource show `
+                --resource-group "$Prefix-data-rg" `
+                --resource-type 'Microsoft.Databricks/workspaces' `
+                --name $wsName `
+                --query 'properties.managedResourceGroupId' -o tsv 2>$null
+            if ($LASTEXITCODE -eq 0 -and $managedRgId) {
+                $managedRgName = ($managedRgId.Trim() -split '/')[-1]
+                if ($managedRgName) {
+                    $ordered = @($ordered | Where-Object { $_ -ne $managedRgName })
+                    Write-AdeLog "Databricks managed RG '$managedRgName' removed from direct-delete list (handled by workspace deletion)." -Level Info
+                }
+            }
+
+            Write-AdeLog "Pre-deleting Databricks workspace '$wsName' to release system deny assignment on managed RG..." -Level Warning
+            az resource delete `
+                --resource-group "$Prefix-data-rg" `
+                --resource-type 'Microsoft.Databricks/workspaces' `
+                --name $wsName --output none 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Databricks workspace '$wsName' deleted — managed RG deny assignment released." -Level Success
+            } else {
+                Write-AdeLog "Could not pre-delete Databricks workspace '$wsName' (non-fatal — will attempt direct RG deletion)." -Level Warning
+            }
+        }
+    }
+}
+
 $failedRgs = @()
 
 # Phase 1: Remove locks and start ALL deletions in parallel (no-wait).
