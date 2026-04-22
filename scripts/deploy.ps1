@@ -982,31 +982,51 @@ foreach ($moduleName in $deploymentOrder) {
                 # The workspace name is deterministic (${prefix}-mlworkspace — no uniqueString).
                 # A soft-deleted workspace blocks Bicep with:
                 # "Soft-deleted workspace exists. Please purge or recover it."
-                # The purge REST call is asynchronous (returns 202). We must poll until the
-                # deleted workspace is gone before proceeding, otherwise a subsequent deploy
-                # attempt (e.g. after the CogSearch SKU retry) hits the same error.
-                $mlWsName    = "${Prefix}-mlworkspace"
-                $mlApiVer    = 'api-version=2024-01-01-preview'
-                $mlPurgeUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}/purge?$mlApiVer"
-                $mlCheckUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}?$mlApiVer"
-                $mlPurgeErr  = az rest --method DELETE --url $mlPurgeUrl --output none 2>&1
-                if ($LASTEXITCODE -eq 0) {
-                    # 202 accepted — poll until the workspace disappears from the deleted registry
-                    Write-AdeLog "Purging soft-deleted ML workspace '$mlWsName' — waiting for completion..." -Level Warning
-                    $mlMaxWait = 120; $mlElapsed = 0; $mlDone = $false
-                    while ($mlElapsed -lt $mlMaxWait) {
-                        az rest --method GET --url $mlCheckUrl --output none 2>$null
-                        if ($LASTEXITCODE -ne 0) { $mlDone = $true; break }
-                        Start-Sleep -Seconds 5
-                        $mlElapsed += 5
+                # Per the REST API docs (api-version=2024-04-01), the correct approach is:
+                #   DELETE .../workspaces/{name}?forceToPurge=true
+                # We ensure the RG exists first so ARM routes the request to the ML provider.
+                $mlWsName = "${Prefix}-mlworkspace"
+                $mlAiRg   = "${Prefix}-ai-rg"
+                $mlApiVer = 'api-version=2024-04-01'
+                # Step 1: confirm the workspace is currently in soft-deleted state
+                $mlListUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/deletedWorkspaces?$mlApiVer"
+                $mlListRaw = az rest --method GET --url $mlListUrl --output json 2>$null
+                if ($LASTEXITCODE -eq 0 -and $mlListRaw) {
+                    try {
+                        $mlSoftDeleted = ($mlListRaw | ConvertFrom-Json -ErrorAction Stop).value |
+                            Where-Object { $_.name -eq $mlWsName }
+                    } catch { $mlSoftDeleted = $null }
+                    if ($mlSoftDeleted) {
+                        Write-AdeLog "Soft-deleted ML workspace '$mlWsName' found — purging before deploy..." -Level Warning
+                        # Ensure the RG exists so ARM can route the forceToPurge DELETE to the ML service.
+                        # az group create is idempotent; Bicep will use the same RG when it runs.
+                        az group create --name $mlAiRg --location $Location --only-show-errors 2>$null | Out-Null
+                        $mlPurgeUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$mlAiRg/providers/Microsoft.MachineLearningServices/workspaces/${mlWsName}?$mlApiVer&forceToPurge=true"
+                        $mlPurgeErr = az rest --method DELETE --url $mlPurgeUrl 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            # Async operation — poll list until workspace disappears
+                            Write-AdeLog "Waiting for ML workspace '$mlWsName' purge to complete..." -Level Warning
+                            $mlMaxWait = 120; $mlElapsed = 0; $mlDone = $false
+                            while ($mlElapsed -lt $mlMaxWait) {
+                                Start-Sleep -Seconds 5; $mlElapsed += 5
+                                $mlCheckRaw = az rest --method GET --url $mlListUrl --output json 2>$null
+                                if ($LASTEXITCODE -eq 0 -and $mlCheckRaw) {
+                                    try {
+                                        $mlStillThere = ($mlCheckRaw | ConvertFrom-Json -ErrorAction Stop).value |
+                                            Where-Object { $_.name -eq $mlWsName }
+                                        if (-not $mlStillThere) { $mlDone = $true; break }
+                                    } catch {}
+                                }
+                            }
+                            if ($mlDone) {
+                                Write-AdeLog "ML workspace '$mlWsName' purged successfully." -Level Success
+                            } else {
+                                Write-AdeLog "ML workspace purge timed out after ${mlMaxWait}s — deployment may fail." -Level Warning
+                            }
+                        } else {
+                            Write-AdeLog "ML workspace purge failed for '$mlWsName': $mlPurgeErr" -Level Warning
+                        }
                     }
-                    if ($mlDone) {
-                        Write-AdeLog "Soft-deleted ML workspace '$mlWsName' purged successfully." -Level Success
-                    } else {
-                        Write-AdeLog "ML workspace '$mlWsName' purge timed out after ${mlMaxWait}s — deployment may fail." -Level Warning
-                    }
-                } elseif ($mlPurgeErr -notmatch 'ResourceNotFound|WorkspaceNotFound|not found') {
-                    Write-AdeLog "ML workspace purge attempt for '$mlWsName': $mlPurgeErr" -Level Warning
                 }
 
                 $params = @{

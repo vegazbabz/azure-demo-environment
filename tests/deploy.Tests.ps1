@@ -288,8 +288,8 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $dataIdx   = $script:source.IndexOf("'data' {")
         $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
         $aiBlock | Should -Match 'mlworkspace' -Because 'ML workspace name must be referenced'
-        $aiBlock | Should -Match 'MachineLearningServices.*deletedWorkspaces.*purge' -Because 'ML workspace purge URL must be constructed'
-        $aiBlock | Should -Match 'deletedWorkspaces.*\?' -Because 'must poll the deleted workspace GET endpoint to confirm purge'
+        $aiBlock | Should -Match 'MachineLearningServices/deletedWorkspaces' -Because 'must list soft-deleted workspaces to confirm the workspace is there'
+        $aiBlock | Should -Match 'forceToPurge=true' -Because 'must use forceToPurge=true per REST API docs (api-version=2024-04-01)'
         $aiBlock | Should -Match 'Start-Sleep|mlMaxWait|mlElapsed' -Because 'must wait for async purge to complete'
         # Purge attempt must appear before Deploy-AdeModule
         $mlPurgeIdx = $aiBlock.IndexOf('MachineLearningServices')
