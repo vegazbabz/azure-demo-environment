@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/nicholasmadsen/azure-demo-environment/main/config/schema.json",
+  "$id": "https://raw.githubusercontent.com/vegazbabz/azure-demo-environment/main/config/schema.json",
   "title": "ADE Config Profile",
   "description": "Schema for Azure Demo Environment configuration profiles.",
   "type": "object",
