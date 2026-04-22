@@ -1,6 +1,6 @@
 {
   "profileName": "full",
-  "description": "Full Azure demo environment deploying all supported resource types with DEFAULT (out-of-the-box) Azure settings. No hardening. Designed as a baseline for benchmark testing (CIS, MCSB, Defender CSPM, etc.).",
+  "description": "Full Azure demo environment deploying all supported resource types except ai and data (disabled by default — require quota approval and carry unpredictable cost). No hardening. Designed as a baseline for benchmark testing (CIS, MCSB, Defender CSPM, etc.).",
   "version": "2.0.0",
   "modules": {
     "monitoring": {

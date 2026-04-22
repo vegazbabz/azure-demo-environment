@@ -105,7 +105,8 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         # sees it for databases/data seeding (seed-data.ps1 -DatabaseAdminPassword).
         $script:source | Should -Match '_adePasswordWasGenerated[\s\S]{1,600}pwModulesDeployed'
         $script:source | Should -Match 'ADMIN PASSWORD'
-        $script:source | Should -Match 'Use -DatabaseAdminPassword with seed-data'
+        $script:source | Should -Match 'seedLine1[\s\S]{1,200}seedLine2'
+        $script:source | Should -Match '-DatabaseAdminPassword'
     }
 
     It 'Shows a mid-deployment banner after the compute module with the correct messaging' {
@@ -241,10 +242,10 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match 'GITHUB_ACTIONS'
     }
 
-    It 'Prompts for budget alert email interactively and skips prompt in CI/Force mode' {
+    It 'Prompts for budget alert email interactively and skips prompt in CI mode only' {
         $script:source | Should -Match 'isNonInteractiveBudget'
         $script:source | Should -Match 'Read-Host.*budget'
-        $script:source | Should -Match 'BudgetAlertEmail.*not.*set|budget.*email.*not.*set' -Because 'CI/Force path must log a warning when email is missing'
+        $script:source | Should -Match 'BudgetAlertEmail.*not.*set|budget.*email.*not.*set' -Because 'CI path must log a warning when email is missing'
     }
 
     It 'Tracks failed modules in a $failedModules list' {

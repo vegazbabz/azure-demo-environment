@@ -223,9 +223,7 @@ All subnets (compute, databases, containers, app services, management, App Gatew
 | `windowsVm` | `true` | Windows Server 2022 VM |
 | `linuxVm` | `false` | Ubuntu 22.04 LTS VM — opt-in only |
 | `vmss` | `false` | VM Scale Set |
-| `availabilitySet` | `true` | Deploy an Availability Set for the VMs |
 | `enableAutoShutdown` | varies per profile | Daily auto-shutdown at 19:00 UTC (saves cost) |
-| `enableBootDiagnostics` | `true` | Boot diagnostics (managed storage). Useful for diagnosing failed VM starts. |
 | `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
 | `domainController` | `false` | Deploy an Active Directory Domain Controller (Windows Server 2022). Installs AD DS and promotes the VM to a forest root DC. Static IP `10.0.15.4` in the management subnet. VNet DNS is automatically pointed at the DC when enabled. |
 | `domainName` | `""` | FQDN for the AD forest (e.g. `corp.contoso.local`). Defaults to `<prefix>.local` when left empty. |
@@ -258,7 +256,6 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | Flag | Default | Description |
 | --- | --- | --- |
 | `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
-| `linuxWebApp` | `false` | Linux Web App — opt-in only |
 | `functionApp` | `true` | Function App (Consumption plan) |
 | `logicApp` | `true` | Logic App (Standard) |
 
@@ -290,7 +287,8 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | --- | --- | --- |
 | `aiServices` | `false` | Azure AI Services multi-service account (S0) |
 | `openAi` | `false` | Azure OpenAI Service with GPT-4o deployment. Requires quota approval in your subscription. |
-| `cognitiveSearch` | `false` | Azure Cognitive Search (Basic ~$75/month) |
+| `cognitiveSearch` | `false` | Azure Cognitive Search (~$250/month Standard) |
+| `cognitiveSearchSku` | `"basic"` | Cognitive Search SKU: `free` (1 per subscription), `basic` (~$75/mo), `standard` (~$250/mo), `standard2`, `standard3`. All paid SKUs have limited availability in some regions — if you hit `ResourcesForSkuUnavailable`, try a different SKU or deploy to a different region. |
 | `machineLearning` | `false` | Azure Machine Learning workspace |
 
 ### `data`
@@ -356,6 +354,7 @@ You can also deploy both side-by-side using different prefixes:
 | `-SubscriptionId` | string | current account | Target subscription. Defaults to whatever `az account show` returns. |
 | `-AdminUsername` | string | `adeadmin` | VM and database administrator username |
 | `-AdminPassword` | SecureString | prompted | VM admin password. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. |
+| `-AutoGeneratePassword` | switch | — | Generate a cryptographically random password automatically. The password is printed in a highlighted box at the mid-deploy banner and again in the final summary — copy it before the terminal scrolls. Cannot be combined with `-AdminPassword`. |
 | `-Mode` | string | `default` | `default` or `hardened` |
 | `-WhatIf` | switch | — | Run Bicep what-if on each module without actually deploying anything |
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
@@ -516,6 +515,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **Feature flags are JSON-only** | There is no CLI flag to override a single feature flag (e.g. `mysql: true`) without editing the profile JSON. `-EnableModules` / `-SkipModules` toggle whole modules on/off, not individual features. |
 | **PostgreSQL / MySQL seeding** | `seed-data.ps1` skips these automatically if `psql` / `mysql` is not installed. See [Seed data](#seed-data) for options including Azure Cloud Shell. |
 | **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. Using `-EnableModules data` on the command line auto-enables **all** features including Synapse Analytics, Databricks, and Microsoft Purview — which carry significant cost. |
+| **Microsoft Purview — one free-tier account per tenant** | Azure allows only one free-tier Purview account per Entra ID tenant, and it cannot be re-created in a different region. If you already have a Purview account in your tenant at a different location, `deploy.ps1` will automatically skip Purview and log a warning. To deploy Purview, either use the same region as the existing account or set `purview: false` in your profile to opt out. |
 | **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
 | **Governance module and monitoring** | The `governance` module requires `monitoring` to also be enabled when deploying a full environment. Deploying `governance` alone (without monitoring) is supported but Automation Account runbooks will lack a Log Analytics workspace destination. |
@@ -610,11 +610,14 @@ You can run the seed script manually against an already-deployed environment:
 
 ```powershell
 # Seed all targets
-./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword (Read-Host -AsSecureString 'DB password')
+./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword123!'
 
 # Seed only specific targets
 ./scripts/seed-data.ps1 -Prefix ade -Modules storage,redis,keyvault -Force
 ```
+
+> [!NOTE]
+> Wrap the password in **single quotes** so PowerShell does not expand special characters such as `$`. The script exits with code **1** and prints a `[WARN]` summary if any SQL / PostgreSQL / MySQL seed step fails, so callers and CI pipelines can detect partial failures.
 
 ---
 
@@ -675,7 +678,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **577 passing, 0 failing, 0 skipped**.
+Current state: **581 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -966,7 +969,7 @@ Profiles live in `config/profiles/` and control which modules and features are e
 
 | Profile | Description |
 | --- | --- |
-| `full` | All 12 modules — complete CIS coverage |
+| `full` | All 12 modules — `ai` and `data` disabled (require quota + cost approval) |
 | `minimal` | Monitoring + networking + security + one Windows VM |
 | `compute-only` | VMs and VMSS — CIS Compute sections |
 | `databases-only` | SQL, Cosmos DB, PostgreSQL |
@@ -1018,7 +1021,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (569 passing, 0 failing, 0 skipped)
+tests/              # Pester 5 unit tests (581 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 
