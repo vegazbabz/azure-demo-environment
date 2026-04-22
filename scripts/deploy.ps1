@@ -982,13 +982,31 @@ foreach ($moduleName in $deploymentOrder) {
                 # The workspace name is deterministic (${prefix}-mlworkspace — no uniqueString).
                 # A soft-deleted workspace blocks Bicep with:
                 # "Soft-deleted workspace exists. Please purge or recover it."
-                $mlWsName   = "${Prefix}-mlworkspace"
-                $mlPurgeUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}/purge?api-version=2024-01-01-preview"
-                $mlPurgeStderr = az rest --method DELETE --url $mlPurgeUrl --output none 2>&1
+                # The purge REST call is asynchronous (returns 202). We must poll until the
+                # deleted workspace is gone before proceeding, otherwise a subsequent deploy
+                # attempt (e.g. after the CogSearch SKU retry) hits the same error.
+                $mlWsName    = "${Prefix}-mlworkspace"
+                $mlApiVer    = 'api-version=2024-01-01-preview'
+                $mlPurgeUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}/purge?$mlApiVer"
+                $mlCheckUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.MachineLearningServices/locations/$Location/deletedWorkspaces/${mlWsName}?$mlApiVer"
+                $mlPurgeErr  = az rest --method DELETE --url $mlPurgeUrl --output none 2>&1
                 if ($LASTEXITCODE -eq 0) {
-                    Write-AdeLog "Purged soft-deleted ML workspace: $mlWsName (required before redeploy)." -Level Warning
-                } elseif ($mlPurgeStderr -notmatch 'ResourceNotFound|WorkspaceNotFound|not found') {
-                    Write-AdeLog "ML workspace purge attempt for '$mlWsName': $mlPurgeStderr" -Level Warning
+                    # 202 accepted — poll until the workspace disappears from the deleted registry
+                    Write-AdeLog "Purging soft-deleted ML workspace '$mlWsName' — waiting for completion..." -Level Warning
+                    $mlMaxWait = 120; $mlElapsed = 0; $mlDone = $false
+                    while ($mlElapsed -lt $mlMaxWait) {
+                        az rest --method GET --url $mlCheckUrl --output none 2>$null
+                        if ($LASTEXITCODE -ne 0) { $mlDone = $true; break }
+                        Start-Sleep -Seconds 5
+                        $mlElapsed += 5
+                    }
+                    if ($mlDone) {
+                        Write-AdeLog "Soft-deleted ML workspace '$mlWsName' purged successfully." -Level Success
+                    } else {
+                        Write-AdeLog "ML workspace '$mlWsName' purge timed out after ${mlMaxWait}s — deployment may fail." -Level Warning
+                    }
+                } elseif ($mlPurgeErr -notmatch 'ResourceNotFound|WorkspaceNotFound|not found') {
+                    Write-AdeLog "ML workspace purge attempt for '$mlWsName': $mlPurgeErr" -Level Warning
                 }
 
                 $params = @{
