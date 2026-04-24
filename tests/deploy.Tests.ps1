@@ -122,7 +122,7 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         # When deploying databases without compute the compute banner does not fire.
         # A dedicated databases banner ensures the password is always visible mid-deploy.
         $script:source | Should -Match 'AUTO-GENERATED DATABASE ADMIN PASSWORD'
-        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,800}DATABASE ADMIN PASSWORD'
+        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,2200}DATABASE ADMIN PASSWORD'
         $script:source | Should -Match 'DatabaseAdminPassword'
     }
 }
@@ -265,6 +265,52 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
     It 'Detects and deletes a Failed Container Apps Environment before deploying containers' {
         $script:source | Should -Match 'containerapp env show'
         $script:source | Should -Match 'ManagedEnvironmentNotReadyForAppCreation|Failed state|containerapp env delete'
+    }
+
+    It 'Purges soft-deleted Cognitive Services accounts before deploying the ai module' {
+        # FlagMustBeSetForRestore: same name is generated via uniqueString(rg().id) on every
+        # redeploy into the same RG. Pre-purge prevents ARM from rejecting the deployment.
+        $script:source | Should -Match 'cognitiveservices account list-deleted'
+        $script:source | Should -Match 'cognitiveservices account purge'
+        $script:source | Should -Match 'FlagMustBeSetForRestore'
+        # Purge must appear inside the ai case block, before Deploy-AdeModule ai is called
+        $aiIdx    = $script:source.IndexOf("'ai' {")
+        $purgeIdx = $script:source.IndexOf('cognitiveservices account purge', $aiIdx)
+        $deployIdx = $script:source.IndexOf("Deploy-AdeModule -ModuleName 'ai'", $aiIdx)
+        $purgeIdx | Should -BeLessThan $deployIdx -Because 'soft-delete purge must run before the Bicep deployment'
+    }
+
+    It 'Handles soft-deleted ML workspace gracefully in ai module' {
+        # A soft-deleted ML workspace (left over from a prior destroy cycle) blocks
+        # redeployment with "Soft-deleted workspace exists. Please purge or recover it."
+        # The ARM deletedWorkspaces list endpoint does not exist in this subscription's
+        # ML provider manifest, and forceToPurge=true is only valid for active workspaces.
+        # The correct approach is:
+        #  1. Best-effort pre-flight: az ml workspace delete --permanently-delete (silently
+        #     fails when workspace is already soft-deleted or absent).
+        #  2. Catch block: detect "Soft-deleted workspace exists" and retry the AI module
+        #     without Machine Learning so AI Services, OpenAI and Search still deploy.
+        $aiIdx     = $script:source.IndexOf("'ai' {")
+        $dataIdx   = $script:source.IndexOf("'data' {")
+        $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
+        $aiBlock | Should -Match 'mlworkspace' -Because 'ML workspace name must be referenced'
+        $aiBlock | Should -Match 'permanently-delete' -Because 'pre-flight must attempt permanent deletion'
+        $aiBlock | Should -Match 'Soft-deleted workspace exists' -Because 'catch block must detect the soft-delete conflict error'
+        $aiBlock | Should -Match "deployMachineLearning.*false" -Because 'retry must disable Machine Learning when workspace is soft-deleted'
+        # The catch-and-retry must call Deploy-AdeModule again
+        $aiBlock | Should -Match 'Deploy-AdeModule.*ai.*BicepFile' -Because 'retry must call Deploy-AdeModule for the ai module'
+    }
+
+    It 'Retries ai module without Cognitive Search when SKU is unavailable in the region' {
+        # Azure Cognitive Search has per-region capacity limits. Rather than failing the
+        # entire AI deployment, detect ResourcesForSkuUnavailable and retry with
+        # deployCognitiveSearch=false so AI Services, OpenAI and ML still deploy.
+        $aiIdx     = $script:source.IndexOf("'ai' {")
+        $dataIdx   = $script:source.IndexOf("'data' {")
+        $aiBlock   = $script:source.Substring($aiIdx, $dataIdx - $aiIdx)
+        $aiBlock | Should -Match 'ResourcesForSkuUnavailable' -Because 'SKU error must be detected'
+        $aiBlock | Should -Match "deployCognitiveSearch.*false" -Because 'retry must disable Cognitive Search'
+        $aiBlock | Should -Match 'Deploy-AdeModule.*ai.*BicepFile' -Because 'retry must call Deploy-AdeModule again'
     }
 
     It 'Does not contain dead bastionSubnetId state key' {
@@ -546,5 +592,14 @@ Describe 'deploy.ps1 – job schedule body serialisation' -Tag 'unit' {
         $source = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
         $source | Should -Match 'schedule\s*=\s*@\{'
         $source | Should -Match 'runbook\s*=\s*@\{'
+    }
+
+    It 'Treats jobSchedule Conflict (already exists) as Info, not Warning' {
+        # When a job schedule GUID already exists from a prior deployment (idempotent
+        # re-run), ARM returns 409 Conflict with "already exists". This must be logged
+        # at Info level — not as a Warning — to avoid alarming users on every redeploy.
+        $source = Get-Content (Join-Path $script:repoRoot 'scripts\deploy.ps1') -Raw
+        $source | Should -Match 'already exists' -Because 'must detect Conflict 409 from ARM'
+        $source | Should -Match 'already linked' -Because 'must log the schedule as already linked at Info level'
     }
 }

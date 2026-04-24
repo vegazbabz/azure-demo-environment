@@ -238,6 +238,37 @@ Describe 'destroy.ps1 – soft-deleted Key Vault purge' -Tag 'unit' {
     }
 }
 
+Describe 'destroy.ps1 – Databricks deny-assignment pre-delete' -Tag 'unit' {
+
+    It 'Queries Microsoft.Databricks/workspaces in data-rg before parallel delete' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'Microsoft\.Databricks/workspaces'
+    }
+
+    It 'Retrieves the managed RG ID from the workspace properties' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'managedResourceGroupId'
+    }
+
+    It 'Removes the Databricks managed RG from the ordered delete list' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'ordered.*Where-Object.*managedRgName'
+    }
+
+    It 'Pre-deletes the workspace resource before Phase 1' {
+        $source = Get-Content $script:destroyPs -Raw
+        # workspace delete must appear before $failedRgs = @()
+        $wsDeleteIdx   = $source.IndexOf('Microsoft.Databricks/workspaces')
+        $failedRgsIdx  = $source.IndexOf('$failedRgs = @()')
+        $wsDeleteIdx   | Should -BeLessThan $failedRgsIdx -Because 'Databricks workspace must be deleted before the parallel delete loop'
+    }
+
+    It 'Uses az resource delete (no extension required) to remove the workspace' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'az resource delete[\s\S]{1,200}Microsoft\.Databricks/workspaces'
+    }
+}
+
 Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
 
     It 'Calls az cognitiveservices account list-deleted after deletions succeed' {
@@ -267,11 +298,33 @@ Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
         $source | Should -Match '--location.*acctLoc'
     }
 
-    It 'Guards the CogSvc purge block with the same -NoWait / failedRgs conditions as KV purge' {
+    It 'Cog Services purge runs even when some RGs failed (not gated on failedRgs.Count -eq 0)' {
         $source = Get-Content $script:destroyPs -Raw
-        # Both purge sections must be inside the same outer if block
-        $source | Should -Match '-not \$NoWait'
-        $source | Should -Match 'failedRgs.Count -eq 0'
+        # CogSvc purge has its own guard that omits the failedRgs check, so that a
+        # partial destroy (e.g. Databricks deny-assignment left one RG) still purges
+        # soft-deleted accounts and avoids FlagMustBeSetForRestore on the next deploy.
+        $csIdx = $source.IndexOf('cognitiveservices account list-deleted')
+        $csIdx | Should -BeGreaterThan 0 -Because 'purge call must exist'
+        # The 400 chars immediately before the purge call must NOT contain failedRgs.Count
+        $contextBefore = $source.Substring([Math]::Max(0, $csIdx - 400), [Math]::Min(400, $csIdx))
+        $contextBefore | Should -Not -Match 'failedRgs\.Count' -Because 'Cog Services purge must not be inside the failedRgs guard'
+    }
+
+    It 'Pre-deletes ML workspace permanently before Phase 1 to prevent soft-delete' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The pre-delete block uses az ml workspace delete --permanently-delete so the
+        # workspace is gone before its RG is removed and never enters soft-delete.
+        $source | Should -Match 'permanently-delete' -Because 'must use --permanently-delete to bypass soft-delete'
+    }
+
+    It 'Pre-delete block appears before Phase 1 RG deletions' {
+        $source = Get-Content $script:destroyPs -Raw
+        # The pre-delete block must appear before Phase 1 RG deletions to prevent
+        # the workspace from entering soft-delete state when the RG is removed.
+        $preDeleteIdx = $source.IndexOf('Pre-delete: Azure ML workspaces')
+        $phase1Idx    = $source.IndexOf('Phase 1:')
+        $preDeleteIdx | Should -BeGreaterThan 0 -Because 'ML workspace pre-delete block must exist'
+        $preDeleteIdx | Should -BeLessThan $phase1Idx -Because 'ML pre-delete must run before Phase 1 RG deletions'
     }
 }
 
