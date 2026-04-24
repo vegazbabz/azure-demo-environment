@@ -70,7 +70,7 @@ $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
 if ($LogFile) {
     $resolvedLog = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogFile)
     $null = New-Item -ItemType Directory -Force -Path (Split-Path $resolvedLog)
-    Set-Content -LiteralPath $resolvedLog -Value @(
+    Add-Content -LiteralPath $resolvedLog -Value @(
         "# ADE Teardown Log",
         "# Started  : $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss UTC'))",
         "# Prefix   : $Prefix",
@@ -200,6 +200,79 @@ if ("$Prefix-security-rg" -in $ordered) {
     }
 }
 
+# ─── Pre-delete: Azure Databricks workspaces ─────────────────────────────────
+# Databricks attaches a system deny assignment to its managed resource group,
+# which causes az group delete to fail with DenyAssignmentAuthorizationFailed.
+# Deleting the workspace resource first causes Azure to remove the deny
+# assignment and clean up the managed RG automatically.
+# We also strip the managed RG from $ordered so we don't try to delete it
+# directly (it may already be gone, and a 404 would re-populate $failedRgs).
+if ("$Prefix-data-rg" -in $ordered) {
+    $dbWsList = az resource list `
+        --resource-group "$Prefix-data-rg" `
+        --resource-type 'Microsoft.Databricks/workspaces' `
+        --query '[].name' -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $dbWsList) {
+        foreach ($wsName in ($dbWsList -split [System.Environment]::NewLine | Where-Object { $_ })) {
+            $wsName = $wsName.Trim()
+            if (-not $wsName) { continue }
+
+            # Retrieve the managed RG name from the workspace properties.
+            $managedRgId = az resource show `
+                --resource-group "$Prefix-data-rg" `
+                --resource-type 'Microsoft.Databricks/workspaces' `
+                --name $wsName `
+                --query 'properties.managedResourceGroupId' -o tsv 2>$null
+            if ($LASTEXITCODE -eq 0 -and $managedRgId) {
+                $managedRgName = ($managedRgId.Trim() -split '/')[-1]
+                if ($managedRgName) {
+                    $ordered = @($ordered | Where-Object { $_ -ne $managedRgName })
+                    Write-AdeLog "Databricks managed RG '$managedRgName' removed from direct-delete list (handled by workspace deletion)." -Level Info
+                }
+            }
+
+            Write-AdeLog "Pre-deleting Databricks workspace '$wsName' to release system deny assignment on managed RG..." -Level Warning
+            az resource delete `
+                --resource-group "$Prefix-data-rg" `
+                --resource-type 'Microsoft.Databricks/workspaces' `
+                --name $wsName --output none 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "Databricks workspace '$wsName' deleted — managed RG deny assignment released." -Level Success
+            } else {
+                Write-AdeLog "Could not pre-delete Databricks workspace '$wsName' (non-fatal — will attempt direct RG deletion)." -Level Warning
+            }
+        }
+    }
+}
+
+# ─── Pre-delete: Azure ML workspaces ─────────────────────────────────────────
+# ML workspace soft-delete blocks redeployment with:
+#   "Soft-deleted workspace exists. Please purge or recover it."
+# Permanently deleting the workspace BEFORE the RG deletion (using ?forceToPurge=true)
+# prevents it from entering soft-delete at all — same pattern as Databricks pre-delete.
+if ("${Prefix}-ai-rg" -in $ordered) {
+    $mlPreList = az resource list `
+        --resource-group "${Prefix}-ai-rg" `
+        --resource-type 'Microsoft.MachineLearningServices/workspaces' `
+        --query '[].name' -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $mlPreList) {
+        foreach ($mlPreWsName in ($mlPreList -split [System.Environment]::NewLine | Where-Object { $_ })) {
+            $mlPreWsName = $mlPreWsName.Trim()
+            if (-not $mlPreWsName) { continue }
+            Write-AdeLog "Pre-deleting ML workspace '$mlPreWsName' permanently (bypasses soft-delete)..." -Level Warning
+            az ml workspace delete `
+                --name $mlPreWsName `
+                --resource-group "${Prefix}-ai-rg" `
+                --permanently-delete --yes --no-wait 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-AdeLog "ML workspace '$mlPreWsName' permanently deleted — will not enter soft-delete on RG removal." -Level Success
+            } else {
+                Write-AdeLog "Could not pre-delete ML workspace '$mlPreWsName' (non-fatal — purge attempted after RG deletion)." -Level Warning
+            }
+        }
+    }
+}
+
 $failedRgs = @()
 
 # Phase 1: Remove locks and start ALL deletions in parallel (no-wait).
@@ -320,44 +393,22 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
     if ($kvPurgeJobs.Count -gt 0) {
         Write-AdeLog "Waiting for $($kvPurgeJobs.Count) Key Vault purge(s) to complete..." -Level Info
         foreach ($kvEntry in $kvPurgeJobs) {
-            $kvExitCode = Receive-Job $kvEntry.Job -Wait
+            # Wait-Job -Timeout 900: Azure purge API rarely takes longer than 15 min;
+            # without a timeout the script can block indefinitely on a slow/unresponsive endpoint.
+            # Receive-Job does not have a -Timeout parameter — use Wait-Job first.
+            $null = Wait-Job $kvEntry.Job -Timeout 900
+            $kvExitCode = Receive-Job $kvEntry.Job
             Remove-Job  $kvEntry.Job -WhatIf:$false
             if ($null -ne $kvExitCode -and [int]$kvExitCode -eq 0) {
                 Write-AdeLog "Key Vault purged: $($kvEntry.Name). Safe to re-deploy immediately." -Level Success
+            } elseif ($null -eq $kvExitCode) {
+                Write-AdeLog "Purge of '$($kvEntry.Name)' timed out after 15 min (non-fatal). It may still complete in the background." -Level Warning
             } else {
                 Write-AdeLog "Could not purge '$($kvEntry.Name)' (non-fatal)." -Level Warning
             }
         }
     } else {
         Write-AdeLog "No soft-deleted Key Vaults found for prefix '$Prefix'." -Level Info
-    }
-
-    # ── Cognitive Services (AI Services + OpenAI) ────────────────────────────
-    # Purge endpoint requires: name + location + original resource-group name.
-    # We extract all three from the deleted account's ARM resource ID:
-    #   .../providers/Microsoft.CognitiveServices/locations/{loc}/resourceGroups/{rg}/deletedAccounts/{name}
-    Write-AdeLog "Purging any soft-deleted Cognitive Services accounts with prefix '$Prefix'..." -Level Info
-    $deletedCognitive = az cognitiveservices account list-deleted --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" -o tsv 2>$null
-    if ($deletedCognitive) {
-        foreach ($line in $deletedCognitive) {
-            if (-not $line) { continue }
-            $parts    = ($line.Trim() -split '\t')
-            $acctName = $parts[0]
-            $acctLoc  = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-            $acctId   = if ($parts.Count -gt 2) { $parts[2] } else { '' }
-            # Extract original RG name from ARM ID
-            $acctRg   = if ($acctId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
-            if (-not $acctLoc -or -not $acctRg) {
-                Write-AdeLog "Could not determine location/RG for '$acctName' — skipping." -Level Warning
-                continue
-            }
-            Write-AdeLog "Purging soft-deleted Cognitive Services account: $acctName (rg: $acctRg)" -Level Warning
-            az cognitiveservices account purge --name $acctName --resource-group $acctRg --location $acctLoc --output none 2>$null
-            if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged: $acctName" -Level Success }
-            else { Write-AdeLog "Could not purge '$acctName' (non-fatal)." -Level Warning }
-        }
-    } else {
-        Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
     }
 
     # ── Subscription-scope Budget ────────────────────────────────────────────
@@ -383,6 +434,53 @@ if (-not $NoWait -and $failedRgs.Count -eq 0 -and -not $WhatIfPreference) {
         }
     } else {
         Write-AdeLog "Could not determine subscription ID — skipping budget cleanup." -Level Warning
+    }
+}
+
+# ── Cognitive Services (AI Services + OpenAI) ────────────────────────────────
+# Purge endpoint requires: name + location + original resource-group name.
+# We extract all three from the deleted account's ARM resource ID:
+#   .../providers/Microsoft.CognitiveServices/locations/{loc}/resourceGroups/{rg}/deletedAccounts/{name}
+# NOTE: This block intentionally runs even when some RGs failed to delete.
+# The failedRgs gate that guards KV/Budget would skip this purge, causing
+# FlagMustBeSetForRestore errors on the next redeploy into the same RG.
+if (-not $NoWait -and -not $WhatIfPreference) {
+    Write-AdeLog "Purging any soft-deleted Cognitive Services accounts with prefix '$Prefix'..." -Level Info
+    $deletedCognitive = az cognitiveservices account list-deleted --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" -o tsv 2>$null
+    if ($deletedCognitive) {
+        foreach ($line in $deletedCognitive) {
+            if (-not $line) { continue }
+            $parts    = ($line.Trim() -split '\t')
+            $acctName = $parts[0]
+            $acctLoc  = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+            $acctId   = if ($parts.Count -gt 2) { $parts[2] } else { '' }
+            # Extract original RG name from ARM ID
+            $acctRg   = if ($acctId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
+            if (-not $acctLoc -or -not $acctRg) {
+                Write-AdeLog "Could not determine location/RG for '$acctName' — skipping." -Level Warning
+                continue
+            }
+            Write-AdeLog "Purging soft-deleted Cognitive Services account: $acctName (rg: $acctRg)" -Level Warning
+            az cognitiveservices account purge --name $acctName --resource-group $acctRg --location $acctLoc --output none 2>$null
+            if ($LASTEXITCODE -eq 0) { Write-AdeLog "Purged: $acctName" -Level Success }
+            else { Write-AdeLog "Could not purge '$acctName' (non-fatal)." -Level Warning }
+        }
+    } else {
+        Write-AdeLog "No soft-deleted Cognitive Services accounts found for prefix '$Prefix'." -Level Info
+    }
+
+    # ── ML Workspaces ────────────────────────────────────────────────────────────
+    # The pre-delete block above permanently deletes any active ML workspace before
+    # the RG is removed, preventing it from entering soft-delete state.
+    # Once an ML workspace is already soft-deleted (i.e. the RG was deleted first),
+    # there is no programmatic purge path available via ARM REST or the az ml CLI —
+    # the workspace is tracked only by the ML service backend and is not accessible
+    # as an ARM resource. The pre-delete block is the only reliable mitigation.
+    # On the next deploy.ps1 run, the ai module catch block will detect
+    # "Soft-deleted workspace exists" and retry without Machine Learning automatically.
+    $mlSubId = (az account show --query id -o tsv 2>$null).Trim()
+    if ($mlSubId) {
+        Write-AdeLog "ML workspace soft-delete purge: relying on pre-delete block above; no REST purge path for already-soft-deleted workspaces." -Level Info
     }
 }
 

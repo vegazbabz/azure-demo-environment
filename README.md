@@ -36,6 +36,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 - [Repository structure](#repository-structure)
 - [CIS / MCSB benchmark guide](#cis--mcsb-benchmark-guide)
 - [License](#license)
+- [Contributing](#contributing)
 
 ---
 
@@ -520,6 +521,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
 | **Governance module and monitoring** | The `governance` module requires `monitoring` to also be enabled when deploying a full environment. Deploying `governance` alone (without monitoring) is supported but Automation Account runbooks will lack a Log Analytics workspace destination. |
 | **`ai` and `data` not in any built-in profile** | Neither `ai` nor `data` modules are enabled in any built-in profile. Use a custom profile to enable them. |
+| **Azure ML workspace soft-delete (14-day hold)** | When `destroy.ps1` removes the `ai` resource group, the ML workspace enters a **14-day soft-delete period** during which Azure blocks recreation with the error *"Soft-deleted workspace exists. Please purge or recover it."* `deploy.ps1` automatically catches this and retries the AI module without Machine Learning so all other AI resources (AI Services, OpenAI, Cognitive Search) still deploy. To force-purge the soft-deleted workspace immediately: open the [Azure Portal](https://portal.azure.com) → **Machine Learning** → **Recently deleted** → select the workspace → **Purge**. There is no CLI or REST API path to purge a workspace that entered soft-delete after its resource group was deleted — the ARM `deletedWorkspaces` endpoint does not exist in the ML provider manifest for standard subscriptions. |
 
 ---
 
@@ -1136,3 +1138,9 @@ Cost warnings are surfaced during deployment confirmation.
 ## License
 
 MIT
+
+---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on branching, commit style, and running the test suite locally before opening a PR.

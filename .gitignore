@@ -14,6 +14,7 @@ reports/
 cis_checkpoints/
 audit-debug.txt
 debug-tb.txt
+pester-fail.txt
 
 # ── Local environment / secrets ───────────────────────────────────────────────
 .env

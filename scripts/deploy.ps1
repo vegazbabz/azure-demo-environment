@@ -44,7 +44,9 @@
 .PARAMETER AdminPassword
     Override the VM admin password (SecureString). Must meet Azure complexity requirements
     (min 12 chars, upper + lower + digit + symbol).
-    If omitted, a secure 12-character password is auto-generated and printed to the terminal.
+    If omitted and a password-bearing module (compute, databases, or data) is enabled,
+    a secure 12-character password is auto-generated and printed to the terminal.
+    Use -AutoGeneratePassword to explicitly request generation even when those modules are disabled.
 
 .PARAMETER Mode
     Deployment mode.
@@ -824,6 +826,12 @@ foreach ($moduleName in $deploymentOrder) {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
+                if ($Mode -ne 'hardened') {
+                    $deploySqlFlag = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase')
+                    if ($deploySqlFlag) {
+                        Write-AdeLog "SQL Server deployed in default mode: the 'AllowAll' firewall rule (0.0.0.0-255.255.255.255) is ACTIVE. This is intentional for CIS baseline auditing. Remove it before using this environment for anything other than benchmark testing." -Level Warning
+                    }
+                }
                 if ($script:_adePasswordWasGenerated) {
                     $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
                     Write-Host ""
@@ -937,6 +945,52 @@ foreach ($moduleName in $deploymentOrder) {
                 $bicep = Join-Path $bicepRoot 'ai\ai.bicep'
                 $aiFeatProp = $deployProfile.modules.ai.PSObject.Properties['features']
                 $aiFeatures = if ($null -ne $aiFeatProp) { $aiFeatProp.Value } else { [pscustomobject]@{} }
+
+                # Pre-flight: purge any soft-deleted Cognitive Services accounts that share
+                # this prefix. Bicep names them with uniqueString(resourceGroup().id), which
+                # is deterministic — the same name is generated on every redeploy into the
+                # same RG. If a previous destroy left them in soft-deleted state, ARM returns
+                # FlagMustBeSetForRestore and the deployment fails immediately.
+                $softDeletedCogSvc = az cognitiveservices account list-deleted `
+                    --query "[?starts_with(name, '${Prefix}-')].[name, location, id]" `
+                    -o tsv 2>$null
+                if ($LASTEXITCODE -eq 0 -and $softDeletedCogSvc) {
+                    foreach ($csLine in ($softDeletedCogSvc -split [System.Environment]::NewLine | Where-Object { $_ })) {
+                        $csParts = $csLine.Trim() -split '\t'
+                        $csName  = $csParts[0]
+                        $csLoc   = if ($csParts.Count -gt 1) { $csParts[1] } else { '' }
+                        $csId    = if ($csParts.Count -gt 2) { $csParts[2] } else { '' }
+                        $csRg    = if ($csId -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { '' }
+                        if (-not $csLoc -or -not $csRg) {
+                            Write-AdeLog "Soft-deleted Cognitive Services '$csName': could not determine location/RG — skipping purge." -Level Warning
+                            continue
+                        }
+                        Write-AdeLog "Purging soft-deleted Cognitive Services account '$csName' (required before redeploy)..." -Level Warning
+                        az cognitiveservices account purge `
+                            --name $csName `
+                            --resource-group $csRg `
+                            --location $csLoc `
+                            --output none 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-AdeLog "Purged soft-deleted Cognitive Services account: $csName" -Level Success
+                        } else {
+                            Write-AdeLog "Could not purge '$csName' — deployment may fail with FlagMustBeSetForRestore." -Level Warning
+                        }
+                    }
+                }
+                # Pre-flight: permanently delete any active ML workspace so it does not
+                # enter soft-delete on a repeated deploy. This is a best-effort call:
+                # if the workspace does not exist (or is already soft-deleted), it fails
+                # silently. When the workspace IS in soft-delete state, the catch block
+                # below intercepts "Soft-deleted workspace exists" and retries the AI
+                # module without Machine Learning so the other AI resources still deploy.
+                $mlWsName = "${Prefix}-mlworkspace"
+                $mlAiRg   = "${Prefix}-ai-rg"
+                az ml workspace delete `
+                    --name $mlWsName `
+                    --resource-group $mlAiRg `
+                    --permanently-delete --yes --no-wait 2>$null | Out-Null
+
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
@@ -950,7 +1004,29 @@ foreach ($moduleName in $deploymentOrder) {
                     # auto-create an unmanaged managed RG (ai_<name>_<guid>_managed).
                     logAnalyticsId          = if ($state.logAnalyticsId) { $state.logAnalyticsId } else { '' }
                 }
-                $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                try {
+                    $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                } catch {
+                    # Azure Cognitive Search has regional SKU capacity limits. If the requested
+                    # SKU (typically 'basic') is unavailable in the target region, retry the
+                    # entire AI module deployment without Cognitive Search so the remaining
+                    # AI resources (AI Services, OpenAI, Machine Learning) still deploy.
+                    if ($_ -match 'ResourcesForSkuUnavailable') {
+                        Write-AdeLog "Cognitive Search SKU '$($params.cognitiveSearchSku)' is not available in '$Location' — retrying AI module without Cognitive Search." -Level Warning
+                        $params['deployCognitiveSearch'] = 'false'
+                        $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                    } elseif ($_ -match 'Soft-deleted workspace exists') {
+                        # A previously soft-deleted ML workspace (e.g. from a prior destroy
+                        # cycle where the workspace entered soft-delete after RG deletion)
+                        # cannot be purged programmatically. Skip ML and deploy the remaining
+                        # AI resources (AI Services, OpenAI, Cognitive Search) instead.
+                        Write-AdeLog "Soft-deleted ML workspace '$mlWsName' is blocking deployment — retrying AI module without Machine Learning." -Level Warning
+                        $params['deployMachineLearning'] = 'false'
+                        $null = Deploy-AdeModule -ModuleName 'ai' -BicepFile $bicep -Parameters $params
+                    } else {
+                        throw
+                    }
+                }
             }
 
             # ── DATA ────────────────────────────────────────────────────────
@@ -1153,14 +1229,18 @@ foreach ($moduleName in $deploymentOrder) {
                             }
                         } | ConvertTo-Json -Depth 5 -Compress
                         $jsTmp = [System.IO.Path]::GetTempFileName()
+                        $jsOut = $null
                         try {
                             [System.IO.File]::WriteAllText($jsTmp, $jsBody, [System.Text.UTF8Encoding]::new($false))
-                            az rest --method PUT --url $jsUrl --body "@$jsTmp" --headers 'Content-Type=application/json' --output none
+                            $jsOut = az rest --method PUT --url $jsUrl --body "@$jsTmp" --headers 'Content-Type=application/json' 2>&1
                         } finally {
                             Remove-Item -LiteralPath $jsTmp -ErrorAction SilentlyContinue
                         }
                         if ($LASTEXITCODE -eq 0) {
                             Write-AdeLog "Job schedule linked: $($link.Runbook) → $($link.Schedule)" -Level Success
+                        } elseif ($jsOut -match 'already exists') {
+                            # The schedule was linked in a previous deployment — idempotent.
+                            Write-AdeLog "Job schedule already linked: $($link.Runbook) → $($link.Schedule)" -Level Info
                         } else {
                             Write-AdeLog "Job schedule link failed ($($link.Runbook) → $($link.Schedule)) — non-fatal." -Level Warning
                         }

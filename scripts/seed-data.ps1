@@ -356,7 +356,18 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
             Write-AdeLog "Cosmos DB local auth is disabled (hardened mode). Skipping document seeding via CLI." -Level Warning
             Write-AdeLog "To seed manually: assign 'Cosmos DB Built-in Data Contributor' to your identity, then use the Azure Portal Data Explorer or the Cosmos REST API with an Entra Bearer token." -Level Info
         } else {
-        # Use az cosmosdb sql document create for simplicity
+        # az cosmosdb sql document does not exist in az CLI core; use the Cosmos DB
+        # Data Plane REST API with master-key HMAC-SHA256 authentication instead.
+        $cosmosKey = az cosmosdb keys list `
+            --name $accountName `
+            --resource-group $dbRg `
+            --query primaryMasterKey `
+            --output tsv 2>$null
+
+        $dbName        = "${Prefix}-db"
+        $containerName = 'items'
+        $resourceLink  = "dbs/$dbName/colls/$containerName"
+
         $sampleDocs = @(
             @{ id = 'order-001'; customerId = 1; total = 149.99; status = 'completed'; items = @(@{ sku = 'WIDGET-A'; qty = 2 }) }
             @{ id = 'order-002'; customerId = 2; total = 299.50; status = 'pending';   items = @(@{ sku = 'WIDGET-B'; qty = 5 }) }
@@ -364,18 +375,35 @@ if ($seedAll -or $Modules -contains 'cosmosdb') {
         )
 
         foreach ($doc in $sampleDocs) {
-            $docJson = $doc | ConvertTo-Json -Depth 5 -Compress
-            $tmpDoc  = Join-Path ([System.IO.Path]::GetTempPath()) "cosmosDoc-$($doc.id).json"
-            $docJson | Set-Content -Path $tmpDoc -Encoding UTF8
-            az cosmosdb sql document create `
-                --account-name $accountName `
-                --resource-group $dbRg `
-                --database-name "${Prefix}-db" `
-                --container-name 'items' `
-                --body $tmpDoc `
-                --output none 2>$null
-            Remove-Item $tmpDoc -Force
-            Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
+            $docJson  = $doc | ConvertTo-Json -Depth 5 -Compress
+            $dateUtc  = [datetime]::UtcNow.ToString('R')
+
+            # Build Cosmos DB master-key authorization token (HMAC-SHA256)
+            $stringToSign = "post`ndocs`n$resourceLink`n$($dateUtc.ToLower())`n`n"
+            $keyBytes  = [System.Convert]::FromBase64String($cosmosKey)
+            $hmac      = [System.Security.Cryptography.HMACSHA256]::new($keyBytes)
+            $sig       = [System.Convert]::ToBase64String(
+                             $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($stringToSign)))
+            $authToken = [uri]::EscapeDataString("type=master&ver=1.0&sig=$sig")
+
+            try {
+                $null = Invoke-RestMethod `
+                    -Uri     "https://$accountName.documents.azure.com/$resourceLink/docs" `
+                    -Method  POST `
+                    -Headers @{
+                        'Authorization'                    = $authToken
+                        'x-ms-date'                        = $dateUtc
+                        'x-ms-version'                     = '2018-12-31'
+                        'x-ms-documentdb-partitionkey'     = "[`"$($doc.id)`"]"
+                        'x-ms-documentdb-is-upsert'        = 'true'
+                    } `
+                    -ContentType 'application/json' `
+                    -Body        $docJson `
+                    -ErrorAction Stop
+                Write-AdeLog "Inserted Cosmos document: $($doc.id)" -Level Success
+            } catch {
+                Write-AdeLog "Failed to insert Cosmos document: $($doc.id) — $($_.Exception.Message)" -Level Warning
+            }
         }
         } # end else (local auth enabled)
     }
@@ -525,17 +553,19 @@ if ($seedAll -or $Modules -contains 'redis') {
             $tcp = $null
             try {
                 $tcp = Get-RedisTcpClient -Host $redisHost -Port 6380
-                # The RemoteCertificateValidationCallback returns $true unconditionally.
+                #region DEMO ONLY — DO NOT COPY TO PRODUCTION
+                # RemoteCertificateValidationCallback returns $true unconditionally.
                 # This is acceptable here because:
                 #   1. The target is always *.redis.cache.windows.net — an Azure-managed cert.
-                #   2. This is a demo/seed script, not a long-lived service connection.
+                #   2. This is a one-shot demo seed script, not a long-lived service connection.
                 #   3. SslStream + port 6380 still provides transport encryption (TLS 1.2+).
-                # For production workloads, use the StackExchange.Redis client which
-                # validates the full chain by default.
+                # For production workloads use the StackExchange.Redis NuGet package, which
+                # validates the full certificate chain by default.
                 $ssl = [System.Net.Security.SslStream]::new(
                     $tcp.GetStream(), $false,
                     [System.Net.Security.RemoteCertificateValidationCallback]{ param($s, $c, $ch, $e) $true }
                 )
+                #endregion DEMO ONLY
                 $ssl.AuthenticateAsClient($redisHost)
 
                 # Authenticate
@@ -590,11 +620,15 @@ if ($seedAll -or $Modules -contains 'keyvault') {
         $kvSecrets = @{
             'db-connection-string'  = $dbConnString
             'app-client-id'        = 'demo-client-id-00000000-0000-0000-0000-000000000001'
-            'app-client-secret'    = 'demo-secret-value-replace-in-production'
+            # Randomised per-seed so each deployment gets a unique placeholder value.
+            # These are NOT real credentials — replace with actual secrets before production use.
+            'app-client-secret'    = "demo-secret-$([guid]::NewGuid().ToString('N').Substring(0,16))"
             'app-tenant-id'        = $kvTenantId
-            'smtp-password'        = 'demo-smtp-password-replace-in-production'
-            'third-party-api-key'  = 'demo-api-key-abc123xyz-replace-in-production'
-            'jwt-signing-key'      = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes('demo-jwt-signing-key-replace-in-production'))
+            'smtp-password'        = "demo-smtp-$([guid]::NewGuid().ToString('N').Substring(0,16))"
+            'third-party-api-key'  = "demo-apikey-$([guid]::NewGuid().ToString('N').Substring(0,16))"
+            'jwt-signing-key'      = [System.Convert]::ToBase64String(
+                                        [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+                                    )
         }
 
         foreach ($secret in $kvSecrets.GetEnumerator()) {

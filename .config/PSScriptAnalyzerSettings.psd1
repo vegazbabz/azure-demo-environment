@@ -52,6 +52,12 @@
         # and not from untrusted user input. Acceptable for a demo environment.
         'PSAvoidUsingConvertToSecureStringWithPlainText',
 
+        # seed-data.ps1 -DatabaseAdminPassword is a [string] parameter by design:
+        # the value is supplied interactively or from a CI secret and is never
+        # logged. Renaming to -DatabaseAdminPasswordAsSecureString would break
+        # the documented command-line interface.
+        'PSAvoidUsingPlainTextForPassword',
+
         # New-EhSasToken (seed-data.ps1) and New-SucceededShowMock (test helper)
         # use New- prefix for clarity but neither modifies system state —
         # both are pure computation/factory helpers with no -WhatIf surface.
