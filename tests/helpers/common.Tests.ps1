@@ -572,6 +572,28 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         }
     }
 
+    It 'Deletes temp parameter files even when -WhatIf is set' {
+        $script:capturedWhatIfArgs = $null
+        Mock Invoke-AzCmd {
+            param($ArgumentList)
+            if ($ArgumentList -contains 'show') { return 'exists' }
+            if ($ArgumentList -contains 'what-if') { $script:capturedWhatIfArgs = $ArgumentList }
+            return $null
+        }
+
+        Invoke-AdeBicepDeployment `
+            -ResourceGroup  'ade-rg' `
+            -TemplatePath   $script:fakeBicep `
+            -DeploymentName 'ade-whatif-cleanup' `
+            -Parameters     @{ adminPassword = 'AdeAdmin2026'; prefix = 'ade' } `
+            -WhatIf
+
+        $paramFileArg = $script:capturedWhatIfArgs | Where-Object { $_ -like '@*.json' } | Select-Object -First 1
+        $paramFileArg | Should -Not -BeNullOrEmpty
+        $paramFile = $paramFileArg.Substring(1)
+        Test-Path -LiteralPath $paramFile | Should -BeFalse
+    }
+
     It 'Passes each parameter key=value to az' {
         $script:capturedCreateArgs = $null
         Mock Invoke-AzCmd {

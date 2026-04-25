@@ -532,7 +532,7 @@ function Invoke-AdeBicepDeployment {
 
     } finally {
         if ($tempParamsFile -and (Test-Path $tempParamsFile)) {
-            Remove-Item $tempParamsFile -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $tempParamsFile -Force -ErrorAction SilentlyContinue -WhatIf:$false
         }
     }
 }
