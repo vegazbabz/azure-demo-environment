@@ -169,8 +169,8 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 | `networking-only` | monitoring, networking (+ App Gateway), governance | ~$200–300/month | Network topology and connectivity testing |
 | `databases-only` | monitoring, networking, security, databases (SQL + Cosmos DB), governance | ~$80–150/month | Database benchmark testing |
 | `security-focus` | monitoring, networking, security (+ Defender + Sentinel), compute (Windows + Linux), storage, databases (SQL only), governance (+ locks) | ~$100–200/month | Security posture and Defender coverage testing |
-| `full` | All 12 modules (ai and data excluded) | ~$300–500/month | Complete CIS/MCSB coverage |
-| `hardened` | All 12 modules with all hardening flags enabled | ~$300–500/month | CIS v5.0.0/MCSB-aligned end-to-end hardened environment |
+| `full` | 10 standard modules (`ai` and `data` disabled) | ~$300–500/month | Complete standard CIS/MCSB coverage without quota-heavy AI/data services |
+| `hardened` | 10 standard modules with hardening flags enabled (`ai` and `data` disabled) | ~$300–500/month | CIS v5.0.0/MCSB-aligned hardened environment |
 
 ```powershell
 ./scripts/deploy.ps1 -Profile minimal      -Location westeurope -Prefix ade
@@ -680,7 +680,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **581 passing, 0 failing, 0 skipped**.
+Current state: **594 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -938,7 +938,7 @@ az account set --subscription <subscription-id>
 # Minimal environment (VM + storage + monitoring) — good first run
 ./scripts/deploy.ps1 -Profile minimal -Location westeurope -Prefix ade
 
-# Full environment, all modules
+# Full standard environment (ai and data disabled by default)
 ./scripts/deploy.ps1 -Profile full -Location westeurope -Prefix ade
 
 # CIS/MCSB-hardened full environment
@@ -971,13 +971,13 @@ Profiles live in `config/profiles/` and control which modules and features are e
 
 | Profile | Description |
 | --- | --- |
-| `full` | All 12 modules — `ai` and `data` disabled (require quota + cost approval) |
+| `full` | 10 standard modules — `ai` and `data` disabled (require quota + cost approval) |
 | `minimal` | Monitoring + networking + security + one Windows VM |
 | `compute-only` | VMs and VMSS — CIS Compute sections |
 | `databases-only` | SQL, Cosmos DB, PostgreSQL |
 | `networking-only` | VNet, NSGs, AppGW, Bastion |
-| `security-focus` | Key Vault, Defender for Cloud, Sentinel |
-| `hardened` | Full environment with all hardening flags enabled |
+| `security-focus` | Key Vault, Defender for Cloud, Sentinel, compute/storage/database coverage |
+| `hardened` | 10 standard modules with hardening flags enabled |
 
 ```powershell
 # Custom profile
@@ -1023,7 +1023,7 @@ scripts/
   helpers/          # Shared functions (common.ps1, validate.ps1)
   runbooks/         # Automation Account runbooks (Start/Stop VMs)
   dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (581 passing, 0 failing, 0 skipped)
+tests/              # Pester 5 unit tests (594 passing, 0 failing, 0 skipped)
 .github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
 ```
 

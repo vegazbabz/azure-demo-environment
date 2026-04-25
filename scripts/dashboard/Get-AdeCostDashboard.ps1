@@ -162,6 +162,8 @@ function Show-AdeDashboard {
                         if ($rgName) { $rgCosts[$rgName] = [double]$row[$costIdx] }
                     }
                 }
+            } else {
+                Write-AdeLog "Cost Management query returned no data. Costs will show as zero unless your account has cost-reader access and billing data is available." -Level Warning
             }
         } finally {
             if (Test-Path $costBodyFile) { Remove-Item $costBodyFile -Force -ErrorAction SilentlyContinue }
@@ -438,17 +440,10 @@ if ($StartAll) {
     }
 }
 
-# ── Pre-flight: Cost Management provider + role ───────────────────────────────
+# ── Pre-flight: Cost Management provider ──────────────────────────────────────
 $providerState = az provider show --namespace Microsoft.CostManagement --query 'registrationState' -o tsv 2>$null
 if ($providerState -ne 'Registered') {
     Write-Warning "Microsoft.CostManagement provider is not registered in subscription '$($sub.name)'. Cost data will show as zero. Register with: az provider register --namespace Microsoft.CostManagement"
-}
-
-$roleAssignments = az role assignment list --assignee (az ad signed-in-user show --query id -o tsv 2>$null) `
-    --scope "subscriptions/$SubscriptionId" --query "[].roleDefinitionName" -o json 2>$null | ConvertFrom-Json
-$costRoles = @('Cost Management Reader', 'Cost Management Contributor', 'Owner', 'Contributor', 'Reader')
-if (-not ($roleAssignments | Where-Object { $_ -in $costRoles })) {
-    Write-Warning "Current user may lack 'Cost Management Reader' on this subscription. Cost data may be unavailable."
 }
 
 # ── Show dashboard ────────────────────────────────────────────────────────────

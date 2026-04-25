@@ -242,8 +242,10 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match 'GITHUB_ACTIONS'
     }
 
-    It 'Prompts for budget alert email interactively and skips prompt in CI mode only' {
+    It 'Prompts for budget alert email interactively and skips prompt in CI, Force, or WhatIf mode' {
         $script:source | Should -Match 'isNonInteractiveBudget'
+        $script:source | Should -Match 'isNonInteractiveBudget.*Force'
+        $script:source | Should -Match 'isNonInteractiveBudget.*WhatIf'
         $script:source | Should -Match 'Read-Host.*budget'
         $script:source | Should -Match 'BudgetAlertEmail.*not.*set|budget.*email.*not.*set' -Because 'CI path must log a warning when email is missing'
     }
