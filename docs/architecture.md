@@ -110,13 +110,13 @@ are deployed. These are orthogonal — you can run `compute-only` profile in `ha
 
 | Profile | Modules enabled | Intended use |
 |---|---|---|
-| `full` | All 12 | Complete CIS coverage — most expensive |
+| `full` | 10 standard modules (`ai` and `data` disabled) | Complete standard CIS coverage without quota-heavy AI/data services |
 | `minimal` | monitoring, networking, security, compute, storage | Cost-conscious demo |
 | `compute-only` | monitoring, networking, security, compute | CIS Compute sections |
 | `databases-only` | monitoring, networking, security, databases | CIS Database sections |
 | `networking-only` | monitoring, networking | CIS Network sections 6.x |
-| `security-focus` | monitoring, security, governance | CIS IAM + Logging sections |
-| `hardened` | All 12 (hardened templates) | Full hardened deployment |
+| `security-focus` | monitoring, networking, security, compute, storage, databases, governance | CIS IAM + Logging plus Defender coverage |
+| `hardened` | 10 standard modules (hardened templates; `ai` and `data` disabled) | Hardened deployment without quota-heavy AI/data services |
 
 ---
 

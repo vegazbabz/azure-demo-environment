@@ -79,6 +79,12 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Not -Match "az costmanagement query" -Because 'az costmanagement query is not a valid CLI command'
     }
 
+    It 'Does not warn from a direct role-assignment preflight that misses inherited roles' {
+        $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Not -Match 'may lack.*Cost Management Reader' -Because 'direct role preflight misses group and management-group inheritance'
+        $source | Should -Not -Match 'role assignment list --assignee' -Because 'cost access should be inferred from the Cost Management query result'
+    }
+
     It 'Fetches all RG costs in a single grouped REST call' {
         $source = Get-Content $script:dashboardPs -Raw
         $source | Should -Match 'grouping'
