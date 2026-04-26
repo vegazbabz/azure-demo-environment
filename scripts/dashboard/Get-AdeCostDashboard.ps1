@@ -145,8 +145,12 @@ function Show-AdeDashboard {
                 grouping    = @( @{ type = 'Dimension'; name = 'ResourceGroupName' } )
             }
         }
-        $costBodyFile = [System.IO.Path]::GetTempFileName() + '.json'
-        $costBodyObj | ConvertTo-Json -Depth 10 -Compress | Set-Content $costBodyFile -Encoding utf8NoBOM
+        $costBodyFile = New-AdeTempJsonPath -Prefix 'ade' -Purpose 'cost-query'
+        [System.IO.File]::WriteAllText(
+            $costBodyFile,
+            ($costBodyObj | ConvertTo-Json -Depth 10 -Compress),
+            [System.Text.UTF8Encoding]::new($false)
+        )
         try {
             $costUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
             $costRaw = az rest --method POST --url $costUrl --body "@$costBodyFile" --headers 'Content-Type=application/json' 2>$null

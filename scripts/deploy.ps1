@@ -221,11 +221,12 @@ foreach ($mod in $EnableModules) {
         # When a module was disabled in the profile, its feature flags are typically all false
         # (nothing to deploy). Auto-enable every boolean false feature so that an explicit
         # -EnableModules request actually provisions resources, not just an empty resource group.
-        if ($wasDisabled -and $deployProfile.modules.$mod.PSObject.Properties['features']) {
+        $moduleFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName $mod
+        if ($wasDisabled -and @($moduleFeatures.PSObject.Properties).Count -gt 0) {
             $autoEnabled = [System.Collections.Generic.List[string]]::new()
-            foreach ($feat in $deployProfile.modules.$mod.features.PSObject.Properties) {
+            foreach ($feat in $moduleFeatures.PSObject.Properties) {
                 if ($feat.Value -is [bool] -and $feat.Value -eq $false) {
-                    $deployProfile.modules.$mod.features.$($feat.Name) = $true
+                    $moduleFeatures.$($feat.Name) = $true
                     $autoEnabled.Add($feat.Name)
                 }
             }
@@ -258,10 +259,11 @@ if ($existingRgLocation -and $existingRgLocation -ne $Location) {
 # Check UAA/Owner up front when the Automation Account role assignment will run.
 # Fails early so the caller gets a clear error before any resources are created.
 $adeCanAssignRoles = $false
-$govModPre         = $deployProfile.modules.PSObject.Properties['governance']
-$govFeatPre        = if ($null -ne $govModPre -and $null -ne $govModPre.Value.PSObject.Properties['features']) { $govModPre.Value.features } else { $null }
+$profileModules    = Get-AdeObjectPropertyValue -InputObject $deployProfile -Name 'modules'
+$govModPre         = Get-AdeObjectPropertyValue -InputObject $profileModules -Name 'governance'
+$govFeatPre        = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'governance'
 $automationWanted  = $null -ne $govModPre -and
-                   $govModPre.Value.enabled -eq $true -and
+                   (Get-AdeObjectPropertyValue -InputObject $govModPre -Name 'enabled') -eq $true -and
                    (Get-FeatureFlag -Features $govFeatPre -Name 'automationAccount') -eq $true
 if ($automationWanted) {
     $null = Test-AdePermissions -SubscriptionId $SubscriptionId -StopOnError
@@ -610,8 +612,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── MONITORING ──────────────────────────────────────────────────
             'monitoring' {
                 $bicep = Join-Path $bicepRoot 'monitoring\monitoring.bicep'
-                $monFeatProp = $deployProfile.modules.monitoring.PSObject.Properties['features']
-                $monFeatures = if ($null -ne $monFeatProp) { $monFeatProp.Value } else { [pscustomobject]@{} }
+                $monFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'monitoring'
                 $params = @{
                     prefix           = $Prefix
                     location         = $Location
@@ -631,17 +632,8 @@ foreach ($moduleName in $deploymentOrder) {
             # ── NETWORKING ──────────────────────────────────────────────────
             'networking' {
                 $bicep = Join-Path $bicepRoot 'networking\networking.bicep'
-                $netFeatProp = $deployProfile.modules.networking.PSObject.Properties['features']
-                $netFeatures = if ($null -ne $netFeatProp) { $netFeatProp.Value } else { [pscustomobject]@{} }
-                # Guard: compute may be disabled (no features key) on profiles like databases-only, networking-only.
-                # Accessing compute.features directly throws with Set-StrictMode when the key is absent.
-                $computeModProp   = $deployProfile.modules.PSObject.Properties['compute']
-                $computeFeatures  = if ($null -ne $computeModProp -and
-                                        $null -ne $computeModProp.Value.PSObject.Properties['features']) {
-                                        $computeModProp.Value.features
-                                    } else {
-                                        [pscustomobject]@{}
-                                    }
+                $netFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'networking'
+                $computeFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'compute'
                 $params = @{
                     prefix                 = $Prefix
                     location               = $Location
@@ -683,7 +675,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── SECURITY ────────────────────────────────────────────────────
             'security' {
                 $bicep = Join-Path $bicepRoot 'security\security.bicep'
-                $secFeatures = if ($null -ne $deployProfile.modules.security.PSObject.Properties['features']) { $deployProfile.modules.security.features } else { [pscustomobject]@{} }
+                $secFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'security'
                 # Resolve deployer object ID so KV Secrets Officer role can be granted for seed-data.ps1.
                 # signed-in-user only works for interactive logins; OIDC/CI falls back to sp show.
                 # Track principal type so the Bicep role assignment is valid for both users and SPs.
@@ -729,8 +721,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── COMPUTE ─────────────────────────────────────────────────────
             'compute' {
                 $bicep = Join-Path $bicepRoot 'compute\compute.bicep'
-                $compFeatProp = $deployProfile.modules.compute.PSObject.Properties['features']
-                $compFeatures = if ($null -ne $compFeatProp) { $compFeatProp.Value } else { [pscustomobject]@{} }
+                $compFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'compute'
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
@@ -773,7 +764,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── STORAGE ─────────────────────────────────────────────────────
             'storage' {
                 $bicep = Join-Path $bicepRoot 'storage\storage.bicep'
-                $stFeatures = if ($null -ne $deployProfile.modules.storage.PSObject.Properties['features']) { $deployProfile.modules.storage.features } else { [pscustomobject]@{} }
+                $stFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'storage'
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location
@@ -797,8 +788,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── DATABASES ───────────────────────────────────────────────────
             'databases' {
                 $bicep = Join-Path $bicepRoot 'databases\databases.bicep'
-                $dbFeatProp = $deployProfile.modules.databases.PSObject.Properties['features']
-                $dbFeatures = if ($null -ne $dbFeatProp) { $dbFeatProp.Value } else { [pscustomobject]@{} }
+                $dbFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'databases'
                 $params = @{
                     prefix            = $Prefix
                     location          = $Location
@@ -856,8 +846,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── APP SERVICES ────────────────────────────────────────────────
             'appservices' {
                 $bicep = Join-Path $bicepRoot 'appservices\appservices.bicep'
-                $appFeatProp = $deployProfile.modules.appservices.PSObject.Properties['features']
-                $appFeatures = if ($null -ne $appFeatProp) { $appFeatProp.Value } else { [pscustomobject]@{} }
+                $appFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'appservices'
                 $params = @{
                     prefix                = $Prefix
                     location              = $Location
@@ -890,8 +879,7 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-AdeLog "Container Apps Environment '$caeName' deleted." -Level Info
                 }
 
-                $ctFeatProp = $deployProfile.modules.containers.PSObject.Properties['features']
-                $ctFeatures = if ($null -ne $ctFeatProp) { $ctFeatProp.Value } else { [pscustomobject]@{} }
+                $ctFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'containers'
                 $params = @{
                     prefix                  = $Prefix
                     location                = $Location
@@ -912,8 +900,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── INTEGRATION ─────────────────────────────────────────────────
             'integration' {
                 $bicep = Join-Path $bicepRoot 'integration\integration.bicep'
-                $intFeatProp = $deployProfile.modules.integration.PSObject.Properties['features']
-                $intFeatures = if ($null -ne $intFeatProp) { $intFeatProp.Value } else { [pscustomobject]@{} }
+                $intFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'integration'
                 $params = @{
                     prefix              = $Prefix
                     location            = $Location
@@ -943,8 +930,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── AI ──────────────────────────────────────────────────────────
             'ai' {
                 $bicep = Join-Path $bicepRoot 'ai\ai.bicep'
-                $aiFeatProp = $deployProfile.modules.ai.PSObject.Properties['features']
-                $aiFeatures = if ($null -ne $aiFeatProp) { $aiFeatProp.Value } else { [pscustomobject]@{} }
+                $aiFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'ai'
 
                 # Pre-flight: purge any soft-deleted Cognitive Services accounts that share
                 # this prefix. Bicep names them with uniqueString(resourceGroup().id), which
@@ -1032,8 +1018,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── DATA ────────────────────────────────────────────────────────
             'data' {
                 $bicep = Join-Path $bicepRoot 'data\data.bicep'
-                $dataFeatProp = $deployProfile.modules.data.PSObject.Properties['features']
-                $dataFeatures = if ($null -ne $dataFeatProp) { $dataFeatProp.Value } else { [pscustomobject]@{} }
+                $dataFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'data'
 
                 # ── Purview pre-flight: detect tenant-level location conflict ──────
                 # Azure only allows one free-tier Purview account per tenant. Attempting
@@ -1107,8 +1092,7 @@ foreach ($moduleName in $deploymentOrder) {
             # ── GOVERNANCE ──────────────────────────────────────────────────
             'governance' {
                 $bicep = Join-Path $bicepRoot 'governance\governance.bicep'
-                $govFeatProp = $deployProfile.modules.governance.PSObject.Properties['features']
-                $govFeatures = if ($null -ne $govFeatProp) { $govFeatProp.Value } else { [pscustomobject]@{} }
+                $govFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'governance'
 
                 # Budget requires a notification email — silently downgrade to disabled if not set.
                 # -BudgetAlertEmail (workflow input) takes precedence over the profile value.
