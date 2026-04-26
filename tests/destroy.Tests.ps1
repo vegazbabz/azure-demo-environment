@@ -269,6 +269,53 @@ Describe 'destroy.ps1 – Databricks deny-assignment pre-delete' -Tag 'unit' {
     }
 }
 
+Describe 'destroy.ps1 – Synapse managed resource group cleanup' -Tag 'unit' {
+
+    It 'Discovers Synapse managed RGs by ARM managedBy pointer because their names do not use the ADE prefix' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'synapseworkspace-managedrg-\*'
+        $source | Should -Match 'managedBy!=null'
+        $source | Should -Match 'Microsoft\.Synapse/workspaces'
+    }
+
+    It 'Only includes Synapse managed RG discovery when the data module is being destroyed' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'destroyDataModule'
+        $source | Should -Match '''data''\s+-in\s+\$Modules'
+    }
+
+    It 'Retrieves the Synapse managed RG name from workspace properties' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'managedResourceGroupName'
+    }
+
+    It 'Pre-deletes the Synapse workspace before Phase 1 RG deletion' {
+        $source = Get-Content $script:destroyPs -Raw
+        $preDeleteIdx = $source.IndexOf('Pre-delete: Azure Synapse workspaces')
+        $phase1Idx    = $source.IndexOf('Phase 1:')
+        $preDeleteIdx | Should -BeGreaterThan 0 -Because 'Synapse workspace pre-delete block must exist'
+        $preDeleteIdx | Should -BeLessThan $phase1Idx -Because 'Synapse workspace must be deleted before the parallel RG delete loop'
+    }
+
+    It 'Does not directly delete an active Synapse managed RG while the workspace owns it' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'will be handled by workspace deletion'
+        $source | Should -Match 'ordered.*Where-Object.*managedRgName'
+    }
+
+    It 'Includes orphaned Synapse managed RGs in the direct-delete list' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'synapseManagedRgsAreOrphaned'
+        $source | Should -Match 'Including orphaned Synapse managed resource group'
+    }
+
+    It 'Adds active Synapse managed RGs to the poll list so destroy waits for Azure cleanup' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match 'synapseManagedRgsForPolling'
+        $source | Should -Match 'allStarted \+= \$synapseManagedRg'
+    }
+}
+
 Describe 'destroy.ps1 – soft-deleted Cognitive Services purge' -Tag 'unit' {
 
     It 'Calls az cognitiveservices account list-deleted after deletions succeed' {
@@ -421,5 +468,12 @@ Describe 'destroy.ps1 – WhatIf safety' -Tag 'unit' {
     It 'Calls Remove-Job with -WhatIf:$false to suppress spurious WhatIf output' {
         $source = Get-Content $script:destroyPs -Raw
         $source | Should -Match 'Remove-Job.*-WhatIf:\$false' -Because 'Remove-Job emits a WhatIf echo unless suppressed'
+    }
+
+    It 'Guards service pre-delete calls behind ShouldProcess' {
+        $source = Get-Content $script:destroyPs -Raw
+        $source | Should -Match '\$PSCmdlet\.ShouldProcess\(\$synWsName, ''Delete Synapse workspace'
+        $source | Should -Match '\$PSCmdlet\.ShouldProcess\(\$wsName, ''Delete Databricks workspace'
+        $source | Should -Match '\$PSCmdlet\.ShouldProcess\(\$mlPreWsName, ''Permanently delete ML workspace'
     }
 }

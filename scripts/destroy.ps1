@@ -5,14 +5,17 @@
 
 .DESCRIPTION
     Deletes all resource groups created by deploy.ps1 for a given prefix.
-    Removes resource locks first. Supports per-module teardown.
+    Removes resource locks first. Supports per-module teardown. Also handles
+    Azure-managed resource groups created outside the ADE prefix convention
+    where the owning resource can be discovered safely.
 
 .PARAMETER Prefix
     The prefix used during deployment. Default: ade
 
 .PARAMETER Modules
     Specific modules to destroy. If omitted, all ADE resource groups matching
-    the prefix are destroyed.
+    the prefix are destroyed, plus discovered Azure-managed resource groups
+    that belong to those modules.
 
 .PARAMETER SubscriptionId
     Target subscription ID. If omitted, uses the current az account.
@@ -92,19 +95,43 @@ $allGroups = az group list `
     --query $rgQuery `
     -o tsv 2>$null
 if ($LASTEXITCODE -ne 0) { throw "Failed to list resource groups — check az login and subscription access." }
+$allGroups = @($allGroups | Where-Object { $_ } | ForEach-Object { $_.Trim() })
 
-if (-not $allGroups) {
+# Synapse creates a managed resource group named synapseworkspace-managedrg-*
+# outside the ADE prefix convention. Query it separately by the ARM managedBy
+# pointer so it is still covered when the data module is destroyed.
+$synapseManagedRgs = @()
+$synapseManagedByPath = "/resourceGroups/$Prefix-data-rg/providers/Microsoft.Synapse/workspaces/$Prefix-synapse"
+$synapseManagedRgQuery = "[?tags.managedBy=='ade' && managedBy!=null && contains(managedBy, '$synapseManagedByPath')].name"
+$synapseManagedRgList = az group list `
+    --query $synapseManagedRgQuery `
+    -o tsv 2>$null
+if ($LASTEXITCODE -eq 0 -and $synapseManagedRgList) {
+    foreach ($synapseManagedRg in ($synapseManagedRgList -split [System.Environment]::NewLine | Where-Object { $_ })) {
+        $synapseManagedRg = $synapseManagedRg.Trim()
+        if ($synapseManagedRg -and $synapseManagedRg -notin $synapseManagedRgs) {
+            $synapseManagedRgs += $synapseManagedRg
+        }
+    }
+}
+
+if (-not $allGroups -and $synapseManagedRgs.Count -eq 0) {
     Write-AdeLog "No ADE resource groups found with prefix '$Prefix'. Nothing to destroy." -Level Warning
     exit 0
 }
 
-$targetGroups = if ($Modules.Count -gt 0) {
-    $allGroups | Where-Object { $mod = ($_ -replace "^$Prefix-" -replace '-rg$'); $mod -in $Modules }
+if ($Modules.Count -gt 0) {
+    $targetGroups = @($allGroups | Where-Object { $mod = ($_ -replace "^$Prefix-" -replace '-rg$'); $mod -in $Modules })
 } else {
-    $allGroups
+    $targetGroups = @($allGroups)
 }
 
-if (-not $targetGroups) {
+$destroyDataModule = ($Modules.Count -eq 0 -or 'data' -in $Modules)
+if (-not $destroyDataModule) {
+    $synapseManagedRgs = @()
+}
+
+if (-not $targetGroups -and $synapseManagedRgs.Count -eq 0) {
     Write-AdeLog "No matching resource groups for modules: $($Modules -join ', ')" -Level Warning
     exit 0
 }
@@ -113,6 +140,11 @@ Write-Host ""
 Write-Host "  The following resource groups will be PERMANENTLY DELETED:" -ForegroundColor Red
 foreach ($rg in $targetGroups) {
     Write-Host "    - $rg" -ForegroundColor Yellow
+}
+foreach ($rg in $synapseManagedRgs) {
+    if ($rg -notin $targetGroups) {
+        Write-Host "    - $rg (Synapse managed resource group)" -ForegroundColor Yellow
+    }
 }
 Write-Host ""
 
@@ -133,6 +165,7 @@ $destroyOrder = @('governance', 'data', 'ai', 'integration', 'containers',
     $rgName = "$Prefix-$mod-rg"
     if ($targetGroups -contains $rgName) { $rgName }
 }
+$ordered = @($ordered)
 # Append any not in the known list (custom modules)
 foreach ($rg in $targetGroups) {
     if ($rg -notin $ordered) { $ordered += $rg }
@@ -200,6 +233,74 @@ if ("$Prefix-security-rg" -in $ordered) {
     }
 }
 
+# ─── Pre-delete: Azure Synapse workspaces ────────────────────────────────────
+# Synapse creates an Azure-managed RG named synapseworkspace-managedrg-* that
+# does not follow the ADE prefix convention. When the workspace still exists,
+# let Azure remove the managed RG by deleting the workspace first; direct RG
+# deletion can fail while the workspace owns it. If the managed RG is already
+# orphaned, include it in the normal direct-delete list.
+$synapseWorkspaceQuerySucceeded = $false
+$synapseWorkspaceFound = $false
+if ("$Prefix-data-rg" -in $ordered) {
+    $synWsList = az resource list `
+        --resource-group "$Prefix-data-rg" `
+        --resource-type 'Microsoft.Synapse/workspaces' `
+        --query '[].name' -o tsv 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $synapseWorkspaceQuerySucceeded = $true
+        if ($synWsList) {
+            foreach ($synWsName in ($synWsList -split [System.Environment]::NewLine | Where-Object { $_ })) {
+                $synWsName = $synWsName.Trim()
+                if (-not $synWsName) { continue }
+                $synapseWorkspaceFound = $true
+
+                $managedRgName = az resource show `
+                    --resource-group "$Prefix-data-rg" `
+                    --resource-type 'Microsoft.Synapse/workspaces' `
+                    --name $synWsName `
+                    --query 'properties.managedResourceGroupName' -o tsv 2>$null
+                if ($LASTEXITCODE -eq 0 -and $managedRgName) {
+                    $managedRgName = $managedRgName.Trim()
+                    if ($managedRgName -and $managedRgName -notin $synapseManagedRgs) {
+                        $synapseManagedRgs += $managedRgName
+                    }
+                    if ($managedRgName) {
+                        $ordered = @($ordered | Where-Object { $_ -ne $managedRgName })
+                        Write-AdeLog "Synapse managed RG '$managedRgName' will be handled by workspace deletion." -Level Info
+                    }
+                }
+
+                Write-AdeLog "Pre-deleting Synapse workspace '$synWsName' so Azure can remove its managed RG..." -Level Warning
+                if ($PSCmdlet.ShouldProcess($synWsName, 'Delete Synapse workspace before resource group deletion')) {
+                    az resource delete `
+                        --resource-group "$Prefix-data-rg" `
+                        --resource-type 'Microsoft.Synapse/workspaces' `
+                        --name $synWsName --output none 2>$null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-AdeLog "Synapse workspace '$synWsName' deleted - managed RG cleanup started by Azure." -Level Success
+                    } else {
+                        Write-AdeLog "Could not pre-delete Synapse workspace '$synWsName' (non-fatal - RG deletion will still proceed)." -Level Warning
+                    }
+                } else {
+                    Write-AdeLog "WhatIf: would pre-delete Synapse workspace '$synWsName' before deleting the data RG." -Level Info
+                }
+            }
+        }
+    } else {
+        Write-AdeLog "Could not query Synapse workspaces in '$Prefix-data-rg' (non-fatal - data RG deletion will still proceed)." -Level Warning
+    }
+}
+
+$synapseManagedRgsAreOrphaned = ("$Prefix-data-rg" -notin $ordered) -or ($synapseWorkspaceQuerySucceeded -and -not $synapseWorkspaceFound)
+if ($synapseManagedRgsAreOrphaned) {
+    foreach ($synapseManagedRg in $synapseManagedRgs) {
+        if ($synapseManagedRg -and $synapseManagedRg -notin $ordered) {
+            $ordered += $synapseManagedRg
+            Write-AdeLog "Including orphaned Synapse managed resource group: $synapseManagedRg" -Level Info
+        }
+    }
+}
+
 # ─── Pre-delete: Azure Databricks workspaces ─────────────────────────────────
 # Databricks attaches a system deny assignment to its managed resource group,
 # which causes az group delete to fail with DenyAssignmentAuthorizationFailed.
@@ -232,14 +333,18 @@ if ("$Prefix-data-rg" -in $ordered) {
             }
 
             Write-AdeLog "Pre-deleting Databricks workspace '$wsName' to release system deny assignment on managed RG..." -Level Warning
-            az resource delete `
-                --resource-group "$Prefix-data-rg" `
-                --resource-type 'Microsoft.Databricks/workspaces' `
-                --name $wsName --output none 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "Databricks workspace '$wsName' deleted — managed RG deny assignment released." -Level Success
+            if ($PSCmdlet.ShouldProcess($wsName, 'Delete Databricks workspace before resource group deletion')) {
+                az resource delete `
+                    --resource-group "$Prefix-data-rg" `
+                    --resource-type 'Microsoft.Databricks/workspaces' `
+                    --name $wsName --output none 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-AdeLog "Databricks workspace '$wsName' deleted — managed RG deny assignment released." -Level Success
+                } else {
+                    Write-AdeLog "Could not pre-delete Databricks workspace '$wsName' (non-fatal — will attempt direct RG deletion)." -Level Warning
+                }
             } else {
-                Write-AdeLog "Could not pre-delete Databricks workspace '$wsName' (non-fatal — will attempt direct RG deletion)." -Level Warning
+                Write-AdeLog "WhatIf: would pre-delete Databricks workspace '$wsName' before deleting the data RG." -Level Info
             }
         }
     }
@@ -260,14 +365,18 @@ if ("${Prefix}-ai-rg" -in $ordered) {
             $mlPreWsName = $mlPreWsName.Trim()
             if (-not $mlPreWsName) { continue }
             Write-AdeLog "Pre-deleting ML workspace '$mlPreWsName' permanently (bypasses soft-delete)..." -Level Warning
-            az ml workspace delete `
-                --name $mlPreWsName `
-                --resource-group "${Prefix}-ai-rg" `
-                --permanently-delete --yes --no-wait 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AdeLog "ML workspace '$mlPreWsName' permanently deleted — will not enter soft-delete on RG removal." -Level Success
+            if ($PSCmdlet.ShouldProcess($mlPreWsName, 'Permanently delete ML workspace before resource group deletion')) {
+                az ml workspace delete `
+                    --name $mlPreWsName `
+                    --resource-group "${Prefix}-ai-rg" `
+                    --permanently-delete --yes --no-wait 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-AdeLog "ML workspace '$mlPreWsName' permanently deleted — will not enter soft-delete on RG removal." -Level Success
+                } else {
+                    Write-AdeLog "Could not pre-delete ML workspace '$mlPreWsName' (non-fatal — purge attempted after RG deletion)." -Level Warning
+                }
             } else {
-                Write-AdeLog "Could not pre-delete ML workspace '$mlPreWsName' (non-fatal — purge attempted after RG deletion)." -Level Warning
+                Write-AdeLog "WhatIf: would permanently pre-delete ML workspace '$mlPreWsName' before deleting the AI RG." -Level Info
             }
         }
     }
@@ -288,6 +397,19 @@ foreach ($rg in $ordered) {
 }
 
 $allStarted = @($ordered | Where-Object { $_ -notin $failedRgs })
+$synapseManagedRgsForPolling = @($synapseManagedRgs | Where-Object { $_ -and $_ -notin $ordered })
+foreach ($synapseManagedRg in $synapseManagedRgsForPolling) {
+    if ($synapseManagedRg -in $allStarted) { continue }
+    if ($WhatIfPreference) {
+        Write-AdeLog "WhatIf: would wait for Synapse managed resource group '$synapseManagedRg' to be removed by Azure." -Level Info
+        continue
+    }
+    $synapseManagedRgExists = (az group exists --name $synapseManagedRg 2>$null).Trim()
+    if ($LASTEXITCODE -eq 0 -and $synapseManagedRgExists -eq 'true') {
+        $allStarted += $synapseManagedRg
+        Write-AdeLog "Waiting for Synapse managed resource group to be removed by Azure: $synapseManagedRg" -Level Info
+    }
+}
 
 if ($failedRgs.Count -gt 0) {
     Write-AdeLog "The following resource groups could NOT be deleted: $($failedRgs -join ', ')" -Level Error
