@@ -63,6 +63,7 @@ monitoring
 | `integration` | `{prefix}-integration-rg` | Service Bus, Event Hub, Event Grid, SignalR; optional API Management |
 | `ai` | `{prefix}-ai-rg` | OpenAI, Cognitive Services |
 | `data` | `{prefix}-data-rg` | Data Factory, Synapse, Databricks |
+| *(Synapse managed RG)* | `synapseworkspace-managedrg-{guid}` | **Auto-created by Azure** when Synapse is enabled — see note below |
 | `governance` | `{prefix}-governance-rg` | Budgets, Policy Assignments, Activity Alerts |
 
 > **AKS node resource group:** When the `containers` module deploys an AKS cluster, the Azure AKS
@@ -74,6 +75,14 @@ monitoring
 > `destroy.ps1` automatically discovers and deletes it via `az aks show --query nodeResourceGroup`
 > when the `containers` module is torn down.
 > See [Microsoft docs — Why are two resource groups created with AKS?](https://learn.microsoft.com/en-us/azure/aks/faq#why-are-two-resource-groups-created-with-aks-)
+
+> **Synapse managed resource group:** When `data.synapse` is enabled, Azure Synapse creates a
+> platform-managed resource group named `synapseworkspace-managedrg-<guid>` outside the ADE
+> `{prefix}-*-rg` convention. The group is owned by the Synapse workspace through ARM `managedBy`
+> metadata and is not manually created. `destroy.ps1` discovers it from
+> `properties.managedResourceGroupName`, pre-deletes the Synapse workspace, and waits for Azure to
+> remove the managed resource group. If the workspace is already gone and the managed RG is orphaned,
+> the destroy script includes that RG in the direct-delete list.
 
 ---
 

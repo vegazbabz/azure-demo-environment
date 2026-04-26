@@ -289,10 +289,86 @@ if ($AdminPassword) {
     $adminPasswordPlain = $null   # discard plaintext immediately after validation
 }
 
+# ─── Budget alert preflight ──────────────────────────────────────────────────
+# Resolve the budget email before the deployment summary so the user approves
+# the actual cost-alert behavior, not a placeholder.
+$budgetPlan = [pscustomobject]@{
+    Requested = $false
+    Enabled   = $false
+    Email     = ''
+    Amount    = 0
+    Existing  = $false
+    Summary   = 'disabled'
+}
+
+$govModForBudget = Get-AdeObjectPropertyValue -InputObject $profileModules -Name 'governance'
+$govEnabledForBudget = $null -ne $govModForBudget -and
+                       (Get-AdeObjectPropertyValue -InputObject $govModForBudget -Name 'enabled') -eq $true
+if ($govEnabledForBudget) {
+    $govFeaturesForBudget = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'governance'
+    $budgetRequested = (Get-FeatureFlag -Features $govFeaturesForBudget -Name 'budget') -eq $true
+    $budgetAmount = Get-FeatureFlag -Features $govFeaturesForBudget -Name 'budgetAmount' -Default 300
+
+    if ($budgetRequested) {
+        $budgetPlan.Requested = $true
+        $budgetPlan.Amount = $budgetAmount
+
+        $effectiveBudgetEmail = if (-not [string]::IsNullOrWhiteSpace($BudgetAlertEmail)) {
+            $BudgetAlertEmail.Trim()
+        } else {
+            $profileBudgetEmail = Get-FeatureFlag -Features $govFeaturesForBudget -Name 'budgetAlertEmail' -Default ''
+            if ($profileBudgetEmail) { $profileBudgetEmail.ToString().Trim() } else { '' }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($effectiveBudgetEmail)) {
+            $existingBudgetName = "$Prefix-monthly-budget"
+            $budgetCheckUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets/${existingBudgetName}?api-version=2023-11-01"
+            $budgetRaw = az rest --method GET --url $budgetCheckUrl 2>$null
+            $budgetCheckEc = $LASTEXITCODE
+            if ($budgetCheckEc -eq 0 -and $budgetRaw) {
+                try {
+                    $budgetJson = $budgetRaw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                    if ($null -ne $budgetJson -and $null -ne $budgetJson.name) {
+                        $budgetPlan.Existing = $true
+                        $budgetPlan.Summary = "`$$budgetAmount/month (existing budget, email unchanged)"
+                        Write-AdeLog "Budget '$existingBudgetName' already exists — deployment will leave it unchanged unless -BudgetAlertEmail is provided." -Level Info
+                    }
+                } catch {}
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($effectiveBudgetEmail) -and -not $budgetPlan.Existing) {
+            $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force -or $WhatIf
+            if (-not $isNonInteractiveBudget) {
+                Write-Host ""
+                Write-Host "  Budget alert email is not set." -ForegroundColor Yellow
+                $promptedEmail = Read-Host "  Enter an email for budget cost alerts (or press Enter to skip)"
+                if (-not [string]::IsNullOrWhiteSpace($promptedEmail)) {
+                    $effectiveBudgetEmail = $promptedEmail.Trim()
+                } else {
+                    Write-AdeLog "Budget alert email not provided — budget deployment will be skipped." -Level Warning
+                }
+            } else {
+                Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — budget deployment will be skipped. Set governance.features.budgetAlertEmail in your profile or pass -BudgetAlertEmail to activate cost alerts." -Level Warning
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($effectiveBudgetEmail)) {
+            $BudgetAlertEmail = $effectiveBudgetEmail
+            $budgetPlan.Enabled = $true
+            $budgetPlan.Email = $effectiveBudgetEmail
+            $budgetPlan.Summary = "`$$budgetAmount/month -> $effectiveBudgetEmail"
+        } elseif (-not $budgetPlan.Existing) {
+            $budgetPlan.Summary = "`$$budgetAmount/month (skipped - no email)"
+        }
+    }
+}
+
 # ─── Confirmation ─────────────────────────────────────────────────────────────
 try {
     Confirm-AdeDeployment -Profile $deployProfile -Location $Location `
-        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode -Force:$Force
+        -Prefix $Prefix -SubscriptionId $SubscriptionId -Mode $Mode `
+        -BudgetPlan $budgetPlan -Force:$Force
 } catch {
     if ($_.Exception.Message -match 'cancelled') {
         Write-AdeLog "Deployment cancelled by user." -Level Warning
@@ -1094,46 +1170,10 @@ foreach ($moduleName in $deploymentOrder) {
                 $bicep = Join-Path $bicepRoot 'governance\governance.bicep'
                 $govFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'governance'
 
-                # Budget requires a notification email — silently downgrade to disabled if not set.
-                # -BudgetAlertEmail (workflow input) takes precedence over the profile value.
-                $effectiveBudgetEmail = if (-not [string]::IsNullOrEmpty($BudgetAlertEmail)) { $BudgetAlertEmail } else { Get-FeatureFlag -Features $govFeatures -Name 'budgetAlertEmail' -Default '' }
-                $budgetEmailSet = -not [string]::IsNullOrEmpty($effectiveBudgetEmail)
-                $budgetEnabled  = (Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and $budgetEmailSet
-                if ((Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true -and -not $budgetEmailSet) {
-                    # Before warning, check whether the budget already exists from a prior run.
-                    # If it does, treat it as already deployed — no email needed, no warning.
-                    $existingBudgetName = "$Prefix-monthly-budget"
-                    $budgetCheckUrl = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.Consumption/budgets/${existingBudgetName}?api-version=2023-11-01"
-                    $budgetExists = $false
-                    $budgetRaw = az rest --method GET --url $budgetCheckUrl 2>$null
-                    $budgetCheckEc = $LASTEXITCODE
-                    if ($budgetCheckEc -eq 0 -and $budgetRaw) {
-                        try {
-                            $budgetJson = $budgetRaw | ConvertFrom-Json -ErrorAction SilentlyContinue
-                            $budgetExists = $null -ne $budgetJson -and $null -ne $budgetJson.name
-                        } catch {}
-                    }
-                    if ($budgetExists) {
-                        Write-AdeLog "Budget '$existingBudgetName' already exists — skipping re-deploy (no email change needed)." -Level Info
-                        $budgetEnabled = $false  # Bicep deploy with enableBudget=false is a no-op for an existing budget
-                    } else {
-                        $isNonInteractiveBudget = [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS -or $Force -or $WhatIf
-                        if (-not $isNonInteractiveBudget) {
-                            Write-Host ""
-                            Write-Host "  Budget alert email is not set." -ForegroundColor Yellow
-                            $promptedEmail = Read-Host "  Enter an email for budget cost alerts (or press Enter to skip)"
-                            if (-not [string]::IsNullOrWhiteSpace($promptedEmail)) {
-                                $effectiveBudgetEmail = $promptedEmail.Trim()
-                                $budgetEmailSet = $true
-                                $budgetEnabled  = $true
-                            } else {
-                                Write-AdeLog "Budget alert email not provided — skipping budget deployment." -Level Warning
-                            }
-                        } else {
-                            Write-AdeLog "Budget is enabled but 'budgetAlertEmail' is not set — skipping budget deployment. Set governance.features.budgetAlertEmail in your profile or pass -BudgetAlertEmail to activate cost alerts." -Level Warning
-                        }
-                    }
-                }
+                # Budget alert behavior is resolved before the deployment summary
+                # so the user confirms the exact email/skipped state up front.
+                $effectiveBudgetEmail = $budgetPlan.Email
+                $budgetEnabled = [bool]$budgetPlan.Enabled
 
                 $params = @{
                     prefix                  = $Prefix
@@ -1149,7 +1189,7 @@ foreach ($moduleName in $deploymentOrder) {
                     autoShutdownTimezone    = Get-FeatureFlag -Features $govFeatures -Name 'autoShutdownTimezone' -Default 'UTC'
                     autoStartEnabled        = ((Get-FeatureFlag -Features $govFeatures -Name 'autoStartEnabled') -eq $true).ToString().ToLower()
                 }
-                if ($budgetEmailSet) { $params['budgetAlertEmail'] = $effectiveBudgetEmail }
+                if ($budgetEnabled -and $effectiveBudgetEmail) { $params['budgetAlertEmail'] = $effectiveBudgetEmail }
 
                 $params['enableAutomationRoleAssignment'] = ($adeCanAssignRoles).ToString().ToLower()
                 $outputs = Deploy-AdeModule -ModuleName 'governance' -BicepFile $bicep -Parameters $params
