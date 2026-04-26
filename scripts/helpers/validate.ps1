@@ -259,26 +259,20 @@ function Confirm-AdeDeployment {
         Where-Object { $_.Value.enabled -eq $true }).Name
 
     # Governance features (v2 schema)
-    $govFeatProp   = $Profile.modules.PSObject.Properties['governance']
-    $govFeatures   = if ($null -ne $govFeatProp -and $null -ne $govFeatProp.Value.PSObject.Properties['features']) { $govFeatProp.Value.features } else { $null }
+    $govFeatures   = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'governance'
     $budgetAmount  = Get-FeatureFlag -Features $govFeatures -Name 'budgetAmount' -Default 300
     $autoShutdown  = if ((Get-FeatureFlag -Features $govFeatures -Name 'automationAccount') -eq $true) { '19:00 UTC (weekdays)' } else { 'disabled' }
     $expensiveOn   = @()
-    $netModProp    = $Profile.modules.PSObject.Properties['networking']
-    $netFeatures   = if ($null -ne $netModProp -and $null -ne $netModProp.Value.PSObject.Properties['features']) { $netModProp.Value.features } else { $null }
-    if ($netFeatures) {
-        $fwValue = Get-FeatureFlag -Features $netFeatures -Name 'enableFirewall' -Default 'None'
-        if ($fwValue -ne 'None') { $expensiveOn += "Firewall ($fwValue)" }
-        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableAppGateway') -eq $true) { $expensiveOn += 'AppGateway' }
-        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableVpnGateway') -eq $true) { $expensiveOn += 'VpnGateway' }
-        if ((Get-FeatureFlag -Features $netFeatures -Name 'enableDdos') -eq $true)       { $expensiveOn += 'DDoS ⚠️' }
-    }
-    $secModProp  = $Profile.modules.PSObject.Properties['security']
-    $secFeatures = if ($null -ne $secModProp -and $null -ne $secModProp.Value.PSObject.Properties['features']) { $secModProp.Value.features } else { $null }
+    $netFeatures   = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'networking'
+    $fwValue = Get-FeatureFlag -Features $netFeatures -Name 'enableFirewall' -Default 'None'
+    if ($fwValue -ne 'None') { $expensiveOn += "Firewall ($fwValue)" }
+    if ((Get-FeatureFlag -Features $netFeatures -Name 'enableAppGateway') -eq $true) { $expensiveOn += 'AppGateway' }
+    if ((Get-FeatureFlag -Features $netFeatures -Name 'enableVpnGateway') -eq $true) { $expensiveOn += 'VpnGateway' }
+    if ((Get-FeatureFlag -Features $netFeatures -Name 'enableDdos') -eq $true)       { $expensiveOn += 'DDoS ⚠️' }
+    $secFeatures = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'security'
     if ((Get-FeatureFlag -Features $secFeatures -Name 'defenderForCloud') -eq $true) { $expensiveOn += 'Defender' }
     if ((Get-FeatureFlag -Features $secFeatures -Name 'sentinel') -eq $true)         { $expensiveOn += 'Sentinel ⚠️' }
-    $intModProp  = $Profile.modules.PSObject.Properties['integration']
-    $intFeatures = if ($null -ne $intModProp -and $null -ne $intModProp.Value.PSObject.Properties['features']) { $intModProp.Value.features } else { $null }
+    $intFeatures = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'integration'
     if ((Get-FeatureFlag -Features $intFeatures -Name 'apiManagement') -eq $true)    { $expensiveOn += 'APIM' }
 
     Write-AdeSection "Deployment Summary"

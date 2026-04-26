@@ -60,7 +60,7 @@ monitoring
 | `appservices` | `{prefix}-appservices-rg` | App Service Plan, Web App, Function App |
 | `containers` | `{prefix}-containers-rg` | AKS, Container Registry |
 | *(AKS node RG)* | `MC_{prefix}-containers-rg_{prefix}-aks_{region}` | **Auto-created by Azure** — see note below |
-| `integration` | `{prefix}-integration-rg` | Service Bus, Event Hub, API Management |
+| `integration` | `{prefix}-integration-rg` | Service Bus, Event Hub, Event Grid, SignalR; optional API Management |
 | `ai` | `{prefix}-ai-rg` | OpenAI, Cognitive Services |
 | `data` | `{prefix}-data-rg` | Data Factory, Synapse, Databricks |
 | `governance` | `{prefix}-governance-rg` | Budgets, Policy Assignments, Activity Alerts |

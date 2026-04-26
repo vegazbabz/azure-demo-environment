@@ -97,6 +97,12 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Match 'Microsoft\.Consumption/budgets'
     }
 
+    It 'Uses a non-creating temp path helper for REST request bodies' {
+        $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Match 'New-AdeTempJsonPath'
+        $source | Should -Not -Match 'GetTempFileName\(\)\s*\+\s*''\.json''' -Because 'GetTempFileName creates a file before .json is appended, leaving an orphan temp file'
+    }
+
     It 'Has no critical PowerShell syntax errors' {
         $tokens = $null; $errors = $null
         $null = [System.Management.Automation.Language.Parser]::ParseFile(

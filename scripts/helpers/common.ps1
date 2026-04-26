@@ -331,7 +331,7 @@ function Invoke-AdeBicepDeployment {
     }
 
     if ($fileParams.Count -gt 0) {
-        $tempParamsFile = [System.IO.Path]::GetTempFileName() + '.json'
+        $tempParamsFile = New-AdeTempJsonPath -Prefix 'ade' -Purpose 'parameters'
         $json = $fileParams | ConvertTo-Json -Depth 20
         # Use .NET WriteAllText rather than Set-Content so the write is not skipped
         # when $WhatIfPreference is active (Set-Content honours ShouldProcess).
@@ -577,23 +577,97 @@ function Get-AdeDeploymentOutput {
     return $val.value
 }
 
+# ─── Temporary files ──────────────────────────────────────────────────────────
+
+function New-AdeTempJsonPath {
+    <#
+    .SYNOPSIS
+        Returns a unique JSON temp-file path without creating the file.
+
+    .DESCRIPTION
+        [System.IO.Path]::GetTempFileName() creates a file immediately. Appending
+        ".json" to that path leaves the original temp file orphaned. This helper
+        only builds a path, so callers create and clean up exactly one file.
+    #>
+    param(
+        [string]$Prefix = 'ade',
+        [string]$Purpose = 'tmp'
+    )
+
+    $safePrefix  = if ($Prefix)  { $Prefix  -replace '[^A-Za-z0-9._-]', '-' } else { 'ade' }
+    $safePurpose = if ($Purpose) { $Purpose -replace '[^A-Za-z0-9._-]', '-' } else { 'tmp' }
+    $fileName = '{0}-{1}.{2}.json' -f $safePrefix, ([System.Guid]::NewGuid().ToString('N')), $safePurpose
+    return [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), $fileName)
+}
+
 # ─── Feature flag accessor ───────────────────────────────────────────────────
+
+function Get-AdeObjectPropertyValue {
+    <#
+    .SYNOPSIS
+        Safely reads a named property from either a PSCustomObject or hashtable.
+    #>
+    param(
+        [object]$InputObject,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($null -eq $InputObject) { return $null }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.Contains($Name)) { return $InputObject[$Name] }
+        return $null
+    }
+
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
+function Get-AdeModuleFeatures {
+    <#
+    .SYNOPSIS
+        Safely retrieves the features object for a module from a deployment profile.
+
+    .DESCRIPTION
+        Centralizes the repeated StrictMode-safe profile traversal used by deploy
+        and validation code. Returns an empty object when the module or features
+        block is absent so callers can use Get-FeatureFlag directly.
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Profile,
+        [Parameter(Mandatory)][string]$ModuleName
+    )
+
+    $empty = [pscustomobject]@{}
+    $modules = Get-AdeObjectPropertyValue -InputObject $Profile -Name 'modules'
+    if ($null -eq $modules) { return $empty }
+
+    $moduleConfig = Get-AdeObjectPropertyValue -InputObject $modules -Name $ModuleName
+    if ($null -eq $moduleConfig) { return $empty }
+
+    $features = Get-AdeObjectPropertyValue -InputObject $moduleConfig -Name 'features'
+    if ($null -eq $features) { return $empty }
+
+    return $features
+}
 
 function Get-FeatureFlag {
     <#
     .SYNOPSIS
         Safe feature flag accessor — works under Set-StrictMode -Version Latest.
         Returns $Default when the property doesn't exist on the object (avoids PropertyNotFoundException).
+        Supports PSCustomObject and hashtable-backed feature objects.
     #>
     param(
         [object]$Features,
         [string]$Name,
         $Default = $false
     )
-    if ($null -eq $Features) { return $Default }
-    $prop = $Features.PSObject.Properties[$Name]
-    if ($null -eq $prop) { return $Default }
-    return $prop.Value
+
+    $value = Get-AdeObjectPropertyValue -InputObject $Features -Name $Name
+    if ($null -eq $value) { return $Default }
+    return $value
 }
 
 Write-AdeLog "common.ps1 loaded" -Level Debug

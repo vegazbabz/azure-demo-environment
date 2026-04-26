@@ -275,6 +275,83 @@ Describe 'Get-AdeDeploymentOutput' -Tag 'unit' {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# New-AdeTempJsonPath
+# ─────────────────────────────────────────────────────────────────────────────
+
+Describe 'New-AdeTempJsonPath' -Tag 'unit' {
+
+    It 'Returns a JSON path without creating a temp file' {
+        $path = New-AdeTempJsonPath -Prefix 'ade' -Purpose 'parameters'
+
+        $path | Should -Match 'ade-[a-f0-9]{32}\.parameters\.json$'
+        Test-Path -LiteralPath $path | Should -BeFalse
+    }
+
+    It 'Sanitizes prefix and purpose values for file-system use' {
+        $path = New-AdeTempJsonPath -Prefix 'ade demo' -Purpose 'cost/query'
+
+        Split-Path -Leaf $path | Should -Match '^ade-demo-[a-f0-9]{32}\.cost-query\.json$'
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Feature helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+Describe 'Feature helper accessors' -Tag 'unit' {
+
+    It 'Reads a feature flag from a PSCustomObject' {
+        $features = [pscustomobject]@{ apiManagement = $true }
+        Get-FeatureFlag -Features $features -Name 'apiManagement' | Should -BeTrue
+    }
+
+    It 'Reads a feature flag from a hashtable' {
+        $features = @{ apiManagement = $true }
+        Get-FeatureFlag -Features $features -Name 'apiManagement' | Should -BeTrue
+    }
+
+    It 'Returns the default value when a feature flag is missing' {
+        $features = [pscustomobject]@{}
+        Get-FeatureFlag -Features $features -Name 'missingFlag' -Default 'fallback' |
+            Should -Be 'fallback'
+    }
+
+    It 'Returns module features from a PSCustomObject profile' {
+        $profile = [pscustomobject]@{
+            modules = [pscustomobject]@{
+                integration = [pscustomobject]@{
+                    features = [pscustomobject]@{ serviceBus = $true }
+                }
+            }
+        }
+
+        $features = Get-AdeModuleFeatures -Profile $profile -ModuleName 'integration'
+        Get-FeatureFlag -Features $features -Name 'serviceBus' | Should -BeTrue
+    }
+
+    It 'Returns module features from a hashtable-backed profile' {
+        $profile = @{
+            modules = @{
+                integration = @{
+                    features = @{ serviceBus = $true }
+                }
+            }
+        }
+
+        $features = Get-AdeModuleFeatures -Profile $profile -ModuleName 'integration'
+        Get-FeatureFlag -Features $features -Name 'serviceBus' | Should -BeTrue
+    }
+
+    It 'Returns an empty object for missing module features' {
+        $profile = [pscustomobject]@{ modules = [pscustomobject]@{} }
+        $features = Get-AdeModuleFeatures -Profile $profile -ModuleName 'missing'
+
+        Get-FeatureFlag -Features $features -Name 'serviceBus' -Default $false |
+            Should -BeFalse
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Get-AdeProfile
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -591,6 +668,7 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
         $paramFileArg = $script:capturedWhatIfArgs | Where-Object { $_ -like '@*.json' } | Select-Object -First 1
         $paramFileArg | Should -Not -BeNullOrEmpty
         $paramFile = $paramFileArg.Substring(1)
+        Split-Path -Leaf $paramFile | Should -Match '^ade-[a-f0-9]{32}\.parameters\.json$'
         Test-Path -LiteralPath $paramFile | Should -BeFalse
     }
 

@@ -17,13 +17,33 @@ BeforeAll {
     function Write-AdeLog   { param([string]$Message, $Level, [switch]$NoNewline) }
     function Write-AdeSection { param([string]$Title) }
 
-    # Stub Get-FeatureFlag (defined in common.ps1, used by Confirm-AdeDeployment in validate.ps1)
+    # Stub common.ps1 feature helpers used by Confirm-AdeDeployment in validate.ps1
+    function Get-AdeObjectPropertyValue {
+        param([object]$InputObject, [string]$Name)
+        if ($null -eq $InputObject) { return $null }
+        if ($InputObject -is [System.Collections.IDictionary]) {
+            if ($InputObject.Contains($Name)) { return $InputObject[$Name] }
+            return $null
+        }
+        $prop = $InputObject.PSObject.Properties[$Name]
+        if ($null -eq $prop) { return $null }
+        return $prop.Value
+    }
+
+    function Get-AdeModuleFeatures {
+        param([object]$Profile, [string]$ModuleName)
+        $modules = Get-AdeObjectPropertyValue -InputObject $Profile -Name 'modules'
+        $moduleConfig = Get-AdeObjectPropertyValue -InputObject $modules -Name $ModuleName
+        $features = Get-AdeObjectPropertyValue -InputObject $moduleConfig -Name 'features'
+        if ($null -eq $features) { return [pscustomobject]@{} }
+        return $features
+    }
+
     function Get-FeatureFlag {
         param([object]$Features, [string]$Name, $Default = $false)
-        if ($null -eq $Features) { return $Default }
-        $prop = $Features.PSObject.Properties[$Name]
-        if ($null -eq $prop) { return $Default }
-        return $prop.Value
+        $value = Get-AdeObjectPropertyValue -InputObject $Features -Name $Name
+        if ($null -eq $value) { return $Default }
+        return $value
     }
 
     # Stub az as a PS function so Pester can mock it even when Azure CLI is not installed
