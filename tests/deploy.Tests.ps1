@@ -250,6 +250,20 @@ Describe 'deploy.ps1 – deployment structure' -Tag 'unit' {
         $script:source | Should -Match 'BudgetAlertEmail.*not.*set|budget.*email.*not.*set' -Because 'CI path must log a warning when email is missing'
     }
 
+    It 'Resolves budget alert behavior before the deployment summary is confirmed' {
+        $budgetPreflightIdx = $script:source.IndexOf('Budget alert preflight')
+        $confirmIdx = $script:source.IndexOf('Confirm-AdeDeployment')
+        $budgetPreflightIdx | Should -BeGreaterThan 0 -Because 'budget email must be planned before deployment confirmation'
+        $confirmIdx | Should -BeGreaterThan 0 -Because 'deployment confirmation must exist'
+        $budgetPreflightIdx | Should -BeLessThan $confirmIdx -Because 'the summary should show whether budget alerts are active or skipped'
+    }
+
+    It 'Passes the resolved budget plan into the deployment summary and governance deployment' {
+        $script:source | Should -Match '-BudgetPlan \$budgetPlan'
+        $script:source | Should -Match '\$budgetPlan\.Email'
+        $script:source | Should -Match '\$budgetPlan\.Enabled'
+    }
+
     It 'Tracks failed modules in a $failedModules list' {
         $script:source | Should -Match 'failedModules'
     }

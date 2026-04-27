@@ -453,6 +453,27 @@ Describe 'Confirm-AdeDeployment' {
                 -Force
         } | Should -Not -Throw
     }
+
+    It 'Prints the resolved budget plan in the deployment summary' {
+        $p = Get-MinimalProfile
+        $script:ConfirmHostOutput = @()
+        Mock Write-Host {
+            param($Object)
+            if ($null -ne $Object) {
+                $script:ConfirmHostOutput += [string]$Object
+            }
+        }
+
+        Confirm-AdeDeployment `
+            -Profile        $p `
+            -Location       'westeurope' `
+            -Prefix         'ade' `
+            -SubscriptionId 'sub-123' `
+            -BudgetPlan     ([pscustomobject]@{ Summary = '$200/month -> ops@example.com' }) `
+            -Force
+
+        ($script:ConfirmHostOutput -join '') | Should -Match 'ops@example\.com'
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
