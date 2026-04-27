@@ -12,7 +12,8 @@
       - Budget alert utilisation
 
 .PARAMETER Prefix
-    The prefix used during deployment. Default: ade
+    The prefix used during deployment. When omitted, the script prompts for it.
+    Press Enter at the prompt to use the default: ade.
 
 .PARAMETER SubscriptionId
     Target subscription ID. Defaults to current az account.
@@ -27,6 +28,7 @@
     Refresh the dashboard every 60 seconds.
 
 .EXAMPLE
+    ./dashboard/Get-AdeCostDashboard.ps1
     ./dashboard/Get-AdeCostDashboard.ps1 -Prefix ade
     ./dashboard/Get-AdeCostDashboard.ps1 -Prefix ade -StopAll
     ./dashboard/Get-AdeCostDashboard.ps1 -Prefix ade -Watch
@@ -34,6 +36,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
+    [ValidatePattern('(?-i)^[a-z0-9]{2,8}$')]
     [string]$Prefix = 'ade',
 
     [Parameter(Mandatory = $false)]
@@ -57,6 +60,25 @@ $scriptRoot = $PSScriptRoot
 
 # Honour the standard -Verbose switch: enables Debug-level console output
 $script:AdeVerbose = ($VerbosePreference -eq 'Continue')
+
+function Read-AdeDashboardPrefix {
+    param([Parameter(Mandatory)][string]$DefaultPrefix)
+
+    while ($true) {
+        $entered = Read-Host "Enter ADE resource prefix [$DefaultPrefix]"
+        $candidate = if ([string]::IsNullOrWhiteSpace($entered)) { $DefaultPrefix } else { $entered.Trim() }
+
+        if ($candidate -match '^[a-z0-9]{2,8}$') {
+            return $candidate
+        }
+
+        Write-Host "  Prefix must be 2-8 lowercase letters/numbers, for example 'ade' or 'adetest'." -ForegroundColor Yellow
+    }
+}
+
+if (-not $PSBoundParameters.ContainsKey('Prefix')) {
+    $Prefix = Read-AdeDashboardPrefix -DefaultPrefix $Prefix
+}
 
 if ($SubscriptionId) {
     az account set --subscription $SubscriptionId --output none

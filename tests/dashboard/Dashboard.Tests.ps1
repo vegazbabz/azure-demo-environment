@@ -27,6 +27,17 @@ Describe 'Get-AdeCostDashboard.ps1 – source analysis' -Tag 'unit' {
         $source | Should -Match "Prefix\s*=\s*'ade'"
     }
 
+    It 'Prompts for Prefix only when the caller omits -Prefix' {
+        $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Match "Read-Host\s+`"Enter ADE resource prefix"
+        $source | Should -Match "PSBoundParameters\.ContainsKey\('Prefix'\)"
+    }
+
+    It 'Validates dashboard Prefix with the ADE lowercase alphanumeric pattern' {
+        $source = Get-Content $script:dashboardPs -Raw
+        $source | Should -Match "\[ValidatePattern\('\(\?-i\)\^\[a-z0-9\]\{2,8\}\$'\)\]"
+    }
+
     It 'Has a -Watch switch for periodic refresh' {
         $source = Get-Content $script:dashboardPs -Raw
         $source | Should -Match '\[switch\]\$Watch'
