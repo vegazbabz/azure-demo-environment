@@ -132,9 +132,10 @@ These complement the built-in CIS and MCSB assignments deployed by the `governan
 ./scripts/destroy.ps1 -Prefix ade -WhatIf
 ```
 
-The destroy script targets all resource groups matching `{prefix}-*-rg`. It does **not** remove
-policy definitions/assignments or the Activity Log diagnostic settings — remove those manually
-if desired.
+The destroy script targets all resource groups matching `{prefix}-*-rg` and discovers module-owned
+Azure-managed resource groups that use provider naming, such as AKS node RGs and Synapse managed
+RGs. It does **not** remove policy definitions/assignments or the Activity Log diagnostic settings
+— remove those manually if desired.
 
 ---
 

@@ -46,7 +46,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 
 | Module | Default resources | Notable opt-in features |
 | --- | --- | --- |
-| `monitoring` | Log Analytics Workspace, Action Group | Application Insights, alert rules |
+| `monitoring` | Log Analytics Workspace, Application Insights, Action Group | Alert rules |
 | `networking` | VNet (10.0.0.0/16), all subnets, NSGs, Bastion (Developer SKU — free) | Application Gateway, Azure Firewall, VPN Gateway, NAT Gateway, DDoS Protection, Private DNS Zones |
 | `security` | Key Vault (RBAC model), User-Assigned Managed Identity | Defender for Cloud (all plans), Microsoft Sentinel |
 | `compute` | Windows Server 2022 VM (`Standard_B2s`) | Ubuntu 22.04 VM, VM Scale Set |
@@ -57,7 +57,7 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 | `integration` | Service Bus (Standard), Event Hub (Basic), Event Grid, SignalR | API Management |
 | `ai` | — (all resources opt-in due to cost and quota) | Azure AI Services, Azure OpenAI, Cognitive Search, Machine Learning |
 | `data` | — (all resources opt-in due to cost and quota) | Data Factory, Synapse Analytics, Databricks, Microsoft Purview |
-| `governance` | Automation Account (auto-stop/start), Budget alerts | Resource locks, Azure Policy initiative assignments |
+| `governance` | Automation Account (auto-stop/start), optional budget alerts | Resource locks, Azure Policy initiative assignments |
 
 > `ai` and `data` are disabled in all built-in profiles by default due to cost and quota requirements. Enable them in a custom profile when needed.
 
@@ -130,7 +130,7 @@ cd azure-demo-environment
 
 ### Step 2 — Deploy the minimal profile
 
-The `minimal` profile is the lowest-cost starting point. It deploys: monitoring, networking, security (Key Vault + managed identity), one Windows VM, storage, and budget alerts. Estimated cost: **~$15–30/month** with auto-shutdown enabled.
+The `minimal` profile is the lowest-cost starting point. It deploys: monitoring, networking, security (Key Vault + managed identity), one Windows VM, storage, and governance automation. Estimated cost: **~$15–30/month** with auto-shutdown enabled. Budget alerts are deployed only when an alert email is provided.
 
 ```powershell
 # PowerShell 7 — run from the repo root
@@ -141,10 +141,11 @@ You will be prompted for a VM admin password if you do not provide one. The pass
 
 The script will:
 
-1. Print a summary of what will be deployed and the estimated cost.
-2. Ask for confirmation (press **Y** to proceed, **N** to abort).
-3. Deploy each module in order, printing live progress.
-4. Print a summary of all deployed resources when finished.
+1. Ask for a budget alert email when budgets are enabled and no email is configured (interactive runs only).
+2. Print a summary of what will be deployed, including whether budget alerts are enabled or skipped.
+3. Ask for confirmation (press **Y** to proceed, **N** to abort).
+4. Deploy each module in order, printing live progress.
+5. Print a summary of all deployed resources when finished.
 
 ### Step 3 — Tear it down when done
 
@@ -152,7 +153,7 @@ The script will:
 ./scripts/destroy.ps1 -Prefix ade -Force
 ```
 
-This deletes all resource groups whose names start with `ade-` and that are tagged as ADE-managed.
+This deletes ADE-managed resource groups for the prefix and discovered Azure-managed resource groups that belong to the environment.
 
 ---
 
@@ -306,9 +307,9 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | Flag | Default | Description |
 | --- | --- | --- |
 | `automationAccount` | varies | Automation Account with auto-stop/start runbooks and daily schedules |
-| `budget` | `true` | Monthly budget with email alerts at 80% and 100% spend |
+| `budget` | `true` | Monthly budget with email alerts at 80% and 100% spend. Requires `budgetAlertEmail` or `-BudgetAlertEmail`; otherwise budget deployment is skipped. |
 | `budgetAmount` | varies | Monthly budget limit in USD |
-| `budgetAlertEmail` | `""` | Email address for budget alert notifications. Required when `budget` is `true`. |
+| `budgetAlertEmail` | `""` | Email address for budget alert notifications. If omitted in an interactive run, `deploy.ps1` prompts before showing the deployment summary. In `-Force`, `-WhatIf`, CI, and GitHub Actions runs, no prompt is shown and budget deployment is skipped unless `-BudgetAlertEmail` is provided. |
 | `resourceLocks` | `false` | CanNotDelete lock on the networking resource group |
 | `policyAssignments` | `false` | CIS Benchmark + MCSB policy initiative assignments (audit mode) |
 | `autoShutdownTime` | `"1900"` | Daily auto-shutdown time in HHMM format (e.g. `"1900"` = 19:00 UTC). |
@@ -322,21 +323,21 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | Mode | Bicep path | Purpose |
 | --- | --- | --- |
 | `default` (default) | `bicep/modules/` | Out-of-the-box Azure settings — no hardening, no enforced TLS, public network access at defaults. Use this to establish a pre-hardening **benchmark baseline**. |
-| `hardened` | `bicep/hardened/` | CIS v5.0.0/MCSB-aligned: TLS 1.2 minimum, public network access disabled, purge protection on Key Vault, all Defender plans enabled, Sentinel, resource locks, policy assignments in Enforce mode. |
+| `hardened` | `bicep/hardened/` | Uses CIS v5.0.0/MCSB-aligned templates: TLS 1.2 minimum, public network access disabled where supported, purge protection on Key Vault, and hardened resource settings. Optional controls such as Defender, Sentinel, resource locks, and policy assignments still follow the selected profile's feature flags. Use `-Profile hardened -Mode hardened` for the full hardened profile. |
 
 ```powershell
 # Baseline (default) — measure "before" score
 ./scripts/deploy.ps1 -Profile full -Mode default -Location westeurope -Prefix ade
 
 # Hardened — measure "after" score
-./scripts/deploy.ps1 -Profile full -Mode hardened -Location westeurope -Prefix ade
+./scripts/deploy.ps1 -Profile hardened -Mode hardened -Location westeurope -Prefix ade
 ```
 
 You can also deploy both side-by-side using different prefixes:
 
 ```powershell
-./scripts/deploy.ps1 -Profile full -Mode default  -Prefix ade-base
-./scripts/deploy.ps1 -Profile full -Mode hardened -Prefix ade-hard
+./scripts/deploy.ps1 -Profile full     -Mode default  -Prefix adebase
+./scripts/deploy.ps1 -Profile hardened -Mode hardened -Prefix adehard
 ```
 
 ---
@@ -361,8 +362,8 @@ You can also deploy both side-by-side using different prefixes:
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
 | `-ContinueOnError` | switch | — | Continue deploying remaining modules even if one fails. Without this switch the script prompts interactively (or aborts in CI) when a module fails. |
 | `-SkipModules` | string[] | — | Module names to skip. Example: `-SkipModules containers,ai` |
-| `-EnableModules` | string[] | — | Module names to force-enable regardless of profile. Example: `-EnableModules sentinel` |
-| `-BudgetAlertEmail` | string | `""` | Email address for budget alert notifications. Overrides `budgetAlertEmail` in the profile. |
+| `-EnableModules` | string[] | — | Module names to force-enable regardless of profile. Example: `-EnableModules data`. When a disabled module is force-enabled, its boolean features are enabled too. |
+| `-BudgetAlertEmail` | string | `""` | Email address for budget alert notifications. Overrides `budgetAlertEmail` in the profile. If omitted in interactive runs, `deploy.ps1` prompts before the deployment summary; non-interactive runs skip budget deployment unless this is set. |
 | `-LogFile` | string | — | Path for a plain-text log file. Example: `-LogFile ./logs/deploy-$(Get-Date -f yyyyMMdd).log` |
 
 ### Examples
@@ -384,7 +385,7 @@ You can also deploy both side-by-side using different prefixes:
 ./scripts/deploy.ps1 -Profile ./my-profile.json -Location westeurope -Prefix myco
 
 # Hardened mode
-./scripts/deploy.ps1 -Profile full -Mode hardened -Location westeurope -Prefix ade
+./scripts/deploy.ps1 -Profile hardened -Mode hardened -Location westeurope -Prefix ade
 ```
 
 ---
@@ -406,7 +407,7 @@ You can also deploy both side-by-side using different prefixes:
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `-Prefix` | string | `ade` | ADE prefix used at deploy time. Matches resource groups named `<prefix>-*-rg` that carry the `managedBy=ade` tag. |
+| `-Prefix` | string | `ade` | ADE prefix used at deploy time. Matches resource groups named `<prefix>-*-rg` that carry the `managedBy=ade` tag, plus discovered Azure-managed resource groups that belong to those modules. |
 | `-Modules` | string[] | all | Specific modules to destroy. Example: `-Modules compute,containers` |
 | `-SubscriptionId` | string | current account | Target subscription |
 | `-NoWait` | switch | — | Delete resource groups asynchronously (faster, no per-group error confirmation) |
@@ -416,8 +417,10 @@ You can also deploy both side-by-side using different prefixes:
 The destroy script:
 
 1. Removes any resource locks on matching resource groups first.
-2. Deletes each matching resource group.
-3. By default waits for each deletion to complete before continuing (so errors are visible).
+2. Discovers Azure-managed resource groups that do not follow the ADE prefix convention, including AKS node RGs, Synapse managed RGs, Databricks managed RGs, ML App Insights managed RGs, and Defender default workspace RGs.
+3. Pre-deletes owning resources where direct RG deletion is unsafe, such as Synapse and Databricks workspaces.
+4. Deletes each matching resource group.
+5. By default waits for each deletion to complete before continuing (so errors are visible).
 
 > **Tip:** If a resource group deletion fails due to a lock or a protected resource, re-run the script — it will retry cleanly.
 
@@ -516,6 +519,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **Feature flags are JSON-only** | There is no CLI flag to override a single feature flag (e.g. `mysql: true`) without editing the profile JSON. `-EnableModules` / `-SkipModules` toggle whole modules on/off, not individual features. |
 | **PostgreSQL / MySQL seeding** | `seed-data.ps1` skips these automatically if `psql` / `mysql` is not installed. See [Seed data](#seed-data) for options including Azure Cloud Shell. |
 | **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. Using `-EnableModules data` on the command line auto-enables **all** features including Synapse Analytics, Databricks, and Microsoft Purview — which carry significant cost. |
+| **Synapse managed resource group** | When `data.synapse` is enabled, Azure Synapse creates a platform-managed resource group named `synapseworkspace-managedrg-<guid>` outside the ADE `{prefix}-*-rg` naming convention. Do not treat it as manually created. `destroy.ps1` discovers it from the Synapse workspace, pre-deletes the workspace when needed, and waits for Azure to remove the managed RG. |
 | **Microsoft Purview — one free-tier account per tenant** | Azure allows only one free-tier Purview account per Entra ID tenant, and it cannot be re-created in a different region. If you already have a Purview account in your tenant at a different location, `deploy.ps1` will automatically skip Purview and log a warning. To deploy Purview, either use the same region as the existing account or set `purview: false` in your profile to opt out. |
 | **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
@@ -530,7 +534,7 @@ The following constraints are by design and cannot be changed via flags or param
 | Script | Purpose |
 | --- | --- |
 | `scripts/deploy.ps1` | Main deployment orchestrator. See [All deploy.ps1 parameters](#all-deployps1-parameters). |
-| `scripts/destroy.ps1` | Deletes all ADE resource groups for a given prefix. |
+| `scripts/destroy.ps1` | Deletes all ADE resource groups and discovered module-owned managed resource groups for a given prefix. |
 | `scripts/seed-data.ps1` | Seeds 13 resource targets (Blob, Queue, Table, File Share, Cosmos DB, SQL, PostgreSQL, MySQL, Redis, Key Vault, Service Bus, Event Hub, Event Grid) after deployment. Called automatically by `deploy.ps1` when `seedDummyData: true` in the profile. See [Seed data](#seed-data). |
 | `scripts/helpers/common.ps1` | Shared logging, Azure CLI wrappers, and utility functions. Sourced by all other scripts. Not meant to be called directly. |
 | `scripts/helpers/validate.ps1` | Pre-deployment validation: checks Azure CLI login, subscription access, resource group name availability, and expensive-resource warnings. |
@@ -560,7 +564,7 @@ Most modules are inexpensive at rest. The following resources carry meaningful o
 | Defender for Servers (per VM) | ~$15/VM/month |
 | Microsoft Sentinel (per GB) | ~$2.46/GB ingested |
 
-The deployment script warns you before deploying any expensive resources and shows an estimated cost total. The `governance` module creates a budget alert that emails you when spend reaches 80% and 100% of the configured threshold.
+The deployment script warns you before deploying any expensive resources and shows an estimated cost total. The `governance` module creates a budget alert that emails you when spend reaches 80% and 100% of the configured threshold only when a budget alert email is supplied. Interactive runs prompt for this email before the deployment summary. `-Force`, `-WhatIf`, CI, and GitHub Actions runs do not prompt; they skip budget deployment unless `-BudgetAlertEmail` or `governance.features.budgetAlertEmail` is set.
 
 ### Keeping costs low during testing
 
@@ -680,7 +684,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **594 passing, 0 failing, 0 skipped**.
+Current state: **614 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -829,7 +833,8 @@ azure-demo-environment/
 ├── docs/
 │   ├── architecture.md           Detailed architecture + module dependency diagram
 │   ├── benchmark-guide.md        CIS/MCSB benchmark testing methodology
-│   ├── test-plan.md              Test coverage and Pester suite structure
+│   ├── commands.md               Common local command reference
+│   ├── network-topology.mmd      Mermaid network topology diagram
 │   └── usage.md                  Extended usage examples and advanced scenarios
 ├── policies/
 │   ├── definitions/              Custom Azure Policy definition JSON files
@@ -856,7 +861,8 @@ azure-demo-environment/
 │   └── workflows/
 │       ├── lint.yml              Lint pipeline (Bicep + PS + JSON + Pester)
 │       ├── deploy.yml            Deploy pipeline (manual trigger)
-│       └── destroy.yml           Destroy pipeline (manual trigger)
+│       ├── destroy.yml           Destroy pipeline (manual trigger)
+│       └── release.yml           Release pipeline (tag trigger)
 ├── .config/
 │   └── PSScriptAnalyzerSettings.psd1  PSScriptAnalyzer rule configuration
 └── README.md
@@ -872,8 +878,10 @@ ADE is designed for **paired benchmark comparisons**:
 
 1. Deploy with `-Mode default` — Azure out-of-the-box settings, no hardening.
 2. Run a compliance scan and record the score.
-3. Deploy with `-Mode hardened` to the same subscription (same prefix or a parallel prefix).
+3. Deploy with `-Profile hardened -Mode hardened` to the same subscription (same prefix or a parallel prefix).
 4. Re-run the scan and compare.
+
+The control coverage below assumes the built-in `hardened` profile is deployed with `-Mode hardened`.
 
 ### CIS Azure Foundations Benchmark v5.0.0 — control coverage
 
@@ -916,222 +924,6 @@ az policy state list \
   --query "[?complianceState=='NonCompliant'].{resource:resourceId,policy:policyDefinitionId}" \
   -o table
 ```
-
----
-
-## Quick start
-
-### What you need
-
-- [PowerShell 7.4+](https://github.com/PowerShell/PowerShell/releases)
-- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) with `az bicep install`
-- An Azure subscription with Contributor rights
-
-```powershell
-az login
-az account set --subscription <subscription-id>
-```
-
-### Deploy
-
-```powershell
-# Minimal environment (VM + storage + monitoring) — good first run
-./scripts/deploy.ps1 -Profile minimal -Location westeurope -Prefix ade
-
-# Full standard environment (ai and data disabled by default)
-./scripts/deploy.ps1 -Profile full -Location westeurope -Prefix ade
-
-# CIS/MCSB-hardened full environment
-./scripts/deploy.ps1 -Profile full -Mode hardened -Location westeurope -Prefix ade
-
-# Preview changes without deploying
-./scripts/deploy.ps1 -Profile full -WhatIf
-```
-
-### Destroy
-
-```powershell
-./scripts/destroy.ps1 -Prefix ade
-```
-
----
-
-## Deployment modes (summary)
-
-| Mode | Bicep source | Purpose |
-| --- | --- | --- |
-| `default` *(default)* | `bicep/modules/` | Out-of-the-box Azure settings — no hardening, no forced diagnostics. Baseline for CIS/MCSB benchmark scoring. |
-| `hardened` | `bicep/hardened/` | CIS v5.0.0/MCSB-aligned: TLS 1.2+, public network access disabled, purge protection, Defender for Cloud, Sentinel, resource locks, policy assignments in Enforce mode. |
-
----
-
-## Profiles
-
-Profiles live in `config/profiles/` and control which modules and features are enabled. Pass a built-in name or a path to a custom JSON file.
-
-| Profile | Description |
-| --- | --- |
-| `full` | 10 standard modules — `ai` and `data` disabled (require quota + cost approval) |
-| `minimal` | Monitoring + networking + security + one Windows VM |
-| `compute-only` | VMs and VMSS — CIS Compute sections |
-| `databases-only` | SQL, Cosmos DB, PostgreSQL |
-| `networking-only` | VNet, NSGs, AppGW, Bastion |
-| `security-focus` | Key Vault, Defender for Cloud, Sentinel, compute/storage/database coverage |
-| `hardened` | 10 standard modules with hardening flags enabled |
-
-```powershell
-# Custom profile
-./scripts/deploy.ps1 -Profile ./my-profile.json -Location westeurope -Prefix demo
-```
-
----
-
-## Key parameters
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `-Profile` | *(required)* | Built-in profile name or path to custom JSON |
-| `-Location` | `westeurope` | Azure region |
-| `-Prefix` | `ade` | 2–8 lowercase alphanumeric characters. Prefix for all resource group and resource names. |
-| `-SubscriptionId` | current account | Target subscription |
-| `-Mode` | `default` | `default` or `hardened` |
-| `-WhatIf` | — | Bicep what-if only, no deployment |
-| `-Force` | — | Skip confirmation prompt |
-| `-SkipModules` | — | Comma-separated module names to skip |
-| `-EnableModules` | — | Comma-separated module names to force-enable |
-| `-LogFile` | — | Path to write a plain-text copy of all output |
-
----
-
-## Repository structure (summary)
-
-```text
-bicep/
-  modules/          # Default (out-of-the-box) Bicep modules
-  hardened/         # CIS/MCSB-hardened Bicep modules
-config/
-  defaults.json     # Master feature flag defaults
-  profiles/         # Named deployment profiles
-  schema.json       # JSON Schema for profile validation
-data/               # Sample seed data (blobs, Cosmos documents, SQL)
-docs/               # Architecture, usage, benchmark guide, test plan
-policies/           # Custom Azure Policy definitions + initiative
-scripts/
-  deploy.ps1        # Main deployment orchestrator
-  destroy.ps1       # Teardown script
-  seed-data.ps1     # Post-deploy data seeding
-  helpers/          # Shared functions (common.ps1, validate.ps1)
-  runbooks/         # Automation Account runbooks (Start/Stop VMs)
-  dashboard/        # Cost dashboard helper
-tests/              # Pester 5 unit tests (594 passing, 0 failing, 0 skipped)
-.github/workflows/  # GitHub Actions (deploy, destroy, lint, release)
-```
-
----
-
-## GitHub Actions setup (summary)
-
-The workflows use **OIDC (federated identity)** — no long-lived client secrets. Follow these steps once before the first workflow run.
-
-### 1. Create an app registration
-
-```bash
-az ad app create --display-name "ade-github-actions"
-```
-
-Note the `appId` (client ID) and `id` (object ID) from the output.
-
-### 2. Create a service principal
-
-```bash
-az ad sp create --id <appId>
-```
-
-### 3. Add a federated credential (OIDC trust)
-
-```bash
-az ad app federated-credential create \
-  --id <objectId> \
-  --parameters '{
-    "name": "ade-github-main",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:<your-github-org>/<your-repo-name>:environment:demo",
-    "audiences": ["api://AzureADTokenAudience"]
-  }'
-```
-
-> The `subject` must match exactly — `environment:demo` because the deploy job uses `environment: demo` in the workflow.
-
-### 4. Assign a role
-
-```bash
-az role assignment create \
-  --assignee <appId> \
-  --role Contributor \
-  --scope /subscriptions/<subscription-id>
-```
-
-### 5. Configure the GitHub environment
-
-In **Settings → Environments → New environment**, name it `demo` and set **Deployment branches** to `main` only. Add yourself as a required reviewer.
-
-### 6. Add secrets
-
-In **Settings → Environments → demo → Add secret**:
-
-| Secret | Value |
-| --- | --- |
-| `AZURE_CLIENT_ID` | `appId` from step 1 |
-| `AZURE_TENANT_ID` | `az account show --query tenantId -o tsv` |
-| `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
-| `ADE_ADMIN_PASSWORD` | VM admin password (min 12 chars, upper+lower+digit+symbol) |
-
-### 7. (Optional) add Actions variables
-
-In **Settings → Secrets and variables → Actions → Variables**:
-
-| Variable | Example |
-| --- | --- |
-| `ADE_DEFAULT_LOCATION` | `westeurope` |
-| `ADE_DEFAULT_PREFIX` | `ade` |
-
-### Verify setup
-
-```bash
-az ad app federated-credential list --id <objectId> --query "[].subject"
-```
-
----
-
-## Tests
-
-```powershell
-# Run full suite (requires PowerShell 7 + Pester 5.7+)
-Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
-./tests/Invoke-PesterSuite.ps1
-```
-
-All Azure CLI calls are mocked — no subscription required to run tests.
-
----
-
-## Cost guidance (summary)
-
-> [!IMPORTANT]
-> **Disclaimer:** Deploying resources from this repository will create billable Azure resources in your subscription. The author accepts **no responsibility** for any charges incurred. Always configure [Azure Cost Management budgets](https://learn.microsoft.com/azure/cost-management-billing/costs/tutorial-acm-create-budgets) before deploying.
-
-Most modules are low-cost at rest. Notable exceptions:
-
-| Resource | Approximate cost |
-| --- | --- |
-| Azure Firewall Standard | ~$900/month |
-| Azure Firewall Premium | ~$1,500/month |
-| DDoS Network Protection | ~$2,944/month |
-| SQL Managed Instance | ~$1,000+/month |
-| VPN Gateway (VpnGw1) | ~$140/month |
-| Bastion Basic/Standard | ~$140–200/month |
-
-Cost warnings are surfaced during deployment confirmation.
 
 ---
 

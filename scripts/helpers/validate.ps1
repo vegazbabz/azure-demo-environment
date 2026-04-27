@@ -252,6 +252,7 @@ function Confirm-AdeDeployment {
         [Parameter(Mandatory)][string]$Prefix,
         [Parameter(Mandatory)][string]$SubscriptionId,
         [string]$Mode = 'default',
+        [psobject]$BudgetPlan = $null,
         [switch]$Force
     )
 
@@ -261,6 +262,13 @@ function Confirm-AdeDeployment {
     # Governance features (v2 schema)
     $govFeatures   = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'governance'
     $budgetAmount  = Get-FeatureFlag -Features $govFeatures -Name 'budgetAmount' -Default 300
+    $budgetSummary = if ($BudgetPlan -and $BudgetPlan.PSObject.Properties['Summary']) {
+        $BudgetPlan.Summary
+    } elseif ((Get-FeatureFlag -Features $govFeatures -Name 'budget') -eq $true) {
+        "`$$budgetAmount/month"
+    } else {
+        'disabled'
+    }
     $autoShutdown  = if ((Get-FeatureFlag -Features $govFeatures -Name 'automationAccount') -eq $true) { '19:00 UTC (weekdays)' } else { 'disabled' }
     $expensiveOn   = @()
     $netFeatures   = Get-AdeModuleFeatures -Profile $Profile -ModuleName 'networking'
@@ -284,7 +292,7 @@ function Confirm-AdeDeployment {
     Write-Host "  Subscription     : " -NoNewline; Write-Host $SubscriptionId -ForegroundColor Cyan
     Write-Host "  Modules enabled  : " -NoNewline; Write-Host ($enabledModules -join ', ') -ForegroundColor Green
     Write-Host "  Auto-shutdown    : " -NoNewline; Write-Host $autoShutdown -ForegroundColor Yellow
-    Write-Host "  Budget alert     : " -NoNewline; Write-Host "`$$budgetAmount/month" -ForegroundColor Yellow
+    Write-Host "  Budget alert     : " -NoNewline; Write-Host $budgetSummary -ForegroundColor Yellow
     if ($expensiveOn.Count -gt 0) {
         Write-Host "  Costly resources : " -NoNewline; Write-Host ($expensiveOn -join ', ') -ForegroundColor Red
     }
