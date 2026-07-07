@@ -252,6 +252,7 @@ A General-purpose v2 Storage Account (including Blob, Queue, Table, and File ser
 | `mysql` | `false` | MySQL Flexible Server — opt-in only |
 | `redis` | `false` | Redis Cache (~$16/month Basic C0) — opt-in only |
 | `sqlManagedInstance` | `false` | Azure SQL Managed Instance (~$1,000+/month) — opt-in only, very expensive |
+| `allowAllSqlIngress` | `false` | Create the `AllowAll` (0.0.0.0–255.255.255.255) SQL firewall rule — **opens the SQL server to the entire internet**. Opt-in only, for reproducing the CIS 4.1.2 baseline finding. By default the firewall is scoped to Azure services + the deployer's public IP. |
 
 ### `appservices`
 

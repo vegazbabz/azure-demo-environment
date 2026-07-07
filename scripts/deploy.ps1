@@ -888,14 +888,33 @@ foreach ($moduleName in $deploymentOrder) {
                     cosmosDnsZoneId   = $state.cosmosDnsZoneId
                     redisDnsZoneId    = $state.redisDnsZoneId
                 }
-                if ($Mode -eq 'hardened') {
-                    $params['logAnalyticsId'] = $state.logAnalyticsId
+                # SQL ingress (default mode only — the hardened module has no public ingress
+                # params). By default the firewall is scoped to Azure services + the deployer's
+                # public IP. The internet-wide AllowAll rule (0.0.0.0-255.255.255.255) is opt-in
+                # via databases.features.allowAllSqlIngress, kept for CIS baseline auditing.
+                $allowAllSql = $false
+                if ($Mode -ne 'hardened') {
+                    $allowAllSql = (Get-FeatureFlag -Features $dbFeatures -Name 'allowAllSqlIngress') -eq $true
+                    $params['allowAllSqlIngress'] = $allowAllSql.ToString().ToLower()
+                    if ((Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase') -eq $true) {
+                        $deployerIp = Get-AdeDeployerPublicIp
+                        if ($deployerIp) {
+                            $params['deployerIpAddress'] = $deployerIp
+                            Write-AdeLog "SQL firewall: creating single-IP rule for deployer ($deployerIp)." -Level Info
+                        } elseif (-not $allowAllSql) {
+                            Write-AdeLog "Could not detect the deployer's public IP — no deployer firewall rule will be created. seed-data.ps1 may not be able to reach the SQL server. Add a firewall rule manually, or set databases.features.allowAllSqlIngress=true (opens SQL to the internet — benchmark testing only)." -Level Warning
+                        }
+                    }
                 }
                 $null = Deploy-AdeModule -ModuleName 'databases' -BicepFile $bicep -Parameters $params
                 if ($Mode -ne 'hardened') {
                     $deploySqlFlag = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase')
                     if ($deploySqlFlag) {
-                        Write-AdeLog "SQL Server deployed in default mode: the 'AllowAll' firewall rule (0.0.0.0-255.255.255.255) is ACTIVE. This is intentional for CIS baseline auditing. Remove it before using this environment for anything other than benchmark testing." -Level Warning
+                        if ($allowAllSql) {
+                            Write-AdeLog "SQL Server deployed with the 'AllowAll' firewall rule (0.0.0.0-255.255.255.255) ACTIVE — opted in via databases.features.allowAllSqlIngress for CIS baseline auditing. Remove it before using this environment for anything other than benchmark testing." -Level Warning
+                        } else {
+                            Write-AdeLog "SQL Server firewall: Azure services + deployer IP only. To reproduce the open-to-internet CIS baseline finding (4.1.2), set databases.features.allowAllSqlIngress=true." -Level Info
+                        }
                     }
                 }
                 if ($script:_adePasswordWasGenerated) {
@@ -916,6 +935,30 @@ foreach ($moduleName in $deploymentOrder) {
                     Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
                     Write-Host ""
                     $pwPlain = $null
+                }
+
+                # Remove a stale AllowAll rule left by a previous deployment.
+                # Bicep incremental mode never deletes a resource whose condition
+                # turned false, so without this an environment deployed before the
+                # opt-in flag existed would silently stay open to the internet.
+                if ($Mode -ne 'hardened' -and -not $allowAllSql -and -not $WhatIf -and
+                    (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase') -eq $true) {
+                    $dbRg = "$Prefix-databases-rg"
+                    Write-AdeLog "az sql server list --resource-group $dbRg (stale AllowAll rule check)" -Level Debug
+                    $sqlSrvName = az sql server list --resource-group $dbRg --query '[0].name' -o tsv 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $sqlSrvName) {
+                        $sqlSrvName = $sqlSrvName.Trim()
+                        $null = az sql server firewall-rule show --name 'AllowAll' --server $sqlSrvName --resource-group $dbRg --output none 2>$null
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-AdeLog "Stale 'AllowAll' firewall rule (0.0.0.0-255.255.255.255) found on '$sqlSrvName' from a previous deployment — removing it." -Level Warning
+                            az sql server firewall-rule delete --name 'AllowAll' --server $sqlSrvName --resource-group $dbRg --output none 2>$null
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-AdeLog "'AllowAll' firewall rule removed." -Level Success
+                            } else {
+                                Write-AdeLog "Could not remove the 'AllowAll' firewall rule — remove it manually: az sql server firewall-rule delete --name AllowAll --server $sqlSrvName --resource-group $dbRg" -Level Warning
+                            }
+                        }
+                    }
                 }
             }
 
