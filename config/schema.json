@@ -124,7 +124,8 @@
                 "postgresql":         { "type": "boolean" },
                 "mysql":              { "type": "boolean" },
                 "redis":              { "type": "boolean" },
-                "sqlManagedInstance": { "type": "boolean" }
+                "sqlManagedInstance": { "type": "boolean" },
+                "allowAllSqlIngress": { "type": "boolean" }
               }
             },
             "costWarnings": { "$ref": "#/definitions/costWarnings" }
