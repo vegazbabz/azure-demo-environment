@@ -98,7 +98,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
 
       - name: Install Bicep CLI
-        run: az bicep install
+        # Pinned so lint/deploy results are reproducible and not subject to
+        # unreviewed Bicep releases. Keep all workflows on the same version.
+        run: az bicep install --version v0.44.1
 
       - name: Lint — all Bicep files
         run: |
@@ -179,7 +181,9 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Bicep CLI
-        run: az bicep install
+        # Pinned so lint/deploy results are reproducible and not subject to
+        # unreviewed Bicep releases. Keep all workflows on the same version.
+        run: az bicep install --version v0.44.1
 
       - name: Install PowerShell 7
         run: |
