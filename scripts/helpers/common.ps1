@@ -600,6 +600,44 @@ function New-AdeTempJsonPath {
     return [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), $fileName)
 }
 
+# ─── Deployer public IP ───────────────────────────────────────────────────────
+
+function Get-AdeDeployerPublicIp {
+    <#
+    .SYNOPSIS
+        Best-effort detection of the deployer's public IPv4 address.
+
+    .DESCRIPTION
+        Used to scope the SQL Server firewall rule to the machine running the
+        deployment (workstation or CI runner) instead of opening 0.0.0.0/0.
+        Tries several well-known echo services; returns $null when none respond
+        or the response is not a valid IPv4 address. Callers must treat $null
+        as "no deployer rule" and warn accordingly.
+    #>
+    param()
+
+    $services = @(
+        'https://api.ipify.org',
+        'https://ifconfig.me/ip',
+        'https://icanhazip.com'
+    )
+    foreach ($svc in $services) {
+        try {
+            Write-AdeLog "Detecting deployer public IP via $svc" -Level Debug
+            $ip = (Invoke-RestMethod -Uri $svc -TimeoutSec 10).ToString().Trim()
+            # Accept IPv4 only — SQL firewall rules do not support IPv6.
+            if ($ip -match '^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$' -and
+                -not (($ip -split '\.') | Where-Object { [int]$_ -gt 255 })) {
+                return $ip
+            }
+            Write-AdeLog "  ✗ $svc returned '$ip' (not a valid IPv4 address)" -Level Debug
+        } catch {
+            Write-AdeLog "  ✗ $svc unreachable: $($_.Exception.Message)" -Level Debug
+        }
+    }
+    return $null
+}
+
 # ─── Feature flag accessor ───────────────────────────────────────────────────
 
 function Get-AdeObjectPropertyValue {
