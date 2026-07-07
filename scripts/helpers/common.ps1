@@ -600,6 +600,35 @@ function New-AdeTempJsonPath {
     return [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), $fileName)
 }
 
+# ─── Destructive action confirmation ─────────────────────────────────────────
+
+function Confirm-AdeDestructiveAction {
+    <#
+    .SYNOPSIS
+        Asks the user to confirm an irreversible action (delete / purge) that a
+        deployment needs to perform as a pre-flight workaround.
+
+    .DESCRIPTION
+        Deployments should never delete resources silently. This gate prompts
+        interactively and defaults to No. Under -Force or CI (no interactive
+        console) it auto-approves — matching the existing non-interactive
+        behavior — but still logs a warning so the action is visible in the log.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Action,
+        [switch]$Force
+    )
+
+    if ($Force -or [bool]$env:CI -or [bool]$env:GITHUB_ACTIONS) {
+        Write-AdeLog "$Action — auto-approved (-Force / CI)." -Level Warning
+        return $true
+    }
+
+    Write-Host ""
+    $answer = Read-Host "  $Action. Proceed? [y/N]"
+    return $answer -match '^[Yy]$'
+}
+
 # ─── Feature flag accessor ───────────────────────────────────────────────────
 
 function Get-AdeObjectPropertyValue {
