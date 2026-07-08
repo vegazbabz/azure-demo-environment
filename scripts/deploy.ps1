@@ -990,12 +990,18 @@ foreach ($moduleName in $deploymentOrder) {
                 Write-AdeLog "az containerapp env show --name $caeName (checking for Failed state)" -Level Debug
                 $caeState = az containerapp env show --name $caeName --resource-group $caeRg --query 'properties.provisioningState' -o tsv 2>$null
                 if ($LASTEXITCODE -eq 0 -and $caeState -eq 'Failed') {
-                    Write-AdeLog "Container Apps Environment '$caeName' is in Failed state — deleting so it can be recreated." -Level Warning
-                    az containerapp env delete --name $caeName --resource-group $caeRg --yes --output none 2>$null
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Could not delete failed Container Apps Environment '$caeName'. Delete it manually and retry."
+                    if ($WhatIf) {
+                        Write-AdeLog "What if: would delete Container Apps Environment '$caeName' (stuck in Failed state — blocks recreation)." -Level Info
+                    } elseif (Confirm-AdeDestructiveAction -Force:$Force -Action "Container Apps Environment '$caeName' is stuck in 'Failed' state and must be DELETED so Bicep can recreate it") {
+                        Write-AdeLog "Container Apps Environment '$caeName' is in Failed state — deleting so it can be recreated." -Level Warning
+                        az containerapp env delete --name $caeName --resource-group $caeRg --yes --output none 2>$null
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "Could not delete failed Container Apps Environment '$caeName'. Delete it manually and retry."
+                        }
+                        Write-AdeLog "Container Apps Environment '$caeName' deleted." -Level Info
+                    } else {
+                        Write-AdeLog "Skipped deleting '$caeName' — the containers deployment will likely fail with ManagedEnvironmentNotReadyForAppCreation. Delete it manually and retry." -Level Warning
                     }
-                    Write-AdeLog "Container Apps Environment '$caeName' deleted." -Level Info
                 }
 
                 $ctFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'containers'
@@ -1070,6 +1076,10 @@ foreach ($moduleName in $deploymentOrder) {
                             Write-AdeLog "Soft-deleted Cognitive Services '$csName': could not determine location/RG — skipping purge." -Level Warning
                             continue
                         }
+                        if ($WhatIf) {
+                            Write-AdeLog "What if: would purge soft-deleted Cognitive Services account '$csName' (required before redeploy)." -Level Info
+                            continue
+                        }
                         Write-AdeLog "Purging soft-deleted Cognitive Services account '$csName' (required before redeploy)..." -Level Warning
                         az cognitiveservices account purge `
                             --name $csName `
@@ -1089,12 +1099,23 @@ foreach ($moduleName in $deploymentOrder) {
                 # silently. When the workspace IS in soft-delete state, the catch block
                 # below intercepts "Soft-deleted workspace exists" and retries the AI
                 # module without Machine Learning so the other AI resources still deploy.
+                # Only runs when Machine Learning is being deployed on this run —
+                # otherwise it would permanently delete an existing workspace without
+                # recreating it — and never without confirmation (unless -Force / CI).
                 $mlWsName = "${Prefix}-mlworkspace"
                 $mlAiRg   = "${Prefix}-ai-rg"
-                az ml workspace delete `
-                    --name $mlWsName `
-                    --resource-group $mlAiRg `
-                    --permanently-delete --yes --no-wait 2>$null | Out-Null
+                if ((Get-FeatureFlag -Features $aiFeatures -Name 'machineLearning') -eq $true) {
+                    if ($WhatIf) {
+                        Write-AdeLog "What if: would permanently delete ML workspace '$mlWsName' if it exists (pre-flight to avoid soft-delete conflicts)." -Level Info
+                    } elseif (Confirm-AdeDestructiveAction -Force:$Force -Action "Pre-flight: ML workspace '$mlWsName' (if it exists) will be PERMANENTLY deleted and recreated to avoid a soft-delete conflict") {
+                        az ml workspace delete `
+                            --name $mlWsName `
+                            --resource-group $mlAiRg `
+                            --permanently-delete --yes --no-wait 2>$null | Out-Null
+                    } else {
+                        Write-AdeLog "Skipped permanent deletion of '$mlWsName'. If a soft-deleted copy blocks deployment, the AI module automatically retries without Machine Learning." -Level Warning
+                    }
+                }
 
                 $params = @{
                     prefix                  = $Prefix
