@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `databases` module: the internet-wide `AllowAll` SQL firewall rule (0.0.0.0–255.255.255.255) is no longer created by default — now opt-in via `databases.features.allowAllSqlIngress` (kept for reproducing the CIS 4.1.2 baseline finding). The default firewall is scoped to Azure services plus a single-IP `AllowDeployerIp` rule detected at deploy time (`Get-AdeDeployerPublicIp`), so `seed-data.ps1` keeps working. `deploy.ps1` also removes a stale `AllowAll` rule left by deployments made before this change
+- `deploy.ps1`: irreversible pre-flight operations (Failed-state Container Apps Environment delete, ML workspace permanent delete) now require interactive confirmation via `Confirm-AdeDestructiveAction` (default No); auto-approved under `-Force`/CI with a logged warning
+
+### Changed
+- CI workflows (`deploy.yml`, `lint.yml`): Bicep CLI pinned to v0.44.1 instead of installing the latest release on every run — reproducible lint/deploy results, no unreviewed-release drift
+
 ### Fixed
+- `deploy.ps1`: the ML workspace pre-flight permanent-delete no longer runs when `ai.features.machineLearning` is disabled — previously it could permanently destroy an existing workspace without recreating it
+- `deploy.ps1`: `-WhatIf` no longer performs destructive pre-flight operations (Container Apps Environment delete, ML workspace delete, Cognitive Services purge) — a `What if: would ...` line is logged instead
 - `seed-data.ps1`: replaced removed `az postgres/mysql flexible-server execute` commands (removed in Azure CLI 2.85.0) with native `psql`/`mysql` CLI calls; seeding is skipped automatically with an informational message when the client tool is not installed
 - `seed-data.ps1`: stripped `USE <db>;` statement before SQL batch execution to prevent Azure SQL parse errors
 - `postgresql` feature flag set to `false` by default in all profiles (`full`, `hardened`, `databases-only`) — now consistent with `mysql` (opt-in only)
