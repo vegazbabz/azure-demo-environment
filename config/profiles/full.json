@@ -61,7 +61,8 @@
         "cosmosDb": true,
         "postgresql": false,
         "mysql": false,
-        "redis": false
+        "redis": false,
+        "allowAllSqlIngress": false
       }
     },
     "appservices": {
