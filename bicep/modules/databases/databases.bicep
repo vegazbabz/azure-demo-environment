@@ -4,6 +4,8 @@
 //
 // DEFAULT MODE: SQL PaaS only. All other engines are opt-in via feature flags.
 //               Public network access enabled, no forced TLS minimum.
+//               SQL firewall: Azure services + deployer IP only. The AllowAll
+//               (0.0.0.0-255.255.255.255) rule is opt-in via allowAllSqlIngress.
 //               SQL uses AdventureWorksLT sample for dummy data.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,12 @@ param deployMysql bool = false
 
 @description('Deploy Redis Cache.')
 param deployRedis bool = false
+
+@description('Create the AllowAll (0.0.0.0-255.255.255.255) SQL firewall rule. Off by default — opt-in only, for CIS baseline auditing. WARNING: exposes the SQL server to the entire internet.')
+param allowAllSqlIngress bool = false
+
+@description('Public IP address of the deployer (workstation or CI runner). When set, a SQL firewall rule scoped to this single IP is created so deployment tooling and seed-data.ps1 can connect without opening the server to the internet.')
+param deployerIpAddress string = ''
 
 @description('Database subnet resource ID (used for PostgreSQL VNet injection — requires Microsoft.DBforPostgreSQL/flexibleServers delegation).')
 param subnetId string = ''
@@ -111,13 +119,25 @@ resource sqlFirewallAzureServices 'Microsoft.Sql/servers/firewallRules@2023-02-0
   }
 }
 
-// Open firewall for demo access
-resource sqlFirewallAll 'Microsoft.Sql/servers/firewallRules@2023-02-01-preview' = if (deploySql) {
+// Open firewall for the entire internet — opt-in only (databases.features.allowAllSqlIngress).
+// Kept available for CIS baseline auditing (guarantees a 4.1.2 finding); never on by default.
+resource sqlFirewallAll 'Microsoft.Sql/servers/firewallRules@2023-02-01-preview' = if (deploySql && allowAllSqlIngress) {
   parent: sqlServer
   name: 'AllowAll'
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '255.255.255.255'
+  }
+}
+
+// Scoped access for the machine running deploy.ps1 / seed-data.ps1 — the default
+// ingress path. Single-IP rule; nothing else on the public internet can connect.
+resource sqlFirewallDeployer 'Microsoft.Sql/servers/firewallRules@2023-02-01-preview' = if (deploySql && !empty(deployerIpAddress)) {
+  parent: sqlServer
+  name: 'AllowDeployerIp'
+  properties: {
+    startIpAddress: deployerIpAddress
+    endIpAddress: deployerIpAddress
   }
 }
 
