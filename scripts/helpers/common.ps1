@@ -667,6 +667,169 @@ function Get-AdeDeployerPublicIp {
     return $null
 }
 
+# ─── Password generation ─────────────────────────────────────────────────────
+
+function New-AdePassword {
+    <#
+    .SYNOPSIS
+        Generates a cryptographically random password as a SecureString.
+
+    .DESCRIPTION
+        Guarantees at least two characters from each class (upper, lower, digit,
+        symbol) using ambiguity-free character sets, fills the remainder from the
+        union of all classes, and shuffles with Fisher-Yates — all driven by a
+        crypto RNG. Meets Azure VM / SQL / PostgreSQL / MySQL complexity rules.
+        The plaintext is discarded immediately after SecureString conversion.
+    #>
+    [OutputType([securestring])]
+    param(
+        [ValidateRange(12, 128)]
+        [int]$Length = 16
+    )
+
+    # Ambiguity-free sets: no I/l/1/O/0 look-alikes (passwords may be hand-typed)
+    $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    $lower   = 'abcdefghjkmnpqrstuvwxyz'
+    $digits  = '23456789'
+    $symbols = '!@#$%^&*'
+    $all     = $upper + $lower + $digits + $symbols
+
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        # First $Length bytes pick characters, second $Length bytes drive the shuffle.
+        $bytes = [byte[]]::new($Length * 2)
+        $rng.GetBytes($bytes)
+
+        $pwChars = [System.Collections.Generic.List[char]]::new()
+        # Two guaranteed characters per class (Azure complexity with headroom)
+        $pwChars.Add($upper[$bytes[0]   % $upper.Length])
+        $pwChars.Add($upper[$bytes[1]   % $upper.Length])
+        $pwChars.Add($lower[$bytes[2]   % $lower.Length])
+        $pwChars.Add($lower[$bytes[3]   % $lower.Length])
+        $pwChars.Add($digits[$bytes[4]  % $digits.Length])
+        $pwChars.Add($digits[$bytes[5]  % $digits.Length])
+        $pwChars.Add($symbols[$bytes[6] % $symbols.Length])
+        $pwChars.Add($symbols[$bytes[7] % $symbols.Length])
+        for ($i = 8; $i -lt $Length; $i++) {
+            $pwChars.Add($all[$bytes[$i] % $all.Length])
+        }
+
+        # Fisher-Yates shuffle using the second half of the crypto bytes
+        for ($i = $pwChars.Count - 1; $i -gt 0; $i--) {
+            $j = $bytes[$Length + ($i % $Length)] % ($i + 1)
+            $tmp = $pwChars[$i]; $pwChars[$i] = $pwChars[$j]; $pwChars[$j] = $tmp
+        }
+
+        $plain  = -join $pwChars
+        $secure = ConvertTo-SecureString $plain -AsPlainText -Force
+        $plain  = $null   # discard plaintext from memory
+        return $secure
+    } finally {
+        $rng.Dispose()
+    }
+}
+
+# ─── Key Vault secrets ────────────────────────────────────────────────────────
+
+function Get-AdeKeyVaultSecret {
+    <#
+    .SYNOPSIS
+        Reads a Key Vault secret value (data plane) as a SecureString.
+
+    .DESCRIPTION
+        Return contract — callers depend on the distinction:
+          SecureString  the secret exists and was read
+          $null         the secret cleanly does NOT exist (SecretNotFound)
+          throws        any other failure (Forbidden, firewall, network) after
+                        MaxAttempts — so "unreadable" is never mistaken for
+                        "absent", which would silently rotate a password that
+                        is still in use on deployed resources.
+        Retries cover RBAC role-assignment propagation delay after a deploy.
+    #>
+    [OutputType([securestring])]
+    param(
+        [Parameter(Mandatory)][string]$VaultName,
+        [Parameter(Mandatory)][string]$SecretName,
+        [ValidateRange(1, 10)][int]$MaxAttempts = 3
+    )
+
+    $retryDelays = @(0, 5, 15)   # seconds to wait before attempt 1, 2, 3+
+    $lastError   = ''
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $delay = $retryDelays[[Math]::Min($attempt - 1, $retryDelays.Count - 1)]
+        if ($delay -gt 0) {
+            Write-AdeLog "  retrying secret read in ${delay}s (RBAC propagation)..." -Level Debug
+            Start-Sleep -Seconds $delay
+        }
+
+        Write-AdeLog "az keyvault secret show --vault-name $VaultName --name $SecretName (attempt $attempt/$MaxAttempts)" -Level Debug
+        $output = az keyvault secret show --vault-name $VaultName --name $SecretName --query value -o tsv 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            $value = (@($output | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }) -join '').Trim()
+            if ($value) { return (ConvertTo-SecureString $value -AsPlainText -Force) }
+            Write-AdeLog "Secret '$SecretName' in vault '$VaultName' has an empty value — treating as absent." -Level Debug
+            return $null
+        }
+
+        $errText = (@($output | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] }) -join ' ')
+        if (-not $errText) { $errText = @($output) -join ' ' }
+        if ($errText -match 'SecretNotFound') {
+            Write-AdeLog "Secret '$SecretName' not found in vault '$VaultName'." -Level Debug
+            return $null
+        }
+        $lastError = $errText
+        Write-AdeLog "  ✗ secret read attempt $attempt failed: $errText" -Level Debug
+    }
+
+    throw ("Could not read secret '$SecretName' from Key Vault '$VaultName' after $MaxAttempts attempts: $lastError. " +
+           "The secret exists (or its existence could not be ruled out) but its value is unreadable — refusing to " +
+           "generate a replacement so passwords already in use are not silently rotated.")
+}
+
+function Get-AdeKeyVaultSecretNames {
+    <#
+    .SYNOPSIS
+        Lists secret names in a Key Vault via the ARM control plane.
+
+    .DESCRIPTION
+        Uses the management endpoint (az rest) instead of the data plane, so it
+        works even when the vault firewall blocks the caller (hardened mode with
+        publicNetworkAccess Disabled) and requires no data-plane RBAC — Reader
+        on the resource group suffices. Follows nextLink pagination.
+        Returns @() when the list cannot be retrieved; callers must treat that
+        as "existence unknown", not "no secrets".
+    #>
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$VaultName
+    )
+
+    $names = [System.Collections.Generic.List[string]]::new()
+    $url   = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup" +
+             "/providers/Microsoft.KeyVault/vaults/$VaultName/secrets?api-version=2023-07-01"
+
+    while ($url) {
+        Write-AdeLog "az rest --method GET --url $url" -Level Debug
+        $raw = az rest --method GET --url $url 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return @() }
+        try {
+            $parsed = (@($raw) -join "`n") | ConvertFrom-Json -ErrorAction Stop
+            foreach ($item in @($parsed.value)) {
+                if ($item -and $item.name) { $names.Add($item.name) }
+            }
+            $nextProp = $parsed.PSObject.Properties['nextLink']
+            $url = if ($nextProp -and $nextProp.Value) { $nextProp.Value } else { $null }
+        } catch {
+            return @()
+        }
+    }
+    return $names.ToArray()
+}
+
 # ─── Feature flag accessor ───────────────────────────────────────────────────
 
 function Get-AdeObjectPropertyValue {

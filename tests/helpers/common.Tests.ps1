@@ -1021,3 +1021,203 @@ Describe 'Invoke-AdeBicepDeployment' -Tag 'unit' {
             Should -Throw -ExpectedMessage "*LocationIsOfferRestricted*"
     }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New-AdePassword
+# ─────────────────────────────────────────────────────────────────────────────
+
+Describe 'New-AdePassword' -Tag 'unit' {
+
+    It 'Returns a SecureString' {
+        New-AdePassword | Should -BeOfType [securestring]
+    }
+
+    It 'Defaults to 16 characters' {
+        $plain = [System.Net.NetworkCredential]::new('', (New-AdePassword)).Password
+        $plain.Length | Should -Be 16
+    }
+
+    It 'Honors -Length' {
+        foreach ($len in 12, 20, 32) {
+            $plain = [System.Net.NetworkCredential]::new('', (New-AdePassword -Length $len)).Password
+            $plain.Length | Should -Be $len
+        }
+    }
+
+    It 'Contains at least one character from each class (Azure complexity)' {
+        # 20 samples — the guarantee is structural (2 per class), so any failure is a bug
+        for ($n = 0; $n -lt 20; $n++) {
+            $plain = [System.Net.NetworkCredential]::new('', (New-AdePassword)).Password
+            $plain | Should -MatchExactly '[A-Z]'
+            $plain | Should -MatchExactly '[a-z]'
+            $plain | Should -Match '[0-9]'
+            $plain | Should -Match '[!@#$%^&*]'
+        }
+    }
+
+    It 'Generates different passwords on successive calls' {
+        $a = [System.Net.NetworkCredential]::new('', (New-AdePassword)).Password
+        $b = [System.Net.NetworkCredential]::new('', (New-AdePassword)).Password
+        $a | Should -Not -Be $b
+    }
+
+    It 'Rejects lengths below 12' {
+        { New-AdePassword -Length 8 } | Should -Throw
+    }
+
+    It 'Excludes ambiguous look-alike characters (I, l, 1, O, 0)' {
+        for ($n = 0; $n -lt 10; $n++) {
+            $plain = [System.Net.NetworkCredential]::new('', (New-AdePassword)).Password
+            $plain | Should -Not -MatchExactly '[Il1O0]'
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Get-AdeKeyVaultSecret
+# ─────────────────────────────────────────────────────────────────────────────
+
+Describe 'Get-AdeKeyVaultSecret' -Tag 'unit' {
+
+    BeforeAll {
+        if (-not (Get-Command 'az' -ErrorAction SilentlyContinue)) {
+            function script:az {}
+        }
+    }
+
+    Context 'Secret exists' {
+
+        BeforeAll {
+            Mock az {
+                $global:LASTEXITCODE = 0
+                'S3cret!Value123'
+            }
+        }
+
+        It 'Returns the value as a SecureString' {
+            $result = Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'sql-admin-password'
+            $result | Should -BeOfType [securestring]
+            [System.Net.NetworkCredential]::new('', $result).Password | Should -Be 'S3cret!Value123'
+        }
+
+        It 'Calls az exactly once (no retries on success)' {
+            $null = Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'sql-admin-password'
+            Should -Invoke az -Times 1 -Exactly
+        }
+    }
+
+    Context 'Secret cleanly absent (SecretNotFound)' {
+
+        BeforeAll {
+            Mock az {
+                $global:LASTEXITCODE = 1
+                'ERROR: (SecretNotFound) A secret with (name/id) sql-admin-password was not found in this key vault.'
+            }
+            Mock Start-Sleep {}
+        }
+
+        It 'Returns $null without retrying' {
+            $result = Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'sql-admin-password'
+            $result | Should -BeNullOrEmpty
+            Should -Invoke az -Times 1 -Exactly
+        }
+    }
+
+    Context 'Read forbidden (RBAC / firewall)' {
+
+        BeforeAll {
+            Mock az {
+                $global:LASTEXITCODE = 1
+                'ERROR: (Forbidden) Caller is not authorized to perform action on resource.'
+            }
+            Mock Start-Sleep {}   # no real delays in tests
+        }
+
+        It 'Retries MaxAttempts times, then throws (never returns $null)' {
+            { Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'sql-admin-password' -MaxAttempts 3 } |
+                Should -Throw -ExpectedMessage '*refusing to generate a replacement*'
+            Should -Invoke az -Times 3 -Exactly
+        }
+
+        It 'Throw message names the vault and secret' {
+            { Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'sql-admin-password' -MaxAttempts 2 } |
+                Should -Throw -ExpectedMessage "*'sql-admin-password'*'ade-kv-x'*"
+        }
+    }
+
+    Context 'Secret exists with empty value' {
+
+        BeforeAll {
+            Mock az {
+                $global:LASTEXITCODE = 0
+                ''
+            }
+        }
+
+        It 'Returns $null (treated as absent)' {
+            Get-AdeKeyVaultSecret -VaultName 'ade-kv-x' -SecretName 'empty-secret' |
+                Should -BeNullOrEmpty
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Get-AdeKeyVaultSecretNames
+# ─────────────────────────────────────────────────────────────────────────────
+
+Describe 'Get-AdeKeyVaultSecretNames' -Tag 'unit' {
+
+    BeforeAll {
+        if (-not (Get-Command 'az' -ErrorAction SilentlyContinue)) {
+            function script:az {}
+        }
+        $script:kvNamesArgs = @{
+            SubscriptionId = 'sub-123'
+            ResourceGroup  = 'ade-security-rg'
+            VaultName      = 'ade-kv-x'
+        }
+    }
+
+    It 'Returns secret leaf names from the control-plane list' {
+        Mock az {
+            $global:LASTEXITCODE = 0
+            '{"value":[{"name":"sql-admin-password"},{"name":"vm-admin-password"}]}'
+        }
+        $names = Get-AdeKeyVaultSecretNames @kvNamesArgs
+        $names | Should -Contain 'sql-admin-password'
+        $names | Should -Contain 'vm-admin-password'
+        @($names).Count | Should -Be 2
+    }
+
+    It 'Follows nextLink pagination' {
+        Mock az {
+            $global:LASTEXITCODE = 0
+            if ("$args" -match 'skiptoken') {
+                '{"value":[{"name":"page2-secret"}]}'
+            } else {
+                '{"value":[{"name":"page1-secret"}],"nextLink":"https://management.azure.com/...?skiptoken=abc"}'
+            }
+        }
+        $names = Get-AdeKeyVaultSecretNames @kvNamesArgs
+        $names | Should -Contain 'page1-secret'
+        $names | Should -Contain 'page2-secret'
+        Should -Invoke az -Times 2 -Exactly
+    }
+
+    It 'Returns an empty array when the request fails (existence unknown)' {
+        Mock az {
+            $global:LASTEXITCODE = 1
+        }
+        $names = Get-AdeKeyVaultSecretNames @kvNamesArgs
+        @($names).Count | Should -Be 0
+    }
+
+    It 'Returns an empty array on unparseable output' {
+        Mock az {
+            $global:LASTEXITCODE = 0
+            'this is not json'
+        }
+        $names = Get-AdeKeyVaultSecretNames @kvNamesArgs
+        @($names).Count | Should -Be 0
+    }
+}
