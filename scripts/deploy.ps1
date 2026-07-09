@@ -42,10 +42,16 @@
     Admin username for VMs. Default: adeadmin
 
 .PARAMETER AdminPassword
-    Override the VM admin password (SecureString). Must meet Azure complexity requirements
-    (min 12 chars, upper + lower + digit + symbol).
+    Override the admin password (SecureString) for ALL services (VM / SQL / PostgreSQL /
+    MySQL / Synapse). Must meet Azure complexity requirements (min 12 chars, upper +
+    lower + digit + symbol). The value is also stored per-service in the environment
+    Key Vault so seed-data.ps1 can retrieve it.
     If omitted and a password-bearing module (compute, databases, or data) is enabled,
-    a secure 12-character password is auto-generated and printed to the terminal.
+    a separate secure password is generated PER SERVICE and stored in the environment
+    Key Vault (secrets: vm-admin-password, sql-admin-password, postgres-admin-password,
+    mysql-admin-password, synapse-admin-password) — nothing is printed to the terminal.
+    Only when the profile has no Key Vault does the script fall back to one shared
+    generated password printed in a console banner.
     Use -AutoGeneratePassword to explicitly request generation even when those modules are disabled.
 
 .PARAMETER Mode
@@ -271,13 +277,10 @@ if ($automationWanted) {
 }
 
 # ─── Admin password ───────────────────────────────────────────────────────────
-# Only generated when a module that actually uses it (compute, databases, data) is enabled.
-# Password is generated here (before confirmation) only to validate -AdminPassword early
-# if the user supplied one. Display and SecureString conversion happen after confirmation.
-$needsAdminPassword = @('compute', 'databases', 'data') | Where-Object {
-    $m = $deployProfile.modules.PSObject.Properties[$_]
-    $null -ne $m -and $m.Value.enabled -eq $true
-}
+# Passwords are resolved lazily by Resolve-AdeServicePasswords right before the
+# first password-bearing module (compute / databases / data) deploys — after the
+# security module, so the Key Vault exists and per-service secrets can be
+# read or created. Only -AdminPassword validation happens up front.
 if ($AutoGeneratePassword -and $AdminPassword) {
     throw "-AutoGeneratePassword cannot be combined with -AdminPassword."
 }
@@ -377,40 +380,36 @@ try {
     throw
 }
 
-# ─── Generate and display password (after user confirms) ──────────────────────
-if (($needsAdminPassword -or $AutoGeneratePassword) -and -not $AdminPassword) {
-    $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-    $lower   = 'abcdefghjkmnpqrstuvwxyz'
-    $digits  = '23456789'
-    $symbols = '!@#$%^&*'
-    $rng     = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes   = [byte[]]::new(32)
-    $rng.GetBytes($bytes)
-    $pwChars = @(
-        $upper[$bytes[0]  % $upper.Length]
-        $upper[$bytes[1]  % $upper.Length]
-        $upper[$bytes[2]  % $upper.Length]
-        $upper[$bytes[3]  % $upper.Length]
-        $lower[$bytes[4]  % $lower.Length]
-        $lower[$bytes[5]  % $lower.Length]
-        $lower[$bytes[6]  % $lower.Length]
-        $lower[$bytes[7]  % $lower.Length]
-        $digits[$bytes[8] % $digits.Length]
-        $digits[$bytes[9] % $digits.Length]
-        $symbols[$bytes[10] % $symbols.Length]
-        $symbols[$bytes[11] % $symbols.Length]
-    )
-    # Shuffle with Fisher-Yates using crypto bytes
-    for ($i = $pwChars.Count - 1; $i -gt 0; $i--) {
-        $j = $bytes[$i % $bytes.Length] % ($i + 1)
-        $tmp = $pwChars[$i]; $pwChars[$i] = $pwChars[$j]; $pwChars[$j] = $tmp
-    }
-    $generatedPw = -join $pwChars
-    $AdminPassword = ConvertTo-SecureString $generatedPw -AsPlainText -Force
-    $generatedPw   = $null   # discard plaintext from memory
-    $script:_adePasswordWasGenerated = $true
-} else {
-    $script:_adePasswordWasGenerated = $false
+# ─── Password strategy state ──────────────────────────────────────────────────
+# Resolve-AdeServicePasswords (defined below) fills $state.servicePasswords on
+# first use. Sources:
+#   'supplied'          -AdminPassword used for every service (legacy / CI);
+#                       still synced to Key Vault so seed-data.ps1 can read it
+#   'keyvault'          per-service secrets: read existing / generate new,
+#                       stored in the environment Key Vault, never printed
+#   'generated-legacy'  no Key Vault in this profile: one shared generated
+#                       password + the classic plaintext console banners
+#   'whatif'            ephemeral values only, zero Key Vault interaction
+$script:_adePasswordWasGenerated = $false   # true only for 'generated-legacy'
+$script:_adePasswordSource       = ''
+$script:_adePasswordsResolved    = $false
+$script:_adeKvSecretsStored      = [System.Collections.Generic.List[string]]::new()   # secret names present in KV this run
+$script:_adeKvBannerShown        = $false
+
+# service key -> Key Vault secret name / secrets.bicep parameter name
+$script:AdeServiceSecretNames  = [ordered]@{
+    vm       = 'vm-admin-password'
+    sql      = 'sql-admin-password'
+    postgres = 'postgres-admin-password'
+    mysql    = 'mysql-admin-password'
+    synapse  = 'synapse-admin-password'
+}
+$script:AdeServiceSecretParams = @{
+    vm       = 'vmAdminPassword'
+    sql      = 'sqlAdminPassword'
+    postgres = 'postgresAdminPassword'
+    mysql    = 'mysqlAdminPassword'
+    synapse  = 'synapseAdminPassword'
 }
 
 
@@ -422,6 +421,9 @@ $state = @{
     subscriptionId    = $SubscriptionId
     adminUsername     = $AdminUsername
     adminPassword     = $AdminPassword
+    # service key ('vm','sql','postgres','mysql','synapse') -> SecureString.
+    # Populated by Resolve-AdeServicePasswords before the first consuming module.
+    servicePasswords  = @{}
 
     # Populated as modules deploy:
     logAnalyticsId       = ''
@@ -675,6 +677,234 @@ function Deploy-AdeModule {
     return $(if ($result -and $result.PSObject.Properties['Outputs']) { $result.Outputs } else { $result })
 }
 
+# ─── Per-service password resolution ─────────────────────────────────────────
+
+function Publish-AdeServiceSecrets {
+    <#
+    .SYNOPSIS
+        Writes per-service password secrets to the environment Key Vault via a
+        secrets.bicep ARM deployment (control plane — succeeds even when the
+        hardened vault firewall blocks the deployer's data-plane access).
+    #>
+    param([Parameter(Mandatory)][hashtable]$Secrets)   # service key -> SecureString
+
+    $params = @{
+        keyVaultName = $state.keyVaultName
+        tags         = Build-AdeTags -Profile $deployProfile -Module 'security'
+    }
+    foreach ($svc in $Secrets.Keys) {
+        $params[$script:AdeServiceSecretParams[$svc]] =
+            [System.Net.NetworkCredential]::new('', $Secrets[$svc]).Password
+    }
+
+    # secrets.bicep lives under modules/ but is shared by BOTH modes — the
+    # secret write is mode-independent, so it is not duplicated under hardened/.
+    $secretsBicep = Join-Path $scriptRoot '..\bicep\modules\security\secrets.bicep'
+    Write-AdeLog "Writing $($Secrets.Count) per-service password secret(s) to Key Vault '$($state.keyVaultName)'..." -Level Info
+    $null = Invoke-AdeBicepDeployment `
+        -ResourceGroup  "$Prefix-security-rg" `
+        -TemplatePath   $secretsBicep `
+        -DeploymentName "ade-secrets-$(Get-Date -Format 'yyyyMMddHHmmss')" `
+        -Parameters     $params
+}
+
+function Resolve-AdeServicePasswords {
+    <#
+    .SYNOPSIS
+        Populates $state.servicePasswords for every password-bearing service
+        enabled in this run. Idempotent — the first caller (compute, databases,
+        or data module case) does the work; later calls return immediately.
+
+    .DESCRIPTION
+        Runs after the security module in the fixed deployment order, so
+        $state.keyVaultName is set either from this run's security outputs or
+        from state hydration (partial redeploy). See the password strategy
+        comment near the top of the script for the source semantics.
+    #>
+    if ($script:_adePasswordsResolved) { return }
+    $script:_adePasswordsResolved = $true
+
+    # ── Which services need a password this run? Store=$false -> the module
+    #    requires the Bicep param but the feature is disabled: use a throwaway
+    #    ephemeral value, never stored in Key Vault, never printed.
+    $needed = [ordered]@{}
+
+    $computeMod = Get-AdeObjectPropertyValue -InputObject $deployProfile.modules -Name 'compute'
+    if (($null -ne $computeMod -and $computeMod.enabled -eq $true) -or $AutoGeneratePassword) {
+        $compFeat = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'compute'
+        $anyVm = @('windowsVm', 'linuxVm', 'vmss', 'domainController') |
+            Where-Object { (Get-FeatureFlag -Features $compFeat -Name $_) -eq $true }
+        $needed['vm'] = @{ Store = ([bool]$anyVm -or [bool]$AutoGeneratePassword) }
+    }
+
+    $dbMod = Get-AdeObjectPropertyValue -InputObject $deployProfile.modules -Name 'databases'
+    if ($null -ne $dbMod -and $dbMod.enabled -eq $true) {
+        $dbFeat = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'databases'
+        $needed['sql'] = @{ Store = ((Get-FeatureFlag -Features $dbFeat -Name 'sqlDatabase') -eq $true -or
+                                     (Get-FeatureFlag -Features $dbFeat -Name 'sqlVm') -eq $true) }
+        $needed['postgres'] = @{ Store = ((Get-FeatureFlag -Features $dbFeat -Name 'postgresql') -eq $true) }
+        $needed['mysql']    = @{ Store = ((Get-FeatureFlag -Features $dbFeat -Name 'mysql') -eq $true) }
+    }
+
+    $dataMod = Get-AdeObjectPropertyValue -InputObject $deployProfile.modules -Name 'data'
+    if ($null -ne $dataMod -and $dataMod.enabled -eq $true) {
+        $dataFeat = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'data'
+        if ((Get-FeatureFlag -Features $dataFeat -Name 'synapse') -eq $true) {
+            $needed['synapse'] = @{ Store = $true }
+        }
+    }
+
+    if ($needed.Count -eq 0) { return }
+
+    # ── Source A: -AdminPassword supplied (legacy / CI) ──────────────────────
+    # One value for every service. Still synced to Key Vault (control plane,
+    # no reads — this path must keep working when the hardened vault firewall
+    # blocks the deployer) so passwordless seed-data.ps1 stays consistent.
+    if ($AdminPassword) {
+        foreach ($svc in @($needed.Keys)) { $state.servicePasswords[$svc] = $AdminPassword }
+        $script:_adePasswordSource = 'supplied'
+        if ($state.keyVaultName -and -not $WhatIf) {
+            $toSync = @{}
+            foreach ($svc in @($needed.Keys)) {
+                if ($needed[$svc].Store) {
+                    $toSync[$svc] = $AdminPassword
+                    $script:_adeKvSecretsStored.Add($script:AdeServiceSecretNames[$svc])
+                }
+            }
+            if ($toSync.Count -gt 0) { Publish-AdeServiceSecrets -Secrets $toSync }
+        }
+        return
+    }
+
+    # ── Source B: -WhatIf — ephemeral values, zero Key Vault interaction ─────
+    if ($WhatIf) {
+        foreach ($svc in @($needed.Keys)) { $state.servicePasswords[$svc] = New-AdePassword }
+        $script:_adePasswordSource = 'whatif'
+        return
+    }
+
+    # ── Source C: Key Vault available — per-service read-or-create ───────────
+    if ($state.keyVaultName) {
+        Write-AdeLog "Resolving per-service passwords from Key Vault '$($state.keyVaultName)'..." -Level Info
+        # Existence check via the ARM control plane: works through the vault
+        # firewall and needs no data-plane RBAC, so a fresh deploy never has
+        # to wait for role-assignment propagation.
+        $existingNames = Get-AdeKeyVaultSecretNames `
+            -SubscriptionId $SubscriptionId `
+            -ResourceGroup  "$Prefix-security-rg" `
+            -VaultName      $state.keyVaultName
+
+        $toWrite = @{}
+        foreach ($svc in @($needed.Keys)) {
+            if (-not $needed[$svc].Store) {
+                $state.servicePasswords[$svc] = New-AdePassword   # ephemeral
+                continue
+            }
+            $secretName = $script:AdeServiceSecretNames[$svc]
+            if (@($existingNames) -contains $secretName) {
+                # Existing secret: read it so redeploys never rotate a password
+                # that deployed resources already use. Get-AdeKeyVaultSecret
+                # throws on unreadable (fail closed) — the module-loop catch
+                # surfaces the actionable message.
+                $sec = Get-AdeKeyVaultSecret -VaultName $state.keyVaultName -SecretName $secretName
+                if ($sec) {
+                    $state.servicePasswords[$svc] = $sec
+                    $script:_adeKvSecretsStored.Add($secretName)
+                    Write-AdeLog "  $secretName — existing secret reused (no rotation)" -Level Info
+                    continue
+                }
+                # Cleanly absent despite the listing (deleted between calls or
+                # empty value) — fall through and generate a fresh one.
+            }
+            $sec = New-AdePassword
+            $state.servicePasswords[$svc] = $sec
+            $toWrite[$svc] = $sec
+            $script:_adeKvSecretsStored.Add($secretName)
+            Write-AdeLog "  $secretName — new secret generated" -Level Info
+        }
+        if ($toWrite.Count -gt 0) { Publish-AdeServiceSecrets -Secrets $toWrite }
+        $script:_adePasswordSource = 'keyvault'
+        return
+    }
+
+    # ── Source D: no Key Vault — legacy shared generated password ────────────
+    $legacy = New-AdePassword
+    foreach ($svc in @($needed.Keys)) { $state.servicePasswords[$svc] = $legacy }
+    $state.adminPassword = $legacy   # legacy plaintext banners read this key
+    $script:_adePasswordWasGenerated = $true
+    $script:_adePasswordSource = 'generated-legacy'
+}
+
+# ─── Password banners ─────────────────────────────────────────────────────────
+
+function Show-AdeLegacyPasswordBanner {
+    <#
+    .SYNOPSIS
+        Classic plaintext password banner — fires only when no Key Vault is
+        available ('generated-legacy' source), preserving the original UX.
+    #>
+    param([Parameter(Mandatory)][ValidateSet('Compute', 'Databases', 'Summary')][string]$Kind)
+
+    $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+    $title = switch ($Kind) {
+        'Compute'   { 'AUTO-GENERATED ADMIN PASSWORD' }
+        'Databases' { 'AUTO-GENERATED DATABASE ADMIN PASSWORD' }
+        'Summary'   { 'ADMIN PASSWORD (compute / databases / data)' }
+    }
+    Write-Host ""
+    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "║   $($title.PadRight(63))║" -ForegroundColor Yellow
+    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
+    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
+    Write-Host "║" -ForegroundColor Yellow
+    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
+    Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
+    Write-Host "║" -ForegroundColor Yellow
+    if ($Kind -eq 'Compute') {
+        Write-Host "║   This password is used for VM / VMSS / SQL / PostgreSQL / MySQL. ║" -ForegroundColor Yellow
+        Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
+    } else {
+        $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
+        $seedLine2 = "     -DatabaseAdminPassword '$pwPlain'"
+        Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
+        Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
+    }
+    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+    Write-Host ""
+    $pwPlain = $null
+}
+
+function Show-AdeKeyVaultPasswordBanner {
+    <#
+    .SYNOPSIS
+        Key Vault credentials notice — no plaintext. Mid-deploy it fires once
+        (first password-bearing module); the summary variant always prints.
+    #>
+    param([switch]$Summary)
+
+    if (-not $Summary) {
+        if ($script:_adeKvBannerShown) { return }
+        $script:_adeKvBannerShown = $true
+    }
+    # Only names actually present in the vault (Store=true services) —
+    # ephemeral passwords for feature-disabled services are never stored.
+    $storedNames = @($script:_adeKvSecretsStored | Sort-Object -Unique)
+
+    Write-Host ""
+    Write-Host "  ── Credentials ────────────────────────────────────────────────" -ForegroundColor Yellow
+    Write-Host "  Admin username : " -NoNewline -ForegroundColor Yellow
+    Write-Host $state.adminUsername -ForegroundColor White
+    Write-Host "  Per-service admin passwords are stored in Key Vault: " -NoNewline -ForegroundColor Yellow
+    Write-Host $state.keyVaultName -ForegroundColor White
+    Write-Host "  Retrieve one with:" -ForegroundColor Yellow
+    foreach ($name in $storedNames) {
+        Write-Host "    az keyvault secret show --vault-name $($state.keyVaultName) --name $name --query value -o tsv" -ForegroundColor DarkCyan
+    }
+    Write-Host "  Seed data (fetches passwords from Key Vault automatically):" -ForegroundColor Yellow
+    Write-Host "    .\scripts\seed-data.ps1 -Prefix $Prefix" -ForegroundColor DarkCyan
+    Write-Host ""
+}
+
 $script:_adeModuleHadNewResources = $false
 $failedModules = [System.Collections.Generic.List[string]]::new()
 foreach ($moduleName in $deploymentOrder) {
@@ -796,6 +1026,7 @@ foreach ($moduleName in $deploymentOrder) {
 
             # ── COMPUTE ─────────────────────────────────────────────────────
             'compute' {
+                Resolve-AdeServicePasswords
                 $bicep = Join-Path $bicepRoot 'compute\compute.bicep'
                 $compFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'compute'
                 $params = @{
@@ -803,7 +1034,7 @@ foreach ($moduleName in $deploymentOrder) {
                     location            = $Location
                     subnetId            = $state.computeSubnetId
                     adminUsername       = $state.adminUsername
-                    adminPassword       = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    adminPassword       = [System.Net.NetworkCredential]::new('', $state.servicePasswords['vm']).Password
                     deployWindowsVm     = (Get-FeatureFlag -Features $compFeatures -Name 'windowsVm').ToString().ToLower()
                     deployLinuxVm       = (Get-FeatureFlag -Features $compFeatures -Name 'linuxVm').ToString().ToLower()
                     deployVmss          = (Get-FeatureFlag -Features $compFeatures -Name 'vmss').ToString().ToLower()
@@ -819,21 +1050,9 @@ foreach ($moduleName in $deploymentOrder) {
                 }
                 $null = Deploy-AdeModule -ModuleName 'compute' -BicepFile $bicep -Parameters $params
                 if ($script:_adePasswordWasGenerated -and $script:_adeModuleHadNewResources) {
-                    $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
-                    Write-Host ""
-                    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-                    Write-Host "║   AUTO-GENERATED ADMIN PASSWORD                                  ║" -ForegroundColor Yellow
-                    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
-                    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
-                    Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
-                    Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
-                    Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   This password is used for VM / VMSS / SQL / PostgreSQL / MySQL. ║" -ForegroundColor Yellow
-                    Write-Host "║   It will be shown again in the deployment summary.               ║" -ForegroundColor Yellow
-                    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
-                    Write-Host ""
-                    $pwPlain = $null
+                    Show-AdeLegacyPasswordBanner -Kind Compute
+                } elseif ($script:_adePasswordSource -eq 'keyvault') {
+                    Show-AdeKeyVaultPasswordBanner
                 }
             }
 
@@ -863,6 +1082,7 @@ foreach ($moduleName in $deploymentOrder) {
 
             # ── DATABASES ───────────────────────────────────────────────────
             'databases' {
+                Resolve-AdeServicePasswords
                 $bicep = Join-Path $bicepRoot 'databases\databases.bicep'
                 $dbFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'databases'
                 $params = @{
@@ -870,11 +1090,11 @@ foreach ($moduleName in $deploymentOrder) {
                     location          = $Location
                     subnetId          = $state.databaseSubnetId
                     sqlAdminLogin     = $state.adminUsername
-                    sqlAdminPassword  = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    sqlAdminPassword  = [System.Net.NetworkCredential]::new('', $state.servicePasswords['sql']).Password
                     pgAdminLogin      = $state.adminUsername
-                    pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    pgAdminPassword   = [System.Net.NetworkCredential]::new('', $state.servicePasswords['postgres']).Password
                     mysqlAdminLogin   = $state.adminUsername
-                    mysqlAdminPassword = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                    mysqlAdminPassword = [System.Net.NetworkCredential]::new('', $state.servicePasswords['mysql']).Password
                     deploySql         = (Get-FeatureFlag -Features $dbFeatures -Name 'sqlDatabase').ToString().ToLower()
                     deployCosmos      = (Get-FeatureFlag -Features $dbFeatures -Name 'cosmosDb').ToString().ToLower()
                     deployPostgresql  = (Get-FeatureFlag -Features $dbFeatures -Name 'postgresql').ToString().ToLower()
@@ -918,23 +1138,9 @@ foreach ($moduleName in $deploymentOrder) {
                     }
                 }
                 if ($script:_adePasswordWasGenerated) {
-                    $pwPlain = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
-                    Write-Host ""
-                    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-                    Write-Host "║   AUTO-GENERATED DATABASE ADMIN PASSWORD                         ║" -ForegroundColor Yellow
-                    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
-                    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
-                    Write-Host "║" -ForegroundColor Yellow
-                    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
-                    Write-Host $pwPlain.PadRight(52) -ForegroundColor White -NoNewline
-                    Write-Host "║" -ForegroundColor Yellow
-                    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
-                    $seedLine2 = "     -DatabaseAdminPassword '$pwPlain'"
-                    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
-                    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
-                    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
-                    Write-Host ""
-                    $pwPlain = $null
+                    Show-AdeLegacyPasswordBanner -Kind Databases
+                } elseif ($script:_adePasswordSource -eq 'keyvault') {
+                    Show-AdeKeyVaultPasswordBanner
                 }
 
                 # Remove a stale AllowAll rule left by a previous deployment.
@@ -1157,6 +1363,7 @@ foreach ($moduleName in $deploymentOrder) {
 
             # ── DATA ────────────────────────────────────────────────────────
             'data' {
+                Resolve-AdeServicePasswords
                 $bicep = Join-Path $bicepRoot 'data\data.bicep'
                 $dataFeatures = Get-AdeModuleFeatures -Profile $deployProfile -ModuleName 'data'
 
@@ -1208,8 +1415,12 @@ foreach ($moduleName in $deploymentOrder) {
                     storageAccountName  = if ($state.storageAccountName) { $state.storageAccountName } else { '' }
                     subnetId            = $state.dataSubnetId
                 }
-                if ($Mode -eq 'hardened') {
-                    $params['synapseAdminPassword'] = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
+                # Synapse SQL admin password — passed in BOTH modes when the synapse
+                # feature is enabled. Previously default mode fell back to a
+                # predictable 'SynapseDemo#<uniqueString>' password inside the Bicep;
+                # the per-service Key Vault secret replaces that.
+                if ($state.servicePasswords.ContainsKey('synapse')) {
+                    $params['synapseAdminPassword'] = [System.Net.NetworkCredential]::new('', $state.servicePasswords['synapse']).Password
                 }
                 try {
                     $outputs = Deploy-AdeModule -ModuleName 'data' -BicepFile $bicep -Parameters $params
@@ -1227,6 +1438,9 @@ foreach ($moduleName in $deploymentOrder) {
                     }
                 }
                 $state.dataFactoryId = Get-AdeDeploymentOutput $outputs 'dataFactoryId'
+                if ($script:_adePasswordSource -eq 'keyvault') {
+                    Show-AdeKeyVaultPasswordBanner   # no-op if already shown this run
+                }
             }
 
             # ── GOVERNANCE ──────────────────────────────────────────────────
@@ -1387,29 +1601,17 @@ Write-Host ""
 Write-AdeLog "Run './scripts/dashboard/Get-AdeCostDashboard.ps1' to view costs and resource status." -Level Info
 Write-AdeLog "Run './scripts/destroy.ps1 -Prefix $Prefix' to tear down the entire environment." -Level Warning
 
-# ─── Admin password reminder ──────────────────────────────────────────────────
-# Print once more in the summary so it is visible even when the compute banner
-# scrolled away. Only shown when -AutoGeneratePassword was used and at least one
-# password-bearing module (compute / databases / data) was deployed.
+# ─── Credentials reminder ─────────────────────────────────────────────────────
+# Print once more in the summary so it is visible even when the mid-deploy
+# banner scrolled away. Routed on the password source:
+#   generated-legacy -> classic plaintext banner (no Key Vault available)
+#   keyvault         -> vault name + retrieval commands (never plaintext)
+#   supplied/whatif  -> nothing (matches historical behavior)
 $pwModulesDeployed = $deploymentOrder | Where-Object { $_ -in @('compute', 'databases', 'data') }
 if ($script:_adePasswordWasGenerated -and $pwModulesDeployed -and $state.adminPassword) {
-    $pwSummary = [System.Net.NetworkCredential]::new('', $state.adminPassword).Password
-    Write-Host ""
-    Write-Host "╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-    Write-Host "║   ADMIN PASSWORD (compute / databases / data)                    ║" -ForegroundColor Yellow
-    Write-Host "║   Username : " -ForegroundColor Yellow -NoNewline
-    Write-Host $state.adminUsername.PadRight(52) -ForegroundColor White -NoNewline
-    Write-Host "║" -ForegroundColor Yellow
-    Write-Host "║   Password : " -ForegroundColor Yellow -NoNewline
-    Write-Host $pwSummary.PadRight(52) -ForegroundColor White -NoNewline
-    Write-Host "║" -ForegroundColor Yellow
-    $seedLine1 = "   .\scripts\seed-data.ps1 -Prefix $Prefix ``"
-    $seedLine2 = "     -DatabaseAdminPassword '$pwSummary'"
-    Write-Host "║$($seedLine1.PadRight(66))║" -ForegroundColor Yellow
-    Write-Host "║$($seedLine2.PadRight(66))║" -ForegroundColor Yellow
-    Write-Host "╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
-    Write-Host ""
-    $pwSummary = $null
+    Show-AdeLegacyPasswordBanner -Kind Summary
+} elseif ($script:_adePasswordSource -eq 'keyvault' -and $pwModulesDeployed) {
+    Show-AdeKeyVaultPasswordBanner -Summary
 }
 
 if ($failedModules.Count -gt 0) {
