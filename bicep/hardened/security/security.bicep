@@ -39,6 +39,9 @@ param keyVaultDnsZoneId string = ''
 @description('Object ID of the deployer (user or service principal). When set, grants Key Vault Secrets Officer role so seed-data.ps1 can write secrets post-deployment.')
 param deployerPrincipalId string = ''
 
+@description('Principal type of the deployer: User (interactive az login) or ServicePrincipal (CI / OIDC). Must match deployerPrincipalId or the role assignment fails.')
+param deployerPrincipalType string = 'User'
+
 @description('Public IP address ranges (CIDR notation) to allow through Key Vault network ACLs. Use this to permit deployer workstation or CI runner IPs. RFC1918 private ranges are not supported here — VNet access uses private endpoints. Example: ["203.0.113.0/24"]')
 param allowedCidrRanges array = []
 
@@ -225,6 +228,6 @@ resource kvSecretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-0
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')  // Key Vault Secrets Officer
     principalId: deployerPrincipalId
-    principalType: 'User'
+    principalType: deployerPrincipalType
   }
 }
