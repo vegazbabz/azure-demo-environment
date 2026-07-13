@@ -137,7 +137,7 @@ The `minimal` profile is the lowest-cost starting point. It deploys: monitoring,
 ./scripts/deploy.ps1 -Profile minimal -Location westeurope -Prefix ade
 ```
 
-You will be prompted for a VM admin password if you do not provide one. The password must be at least 12 characters with uppercase, lowercase, a digit, and a symbol.
+Admin passwords are handled automatically: a separate cryptographically random password is generated **per service** (VM, SQL, PostgreSQL, MySQL, Synapse) and stored in the environment's Key Vault — nothing is printed to the terminal. Pass `-AdminPassword` to use one value for all services instead (min 12 characters with uppercase, lowercase, a digit, and a symbol); it is also synced to Key Vault. Profiles without a Key Vault fall back to a single generated password shown in a console banner.
 
 The script will:
 
@@ -356,8 +356,8 @@ You can also deploy both side-by-side using different prefixes:
 | `-Prefix` | string | `ade` | 2–8 lowercase alphanumeric characters (e.g. `ade`, `demo`, `contoso`). Becomes part of every resource group name and most resource names. |
 | `-SubscriptionId` | string | current account | Target subscription. Defaults to whatever `az account show` returns. |
 | `-AdminUsername` | string | `adeadmin` | VM and database administrator username |
-| `-AdminPassword` | SecureString | prompted | VM admin password. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. |
-| `-AutoGeneratePassword` | switch | — | Generate a cryptographically random password automatically. The password is printed in a highlighted box at the mid-deploy banner and again in the final summary — copy it before the terminal scrolls. Cannot be combined with `-AdminPassword`. |
+| `-AdminPassword` | SecureString | per-service generated | Optional override: one password for ALL services (VM / SQL / PostgreSQL / MySQL / Synapse), also stored per-service in the environment Key Vault. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. When omitted, a separate password is generated per service and stored in Key Vault (`vm-admin-password`, `sql-admin-password`, `postgres-admin-password`, `mysql-admin-password`, `synapse-admin-password`). |
+| `-AutoGeneratePassword` | switch | — | Force password generation even when no password-bearing module is enabled. With a Key Vault the password lands in the `vm-admin-password` secret; without one it is printed in a highlighted console banner. Cannot be combined with `-AdminPassword`. |
 | `-Mode` | string | `default` | `default` or `hardened` |
 | `-WhatIf` | switch | — | Run Bicep what-if on each module without actually deploying anything |
 | `-Force` | switch | — | Skip the deployment confirmation prompt |
@@ -589,9 +589,9 @@ What gets seeded:
 | Storage Table | `demotable` with sample device and config entities | — |
 | Storage File Share | `welcome.txt` uploaded to the provisioned share | — |
 | Cosmos DB | Sample order documents from `data/cosmos/` | — |
-| Azure SQL | AdventureWorksLT sample database (built into the resource — no script needed) | Requires `-DatabaseAdminPassword` |
-| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Requires `-DatabaseAdminPassword` and `psql` client — see note below |
-| MySQL | `demo_events` + `demo_devices` tables with sample rows | Requires `-DatabaseAdminPassword` and `mysql` client — see note below |
+| Azure SQL | AdventureWorksLT sample database (built into the resource — no script needed) | Password fetched from Key Vault (`sql-admin-password`) or `-DatabaseAdminPassword` |
+| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Password from Key Vault (`postgres-admin-password`) or `-DatabaseAdminPassword`; requires `psql` client — see note below |
+| MySQL | `demo_events` + `demo_devices` tables with sample rows | Password from Key Vault (`mysql-admin-password`) or `-DatabaseAdminPassword`; requires `mysql` client — see note below |
 | Redis Cache | Demo keys set via TLS RESP connection | — |
 | Key Vault | Demo secrets, RSA 2048 encryption key, and self-signed TLS certificate | Requires Key Vault Administrator role |
 | Service Bus | Test messages sent to the `orders` queue | — |
@@ -611,12 +611,15 @@ What gets seeded:
 >
 > PostgreSQL and MySQL are **opt-in** in all profiles (`postgresql: false`, `mysql: false` by default). Enable them explicitly in your profile's `databases.features` if needed.
 
-SQL, PostgreSQL, and MySQL seed blocks are skipped automatically when `-DatabaseAdminPassword` is not provided. All other targets are seeded without credentials.
+SQL, PostgreSQL, and MySQL passwords are fetched automatically from the environment Key Vault (written there by `deploy.ps1`); pass `-DatabaseAdminPassword` only to override. A service is skipped automatically when neither source is available. All other targets are seeded without credentials.
 
 You can run the seed script manually against an already-deployed environment:
 
 ```powershell
-# Seed all targets
+# Seed all targets — database passwords fetched from the environment Key Vault
+./scripts/seed-data.ps1 -Prefix ade
+
+# Override the database password explicitly (e.g. no Key Vault in the profile)
 ./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword123!'
 
 # Seed only specific targets
@@ -774,7 +777,7 @@ In **Settings → Environments → demo → Environment secrets → Add secret**
 | `AZURE_CLIENT_ID` | The `appId` from Step 1 |
 | `AZURE_TENANT_ID` | Run: `az account show --query tenantId -o tsv` |
 | `AZURE_SUBSCRIPTION_ID` | Run: `az account show --query id -o tsv` |
-| `ADE_ADMIN_PASSWORD` | VM admin password (min 12 chars, must contain uppercase, lowercase, digit, and symbol) |
+| `ADE_ADMIN_PASSWORD` | Admin password used for all services in CI deploys (min 12 chars, must contain uppercase, lowercase, digit, and symbol). Stored per-service in the environment Key Vault by the deploy step; the seed step reads it from there. |
 
 Store these at **environment** scope, not repository scope. Environment-scoped secrets are only accessible to workflow jobs that have passed the environment's protection rules (your review gate).
 

@@ -306,6 +306,73 @@ Describe 'seed-data.ps1 — az commands invoked when resources exist' -Tag 'unit
         }
     }
 
+    Context 'Database password from Key Vault' {
+
+        It 'Fetches sql-admin-password from Key Vault when -DatabaseAdminPassword is omitted' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-sqlserver' }        # resource list (SQL server)
+                elseif ($script:azCallCount -eq 2) { 'demo-kv' }          # resource list (Key Vault)
+                elseif ($script:azCallCount -eq 3) { 'KvPass123!secret' } # keyvault secret show
+            }
+            Mock Start-Sleep {}
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force } | Should -Not -Throw
+            # 1 (sql server list) + 1 (vault discovery) + 1 (secret show) = 3
+            Should -Invoke az -Times 3 -Exactly
+        }
+
+        It 'Skips the service gracefully when the vault has no secret' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                if ($script:azCallCount -eq 1) { $global:LASTEXITCODE = 0; 'ade-sqlserver' }
+                elseif ($script:azCallCount -eq 2) { $global:LASTEXITCODE = 0; 'demo-kv' }
+                else {
+                    $global:LASTEXITCODE = 1
+                    'ERROR: (SecretNotFound) A secret with (name/id) sql-admin-password was not found in this key vault.'
+                }
+            }
+            Mock Start-Sleep {}
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force } | Should -Not -Throw
+            # SecretNotFound returns immediately — no retry: 3 az calls total
+            Should -Invoke az -Times 3 -Exactly
+        }
+
+        It 'Skips the service gracefully when no Key Vault exists' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-sqlserver' }
+                # call 2 (vault discovery) returns nothing — no vault deployed
+            }
+            Mock Start-Sleep {}
+            { . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force } | Should -Not -Throw
+            Should -Invoke az -Times 2 -Exactly
+        }
+
+        It 'Never touches Key Vault when -DatabaseAdminPassword is supplied' {
+            function Write-AdeLog    { param([string]$Message, $Level, [switch]$NoNewline) }
+            function Write-AdeSection { param([string]$Title) }
+            $script:azCallCount = 0
+            Mock az {
+                $script:azCallCount++
+                $global:LASTEXITCODE = 0
+                if ($script:azCallCount -eq 1) { 'ade-sqlserver' }
+            }
+            . (Join-Path $PSScriptRoot '..\..\scripts\seed-data.ps1') -Prefix 'ade' -Modules sql -Force -DatabaseAdminPassword 'TestPass1!'
+            Should -Invoke az -Times 1 -Exactly
+        }
+    }
+
     Context 'Redis seeding' {
 
         BeforeAll {

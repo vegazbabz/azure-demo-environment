@@ -121,9 +121,52 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
     It 'Shows a mid-deployment banner after the databases module with DatabaseAdminPassword hint' {
         # When deploying databases without compute the compute banner does not fire.
         # A dedicated databases banner ensures the password is always visible mid-deploy.
+        # The banner body lives in Show-AdeLegacyPasswordBanner; the databases case
+        # must call a password banner function right after Deploy-AdeModule.
         $script:source | Should -Match 'AUTO-GENERATED DATABASE ADMIN PASSWORD'
-        $script:source | Should -Match 'Deploy-AdeModule.*databases[\s\S]{1,2200}DATABASE ADMIN PASSWORD'
+        $script:source | Should -Match "Deploy-AdeModule -ModuleName 'databases'[\s\S]{1,2200}Show-Ade\w+PasswordBanner"
         $script:source | Should -Match 'DatabaseAdminPassword'
+    }
+
+    It 'Resolves per-service passwords in every password-bearing module case' {
+        # Resolve-AdeServicePasswords must be defined and invoked at the top of
+        # the compute, databases, and data cases (idempotent — first call wins).
+        $script:source | Should -Match 'function Resolve-AdeServicePasswords'
+        foreach ($case in "'compute'", "'databases'", "'data'") {
+            $script:source | Should -Match ('{0}\s*\{{\s*\r?\n\s*Resolve-AdeServicePasswords' -f $case)
+        }
+    }
+
+    It 'Modules consume per-service passwords from state.servicePasswords, not the shared key' {
+        $script:source | Should -Match "servicePasswords\['vm'\]"
+        $script:source | Should -Match "sqlAdminPassword\s*=\s*\[System\.Net\.NetworkCredential\]::new\('', \`$state\.servicePasswords\['sql'\]\)"
+        $script:source | Should -Match "pgAdminPassword\s*=\s*\[System\.Net\.NetworkCredential\]::new\('', \`$state\.servicePasswords\['postgres'\]\)"
+        $script:source | Should -Match "mysqlAdminPassword\s*=\s*\[System\.Net\.NetworkCredential\]::new\('', \`$state\.servicePasswords\['mysql'\]\)"
+        # module params must never read the legacy shared key directly
+        $script:source | Should -Not -Match "sqlAdminPassword\s*=\s*\[System\.Net\.NetworkCredential\]::new\('', \`$state\.adminPassword\)"
+    }
+
+    It 'Passes synapseAdminPassword in both modes when the synapse feature is enabled' {
+        # Previously hardened-only; default mode fell back to a predictable
+        # 'SynapseDemo#<uniqueString>' password inside the Bicep.
+        $script:source | Should -Match "servicePasswords\.ContainsKey\('synapse'\)"
+        $script:source | Should -Not -Match "Mode -eq 'hardened'[\s\S]{0,120}synapseAdminPassword"
+    }
+
+    It 'Key Vault banner prints retrieval commands, never plaintext passwords' {
+        $script:source | Should -Match 'function Show-AdeKeyVaultPasswordBanner'
+        $script:source | Should -Match 'az keyvault secret show --vault-name'
+        # The KV banner function body must not decode any SecureString to plaintext
+        $kvBanner = [regex]::Match($script:source, 'function Show-AdeKeyVaultPasswordBanner[\s\S]+?\r?\n\}').Value
+        $kvBanner | Should -Not -Match 'NetworkCredential' -Because 'the Key Vault banner must never decode passwords'
+    }
+
+    It 'Fails closed: existing-but-unreadable secrets abort instead of rotating' {
+        # Resolve-AdeServicePasswords reads existing secrets via Get-AdeKeyVaultSecret,
+        # which throws on unreadable — there must be no try/catch swallowing it.
+        $resolver = [regex]::Match($script:source, 'function Resolve-AdeServicePasswords[\s\S]+?\r?\n\}').Value
+        $resolver | Should -Match 'Get-AdeKeyVaultSecret'
+        $resolver | Should -Not -Match '\btry\s*\{' -Because 'secret-read failures must propagate (fail closed, no silent rotation)'
     }
 }
 

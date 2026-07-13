@@ -20,7 +20,10 @@
       - Event Hub: sends telemetry events via REST to the telemetry hub
       - Event Grid: publishes demo events to the custom topic
 
-    NOTE: SQL, PostgreSQL, and MySQL require -DatabaseAdminPassword.
+    NOTE: SQL, PostgreSQL, and MySQL passwords are fetched automatically from
+    the environment Key Vault (secrets sql-admin-password / postgres-admin-password /
+    mysql-admin-password, written by deploy.ps1). Pass -DatabaseAdminPassword only
+    to override — e.g. when the environment was deployed without a Key Vault.
     In hardened mode all databases are behind private endpoints — run this
     script from within the VNet (e.g. via Bastion or a jump VM).
     Key Vault key and certificate creation require Key Vault Administrator
@@ -43,12 +46,18 @@
     and MySQL seeding.
 
 .PARAMETER DatabaseAdminPassword
-    Admin password for Azure SQL, PostgreSQL, and MySQL seeding.
-    Required for those three blocks; omit to skip them.
+    Optional override of the admin password for Azure SQL, PostgreSQL, and MySQL
+    seeding (one value for all three). When omitted, each service's password is
+    read from the environment Key Vault (written there by deploy.ps1); a service
+    is skipped when neither source is available.
     Use: -DatabaseAdminPassword 'YourPassword'
 
 .PARAMETER Force
     Skip confirmation prompts.
+
+.EXAMPLE
+    # Passwords fetched from the environment Key Vault automatically
+    ./seed-data.ps1 -Prefix ade
 
 .EXAMPLE
     ./seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword'
@@ -118,6 +127,38 @@ function Get-AdeResource {
         --query "[0].$Query" `
         -o tsv 2>$null
     return $result
+}
+
+# ─── Database password resolution ─────────────────────────────────────────────
+# Precedence:
+#   1. -DatabaseAdminPassword (legacy: one value for all services; zero az calls)
+#   2. per-service secret from the environment Key Vault, written by deploy.ps1
+#      (sql-admin-password / postgres-admin-password / mysql-admin-password)
+# Returns $null when neither is available — callers skip that service.
+$script:_adeSeedKvName    = $null
+$script:_adeSeedKvChecked = $false
+function Get-AdeSeedDbPassword {
+    param([Parameter(Mandatory)][ValidateSet('sql', 'postgres', 'mysql')][string]$Service)
+
+    if ($DatabaseAdminPassword) { return $DatabaseAdminPassword }
+
+    if (-not $script:_adeSeedKvChecked) {
+        $script:_adeSeedKvChecked = $true
+        $script:_adeSeedKvName = Get-AdeResource -ResourceGroup "$Prefix-security-rg" -ResourceType 'Microsoft.KeyVault/vaults'
+        if (-not $script:_adeSeedKvName) {
+            Write-AdeLog "No Key Vault found in '$Prefix-security-rg' — database passwords cannot be auto-resolved." -Level Info
+        }
+    }
+    if (-not $script:_adeSeedKvName) { return $null }
+
+    try {
+        $sec = Get-AdeKeyVaultSecret -VaultName $script:_adeSeedKvName -SecretName "$Service-admin-password" -MaxAttempts 2
+        if ($sec) { return [System.Net.NetworkCredential]::new('', $sec).Password }
+        Write-AdeLog "Secret '$Service-admin-password' not found in Key Vault '$($script:_adeSeedKvName)'." -Level Info
+    } catch {
+        Write-AdeLog "Could not read '$Service-admin-password' from Key Vault '$($script:_adeSeedKvName)': $($_.Exception.Message)" -Level Warning
+    }
+    return $null
 }
 
 # Opens a TcpClient to a Redis host. Extracted so unit tests can mock it.
@@ -417,12 +458,12 @@ if ($seedAll -or $Modules -contains 'sql') {
     $dbRg      = "$Prefix-databases-rg"
     $sqlServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.Sql/servers'
 
+    $dbAdminPwd = $null
     if (-not $sqlServer) {
         Write-AdeLog "No SQL Server found in '$dbRg'. Skipping." -Level Warning
-    } elseif (-not $DatabaseAdminPassword) {
-        Write-AdeLog "SQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
+    } elseif (-not ($dbAdminPwd = Get-AdeSeedDbPassword -Service 'sql')) {
+        Write-AdeLog "SQL seeding skipped — no password available. deploy.ps1 stores 'sql-admin-password' in the environment Key Vault automatically; pass -DatabaseAdminPassword to override." -Level Warning
     } else {
-        $dbAdminPwd = $DatabaseAdminPassword
         $dbName     = "$Prefix-sqldb"
         Write-AdeLog "SQL Server: $sqlServer  DB: $dbName" -Level Info
 
@@ -457,14 +498,15 @@ if ($seedAll -or $Modules -contains 'postgresql') {
     $dbRg     = "$Prefix-databases-rg"
     $pgServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.DBforPostgreSQL/flexibleServers'
 
+    $dbAdminPwd = $null
     if (-not $pgServer) {
         Write-AdeLog "No PostgreSQL server found in '$dbRg'. Skipping." -Level Warning
-    } elseif (-not $DatabaseAdminPassword) {
-        Write-AdeLog "PostgreSQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
     } elseif (-not (Get-Command 'psql' -ErrorAction SilentlyContinue)) {
+        # Client check BEFORE password resolution — a tool-missing skip must not cost Key Vault calls.
         Write-AdeLog "PostgreSQL seeding skipped — 'psql' client not found. See README § Seed data for options." -Level Info
+    } elseif (-not ($dbAdminPwd = Get-AdeSeedDbPassword -Service 'postgres')) {
+        Write-AdeLog "PostgreSQL seeding skipped — no password available. deploy.ps1 stores 'postgres-admin-password' in the environment Key Vault automatically; pass -DatabaseAdminPassword to override." -Level Warning
     } else {
-        $dbAdminPwd = $DatabaseAdminPassword
         $pgDbName   = "${Prefix}db"
         $pgSeedFile = Join-Path $PSScriptRoot '..\data\postgres\seed.sql'
         Write-AdeLog "PostgreSQL server: $pgServer  DB: $pgDbName" -Level Info
@@ -492,14 +534,15 @@ if ($seedAll -or $Modules -contains 'mysql') {
     $dbRg        = "$Prefix-databases-rg"
     $mysqlServer = Get-AdeResource -ResourceGroup $dbRg -ResourceType 'Microsoft.DBforMySQL/flexibleServers'
 
+    $dbAdminPwd = $null
     if (-not $mysqlServer) {
         Write-AdeLog "No MySQL server found in '$dbRg'. Skipping." -Level Warning
-    } elseif (-not $DatabaseAdminPassword) {
-        Write-AdeLog "MySQL seeding skipped — provide -DatabaseAdminPassword to seed." -Level Warning
     } elseif (-not (Get-Command 'mysql' -ErrorAction SilentlyContinue)) {
+        # Client check BEFORE password resolution — a tool-missing skip must not cost Key Vault calls.
         Write-AdeLog "MySQL seeding skipped — 'mysql' client not found. See README § Seed data for options." -Level Info
+    } elseif (-not ($dbAdminPwd = Get-AdeSeedDbPassword -Service 'mysql')) {
+        Write-AdeLog "MySQL seeding skipped — no password available. deploy.ps1 stores 'mysql-admin-password' in the environment Key Vault automatically; pass -DatabaseAdminPassword to override." -Level Warning
     } else {
-        $dbAdminPwd  = $DatabaseAdminPassword
         $mysqlDbName = "${Prefix}db"
         $mysqlSeedFile = Join-Path $PSScriptRoot '..\data\mysql\seed.sql'
         Write-AdeLog "MySQL server: $mysqlServer  DB: $mysqlDbName" -Level Info
