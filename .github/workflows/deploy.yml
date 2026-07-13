@@ -264,12 +264,16 @@ jobs:
         env:
           ADE_PREFIX:         ${{ env.INPUT_PREFIX }}
           ADE_SUBSCRIPTION:   ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ADE_ADMIN_PASSWORD: ${{ secrets.ADE_ADMIN_PASSWORD }}
+        # No password parameter: the deploy step stored the per-service admin
+        # password secrets in the environment Key Vault, and seed-data.ps1
+        # fetches them from there. (The previous version passed a SecureString
+        # into the [string] -DatabaseAdminPassword parameter, which binds as
+        # the literal text 'System.Security.SecureString' — DB seeding never
+        # actually authenticated successfully in CI.)
         run: |
           ./scripts/seed-data.ps1 `
             -Prefix                $env:ADE_PREFIX `
             -SubscriptionId        $env:ADE_SUBSCRIPTION `
-            -DatabaseAdminPassword (ConvertTo-SecureString $env:ADE_ADMIN_PASSWORD -AsPlainText -Force) `
             -Force
 
       - name: Write job summary
