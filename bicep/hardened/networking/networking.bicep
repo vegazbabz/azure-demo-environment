@@ -149,13 +149,10 @@ var hardenedInboundRules = [
 ]
 
 // ─── Network Watcher ──────────────────────────────────────────────────────────
-
-resource networkWatcher 'Microsoft.Network/networkWatchers@2023-09-01' = {
-  name: '${prefix}-networkwatcher'
-  location: location
-  tags: tags
-  properties: {}
-}
+// Azure automatically creates one NetworkWatcher per region (quota = 1).
+// Deploying a second one always fails. The platform-managed watcher is
+// sufficient for a demo environment; no resource is declared here.
+// (Same fix as the default module — see modules/networking/networking.bicep.)
 
 // ─── DDoS Protection Plan ─────────────────────────────────────────────────────
 
