@@ -1012,9 +1012,11 @@ foreach ($moduleName in $deploymentOrder) {
                 if ($Mode -eq 'hardened') {
                     $params['privateEndpointSubnetId'] = $state.privateEndpointSubnetId
                     $params['keyVaultDnsZoneId']       = $state.keyVaultDnsZoneId
-                    # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs
-                    $kvCidrs = Get-FeatureFlag -Features $secFeatures -Name 'allowedCidrRanges' -Default $null
-                    if ($kvCidrs -and $kvCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $kvCidrs }
+                    # allowedCidrRanges: public IPs (CIDR) permitted through KV network ACLs.
+                    # @() wrap: a single-element JSON array unwraps to a scalar on return, and
+                    # .Count on a [string] throws under StrictMode. Bicep also needs an array.
+                    $kvCidrs = @(Get-FeatureFlag -Features $secFeatures -Name 'allowedCidrRanges' -Default @())
+                    if ($kvCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $kvCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'security' -BicepFile $bicep -Parameters $params
                 $state.keyVaultId              = Get-AdeDeploymentOutput $outputs 'keyVaultId'
@@ -1072,9 +1074,10 @@ foreach ($moduleName in $deploymentOrder) {
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
-                    # allowedCidrRanges: public IPs (CIDR) permitted through Storage network ACLs
-                    $stCidrs = Get-FeatureFlag -Features $stFeatures -Name 'allowedCidrRanges' -Default $null
-                    if ($stCidrs -and $stCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $stCidrs }
+                    # allowedCidrRanges: public IPs (CIDR) permitted through Storage network ACLs.
+                    # @() wrap: see the security module note — single-element arrays unwrap to scalars.
+                    $stCidrs = @(Get-FeatureFlag -Features $stFeatures -Name 'allowedCidrRanges' -Default @())
+                    if ($stCidrs.Count -gt 0) { $params['allowedCidrRanges'] = $stCidrs }
                 }
                 $outputs = Deploy-AdeModule -ModuleName 'storage' -BicepFile $bicep -Parameters $params
                 $state.storageAccountName = Get-AdeDeploymentOutput $outputs 'storageAccountName'
@@ -1222,8 +1225,9 @@ foreach ($moduleName in $deploymentOrder) {
                 }
                 if ($Mode -eq 'hardened') {
                     $params['logAnalyticsId'] = $state.logAnalyticsId
-                    $aksIpRanges = Get-FeatureFlag -Features $ctFeatures -Name 'aksAuthorizedIpRanges' -Default $null
-                    if ($null -ne $aksIpRanges) { $params['aksAuthorizedIpRanges'] = $aksIpRanges }
+                    # @() wrap: see the security module note — single-element arrays unwrap to scalars.
+                    $aksIpRanges = @(Get-FeatureFlag -Features $ctFeatures -Name 'aksAuthorizedIpRanges' -Default @())
+                    if ($aksIpRanges.Count -gt 0) { $params['aksAuthorizedIpRanges'] = $aksIpRanges }
                 }
                 $null = Deploy-AdeModule -ModuleName 'containers' -BicepFile $bicep -Parameters $params
             }
