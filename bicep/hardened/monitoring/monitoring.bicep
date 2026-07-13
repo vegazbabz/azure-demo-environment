@@ -136,8 +136,13 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
       ]
       windowsEventLogs: [
         {
+          // Security-channel events via the standard Microsoft-Event stream.
+          // The Microsoft-SecurityEvent stream is only valid in DCRs created by
+          // the Sentinel 'Windows Security Events via AMA' connector — ARM
+          // rejects it in a plain DCR with 'InvalidPayload: Data collection
+          // rule is invalid'.
           name: 'windowsSecurityEvents'
-          streams: ['Microsoft-SecurityEvent']
+          streams: ['Microsoft-Event']
           xPathQueries: [
             'Security!*[System[(EventID=4624) or (EventID=4625) or (EventID=4648) or (EventID=4672) or (EventID=4688) or (EventID=4720) or (EventID=4728) or (EventID=4732)]]'
           ]
@@ -161,7 +166,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
     }
     dataFlows: [
       {
-        streams: ['Microsoft-Perf', 'Microsoft-Syslog', 'Microsoft-SecurityEvent', 'Microsoft-Event']
+        streams: ['Microsoft-Perf', 'Microsoft-Syslog', 'Microsoft-Event']
         destinations: ['la-destination']
       }
     ]
