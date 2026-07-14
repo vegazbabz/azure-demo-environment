@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.0.1] - 2026-07-14
 
 ### Fixed
 - `bicep/hardened/databases/databases.bicep`: every hardened deployment with `sqlDatabase: true` failed ARM preflight on two counts — (1) the `AllowAllWindowsAzureIps` firewall rule is rejected when `publicNetworkAccess` is `Disabled` (`DenyPublicEndpointEnabled`); the rule is removed since access is private-endpoint-only, and (2) the classic vulnerability-assessment resource requires a storage container (`storageContainerPath` cannot be empty); replaced with Defender for SQL express configuration (`Microsoft.Sql/servers/sqlVulnerabilityAssessments`), which stores scan results in the database and needs no storage account

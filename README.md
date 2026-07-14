@@ -688,7 +688,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **614 passing, 0 failing, 0 skipped**.
+Current state: **647 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
