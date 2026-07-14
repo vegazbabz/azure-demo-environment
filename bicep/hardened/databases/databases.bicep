@@ -102,16 +102,10 @@ resource sqlServer 'Microsoft.Sql/servers@2023-02-01-preview' = if (deploySql) {
   }
 }
 
-// Hardened: only Azure services bypass — no AllowAll rule, no open IP range
-resource sqlFirewallAzureServices 'Microsoft.Sql/servers/firewallRules@2023-02-01-preview' = if (deploySql) {
-  parent: sqlServer
-  name: 'AllowAllWindowsAzureIps'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-// Hardened: AllowAll firewall rule NOT deployed (CIS 4.1.2 — no 0.0.0.0-255.255.255.255)
+// Hardened: NO firewall rules at all. publicNetworkAccess is 'Disabled' above,
+// and ARM rejects any firewall rule on such a server (DenyPublicEndpointEnabled) —
+// including the Azure-services bypass rule, which is meaningless without a public
+// endpoint. Access is via the private endpoint only. (CIS 4.1.2 — no 0.0.0.0 rules)
 
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-02-01-preview' = if (deploySql) {
   parent: sqlServer
@@ -160,17 +154,17 @@ resource sqlThreatDetection 'Microsoft.Sql/servers/securityAlertPolicies@2023-02
   }
 }
 
-// Hardened: Defender for SQL vulnerability assessment
-resource sqlVulnerabilityAssessment 'Microsoft.Sql/servers/vulnerabilityAssessments@2023-02-01-preview' = if (deploySql) {
+// Hardened: Defender for SQL vulnerability assessment — express configuration.
+// The classic Microsoft.Sql/servers/vulnerabilityAssessments resource REQUIRES a
+// storage container (empty storageContainerPath fails ARM validation with
+// DataSecurityInvalidUserSuppliedParameter); express configuration stores scan
+// results in the database itself, so no storage account is needed.
+resource sqlVulnerabilityAssessment 'Microsoft.Sql/servers/sqlVulnerabilityAssessments@2023-08-01' = if (deploySql) {
   parent: sqlServer
   name: 'default'
   dependsOn: [sqlThreatDetection]
   properties: {
-    storageContainerPath: ''    // Set to a blob SAS URL to store results; leave empty to route to Azure Monitor only
-    recurringScans: {
-      isEnabled: true
-      emailSubscriptionAdmins: true
-    }
+    state: 'Enabled'
   }
 }
 
