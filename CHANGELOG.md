@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.0.0] - 2026-07-14
 
 ### Security
 - Per-service admin passwords stored in Key Vault: `deploy.ps1` now generates a separate cryptographically random password for each service (VM/VMSS/DC, SQL, PostgreSQL, MySQL, Synapse) and stores them in the environment Key Vault (`vm-admin-password`, `sql-admin-password`, `postgres-admin-password`, `mysql-admin-password`, `synapse-admin-password`) instead of one shared password printed to the terminal. Existing secrets are reused on redeploy (no rotation); unreadable secrets fail closed. `seed-data.ps1` fetches passwords from Key Vault automatically — `-DatabaseAdminPassword` is now an optional override. `-AdminPassword` keeps its legacy meaning (one value for all services) and is also synced to Key Vault. Profiles without a Key Vault fall back to the previous single-password console-banner behavior
