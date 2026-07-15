@@ -1524,9 +1524,14 @@ foreach ($moduleName in $deploymentOrder) {
                             Write-AdeLog "Job schedule already linked: $($link.Runbook) → $($link.Schedule)" -Level Info
                             continue
                         }
+                        # Deterministic name -> GUID so re-runs address the same jobSchedule.
+                        # SHA-256 truncated to 16 bytes: not a security boundary (idempotency
+                        # is name-based via $existingLinks above), but MD5 trips security
+                        # scanners even in non-cryptographic use.
                         $seed   = [System.Text.Encoding]::UTF8.GetBytes("$($state.automationAccountName)-$($link.Schedule)")
-                        $hash   = [System.Security.Cryptography.MD5]::Create().ComputeHash($seed)
-                        $jsGuid = [System.Guid]::new($hash).ToString()
+                        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                        try { $hash = $sha256.ComputeHash($seed) } finally { $sha256.Dispose() }
+                        $jsGuid = [System.Guid]::new([byte[]]$hash[0..15]).ToString()
                         $jsUrl  = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$govRg/providers/Microsoft.Automation/automationAccounts/$($state.automationAccountName)/jobSchedules/$($jsGuid)?api-version=$apiVer"
                         $jsBody = @{
                             properties = @{

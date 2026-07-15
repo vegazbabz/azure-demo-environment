@@ -128,6 +128,12 @@ Describe 'deploy.ps1 – parameter validation' -Tag 'unit' {
         $script:source | Should -Match 'DatabaseAdminPassword'
     }
 
+    It 'Derives the jobSchedule GUID with SHA-256, not MD5' {
+        # Deterministic name->GUID only; MD5 trips security scanners regardless.
+        $script:source | Should -Match '\[System\.Security\.Cryptography\.SHA256\]'
+        $script:source | Should -Not -Match '\[System\.Security\.Cryptography\.MD5\]'
+    }
+
     It 'Resolves per-service passwords in every password-bearing module case' {
         # Resolve-AdeServicePasswords must be defined and invoked at the top of
         # the compute, databases, and data cases (idempotent — first call wins).
