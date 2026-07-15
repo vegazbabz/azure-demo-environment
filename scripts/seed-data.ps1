@@ -503,7 +503,7 @@ if ($seedAll -or $Modules -contains 'postgresql') {
         Write-AdeLog "No PostgreSQL server found in '$dbRg'. Skipping." -Level Warning
     } elseif (-not (Get-Command 'psql' -ErrorAction SilentlyContinue)) {
         # Client check BEFORE password resolution — a tool-missing skip must not cost Key Vault calls.
-        Write-AdeLog "PostgreSQL seeding skipped — 'psql' client not found. See README § Seed data for options." -Level Info
+        Write-AdeLog "PostgreSQL seeding skipped — 'psql' client not found. See docs/operations.md § Seed data for options." -Level Info
     } elseif (-not ($dbAdminPwd = Get-AdeSeedDbPassword -Service 'postgres')) {
         Write-AdeLog "PostgreSQL seeding skipped — no password available. deploy.ps1 stores 'postgres-admin-password' in the environment Key Vault automatically; pass -DatabaseAdminPassword to override." -Level Warning
     } else {
@@ -539,7 +539,7 @@ if ($seedAll -or $Modules -contains 'mysql') {
         Write-AdeLog "No MySQL server found in '$dbRg'. Skipping." -Level Warning
     } elseif (-not (Get-Command 'mysql' -ErrorAction SilentlyContinue)) {
         # Client check BEFORE password resolution — a tool-missing skip must not cost Key Vault calls.
-        Write-AdeLog "MySQL seeding skipped — 'mysql' client not found. See README § Seed data for options." -Level Info
+        Write-AdeLog "MySQL seeding skipped — 'mysql' client not found. See docs/operations.md § Seed data for options." -Level Info
     } elseif (-not ($dbAdminPwd = Get-AdeSeedDbPassword -Service 'mysql')) {
         Write-AdeLog "MySQL seeding skipped — no password available. deploy.ps1 stores 'mysql-admin-password' in the environment Key Vault automatically; pass -DatabaseAdminPassword to override." -Level Warning
     } else {

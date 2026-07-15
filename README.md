@@ -181,141 +181,9 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 
 ---
 
-## Feature flags
+## Feature flags
 
-Every profile JSON controls exactly which sub-features are deployed within each module. These are the available flags:
-
-### `monitoring`
-
-Log Analytics Workspace, Application Insights, and Action Group are **always deployed** by the monitoring module — they cannot be toggled off.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `alertRules` | `false` | Pre-built alert rules (high CPU, disk, etc.) |
-| `alertEmail` | `""` | Email address for alert Action Group notifications. Leave empty to skip email delivery. |
-
-### `networking`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `bastionSku` | `"Developer"` | `None` = no Bastion deployed. `Developer` = free (shared, no dedicated subnet). `Basic`/`Standard` = dedicated subnet + hourly cost |
-| `enableAppGateway` | `false` | Application Gateway WAF v2 (~$200–300/month) |
-| `enableFirewall` | `"None"` | `Standard` (~$900/month) or `Premium` (~$1,500/month) |
-| `enableVpnGateway` | `false` | VPN Gateway for Point-to-Site (~$140/month) |
-| `enableNatGateway` | `false` | NAT Gateway for outbound internet (~$32/month) |
-| `enableDdos` | `false` | DDoS Network Protection — **~$2,944/month. Use with extreme caution.** |
-| `enablePrivateDnsZones` | `false` | Private DNS Zones for private endpoint resolution |
-
-All subnets (compute, databases, containers, app services, management, App Gateway, Firewall, etc.) are **always provisioned** regardless of which resources are enabled. This prevents address-space redesign when toggling optional features later.
-
-### `security`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `keyVault` | `true` | Key Vault (RBAC authorization model) |
-| `managedIdentity` | `true` | User-assigned Managed Identity used by other modules |
-| `defenderForCloud` | varies | All Defender plans (Servers, Databases, Storage, AppServices, Containers, KeyVault, DNS) |
-| `sentinel` | varies | Microsoft Sentinel (requires Log Analytics Workspace) |
-| `allowedCidrRanges` | `[]` | IP/CIDR ranges permitted through the Key Vault firewall. Empty = no network rule (Azure default — open to all). |
-
-### `compute`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `windowsVm` | `true` | Windows Server 2022 VM |
-| `linuxVm` | `false` | Ubuntu 22.04 LTS VM — opt-in only |
-| `vmss` | `false` | VM Scale Set |
-| `enableAutoShutdown` | varies per profile | Daily auto-shutdown at 19:00 UTC (saves cost) |
-| `vmSku` | `"Standard_B2s"` | VM size — change to `Standard_D2s_v3` or larger if needed |
-| `domainController` | `false` | Deploy an Active Directory Domain Controller (Windows Server 2022). Installs AD DS and promotes the VM to a forest root DC. Static IP `10.0.15.4` in the management subnet. VNet DNS is automatically pointed at the DC when enabled. |
-| `domainName` | `""` | FQDN for the AD forest (e.g. `corp.contoso.local`). Defaults to `<prefix>.local` when left empty. |
-
-### `storage`
-
-A General-purpose v2 Storage Account (including Blob, Queue, Table, and File services) is **always deployed**. It cannot be disabled independently of the module.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `dataLakeGen2` | varies | Hierarchical namespace (ADLS Gen2) storage account |
-| `enableSoftDelete` | `false` | Blob soft delete (7-day retention) |
-| `enableVersioning` | `false` | Blob versioning (independent of soft delete) |
-| `allowedCidrRanges` | `[]` | IP/CIDR ranges permitted through the storage account firewall. Empty = no network rule (Azure default — open to all). |
-
-### `databases`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `sqlDatabase` | `true` | Azure SQL Server + Serverless Database (AdventureWorksLT) |
-| `sqlVm` | `false` | SQL Server 2022 on a Windows VM (IaaS) — opt-in only |
-| `cosmosDb` | `true` | Cosmos DB (NoSQL, serverless) |
-| `postgresql` | `false` | PostgreSQL Flexible Server — opt-in only |
-| `mysql` | `false` | MySQL Flexible Server — opt-in only |
-| `redis` | `false` | Redis Cache (~$16/month Basic C0) — opt-in only |
-| `sqlManagedInstance` | `false` | Azure SQL Managed Instance (~$1,000+/month) — opt-in only, very expensive |
-| `allowAllSqlIngress` | `false` | Create the `AllowAll` (0.0.0.0–255.255.255.255) SQL firewall rule — **opens the SQL server to the entire internet**. Opt-in only, for reproducing the CIS 4.1.2 baseline finding. By default the firewall is scoped to Azure services + the deployer's public IP. |
-
-### `appservices`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `windowsWebApp` | `true` | Windows Web App (B1 App Service Plan) |
-| `functionApp` | `true` | Function App (Consumption plan) |
-| `logicApp` | `true` | Logic App (Standard) |
-
-### `containers`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `containerRegistry` | `true` | Azure Container Registry (Basic SKU) |
-| `kubernetesService` | `true` | AKS (1-node, free tier control plane, `Standard_B2s`) |
-| `containerApps` | `true` | Container Apps Environment + sample Container App |
-| `containerInstances` | `true` | Container Instances |
-
-### `integration`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `serviceBus` | `true` | Service Bus namespace (Standard tier) with two sample queues |
-| `eventHub` | `true` | Event Hub namespace (Basic tier) with a sample hub |
-| `eventGrid` | `true` | Event Grid system topic |
-| `signalR` | `true` | SignalR Service (Free tier) |
-| `apiManagement` | `false` | API Management gateway (~$50/month Developer tier) |
-| `apimSku` | `"Developer"` | APIM SKU: `Developer` (~$50/mo), `Basic`, or `Standard` (~$750/mo). Only used when `apiManagement` is `true`. |
-
-### `ai`
-
-> All AI resources are **off by default** due to quota requirements and unpredictable cost. Enable individually in a custom profile.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `aiServices` | `false` | Azure AI Services multi-service account (S0) |
-| `openAi` | `false` | Azure OpenAI Service with GPT-4o deployment. Requires quota approval in your subscription. |
-| `cognitiveSearch` | `false` | Azure Cognitive Search (~$250/month Standard) |
-| `cognitiveSearchSku` | `"basic"` | Cognitive Search SKU: `free` (1 per subscription), `basic` (~$75/mo), `standard` (~$250/mo), `standard2`, `standard3`. All paid SKUs have limited availability in some regions — if you hit `ResourcesForSkuUnavailable`, try a different SKU or deploy to a different region. |
-| `machineLearning` | `false` | Azure Machine Learning workspace |
-
-### `data`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `dataFactory` | `false` | Azure Data Factory with a sample linked service to the storage module |
-| `synapse` | `false` | Azure Synapse Analytics workspace (costs vary by usage) |
-| `databricks` | `false` | Azure Databricks workspace (costs vary by cluster usage) |
-| `purview` | `false` | Microsoft Purview account (~$50+/month) |
-
-### `governance`
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `automationAccount` | varies | Automation Account with auto-stop/start runbooks and daily schedules |
-| `budget` | `true` | Monthly budget with email alerts at 80% and 100% spend. Requires `budgetAlertEmail` or `-BudgetAlertEmail`; otherwise budget deployment is skipped. |
-| `budgetAmount` | varies | Monthly budget limit in USD |
-| `budgetAlertEmail` | `""` | Email address for budget alert notifications. If omitted in an interactive run, `deploy.ps1` prompts before showing the deployment summary. In `-Force`, `-WhatIf`, CI, and GitHub Actions runs, no prompt is shown and budget deployment is skipped unless `-BudgetAlertEmail` is provided. |
-| `resourceLocks` | `false` | CanNotDelete lock on the networking resource group |
-| `policyAssignments` | `false` | CIS Benchmark + MCSB policy initiative assignments (audit mode) |
-| `autoShutdownTime` | `"1900"` | Daily auto-shutdown time in HHMM format (e.g. `"1900"` = 19:00 UTC). |
-| `autoShutdownTimezone` | `"UTC"` | Timezone for the auto-shutdown/start schedules. |
-| `autoStartEnabled` | `false` | Enable daily auto-start at 08:00 on weekdays. Requires `automationAccount: true`. |
+Every module exposes feature flags in its profile `features` block (e.g. `databases.features.postgresql`). The full per-module flag tables — defaults, costs, and caveats — live in **[docs/reference.md](docs/reference.md#feature-flags)**.
 
 ---
 
@@ -343,51 +211,9 @@ You can also deploy both side-by-side using different prefixes:
 
 ---
 
-## All deploy.ps1 parameters
+## All deploy.ps1 parameters
 
-```powershell
-./scripts/deploy.ps1 [parameters]
-```
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `-Profile` | string | `full` | Built-in profile name or path to a custom JSON file |
-| `-Location` | string | `westeurope` | Azure region. Use `az account list-locations --query "[].name" -o tsv` to list all. |
-| `-Prefix` | string | `ade` | 2–8 lowercase alphanumeric characters (e.g. `ade`, `demo`, `contoso`). Becomes part of every resource group name and most resource names. |
-| `-SubscriptionId` | string | current account | Target subscription. Defaults to whatever `az account show` returns. |
-| `-AdminUsername` | string | `adeadmin` | VM and database administrator username |
-| `-AdminPassword` | SecureString | per-service generated | Optional override: one password for ALL services (VM / SQL / PostgreSQL / MySQL / Synapse), also stored per-service in the environment Key Vault. Must meet Azure complexity: 12+ chars, upper, lower, digit, symbol. When omitted, a separate password is generated per service and stored in Key Vault (`vm-admin-password`, `sql-admin-password`, `postgres-admin-password`, `mysql-admin-password`, `synapse-admin-password`). |
-| `-AutoGeneratePassword` | switch | — | Force password generation even when no password-bearing module is enabled. With a Key Vault the password lands in the `vm-admin-password` secret; without one it is printed in a highlighted console banner. Cannot be combined with `-AdminPassword`. |
-| `-Mode` | string | `default` | `default` or `hardened` |
-| `-WhatIf` | switch | — | Run Bicep what-if on each module without actually deploying anything |
-| `-Force` | switch | — | Skip the deployment confirmation prompt |
-| `-ContinueOnError` | switch | — | Continue deploying remaining modules even if one fails. Without this switch the script prompts interactively (or aborts in CI) when a module fails. |
-| `-SkipModules` | string[] | — | Module names to skip. Example: `-SkipModules containers,ai` |
-| `-EnableModules` | string[] | — | Module names to force-enable regardless of profile. Example: `-EnableModules data`. When a disabled module is force-enabled, its boolean features are enabled too. |
-| `-BudgetAlertEmail` | string | `""` | Email address for budget alert notifications. Overrides `budgetAlertEmail` in the profile. If omitted in interactive runs, `deploy.ps1` prompts before the deployment summary; non-interactive runs skip budget deployment unless this is set. |
-| `-LogFile` | string | — | Path for a plain-text log file. Example: `-LogFile ./logs/deploy-$(Get-Date -f yyyyMMdd).log` |
-
-### Examples
-
-```powershell
-# Minimal environment with a custom prefix in North Europe
-./scripts/deploy.ps1 -Profile minimal -Location northeurope -Prefix demo
-
-# Full environment, skip confirmation, log output to file
-./scripts/deploy.ps1 -Profile full -Force -LogFile ./deploy.log
-
-# What-if dry run — shows what would be created without deploying
-./scripts/deploy.ps1 -Profile full -WhatIf
-
-# Full environment but skip the containers and AI modules
-./scripts/deploy.ps1 -Profile full -SkipModules containers,ai
-
-# Deploy with a custom profile file
-./scripts/deploy.ps1 -Profile ./my-profile.json -Location westeurope -Prefix myco
-
-# Hardened mode
-./scripts/deploy.ps1 -Profile hardened -Mode hardened -Location westeurope -Prefix ade
-```
+The complete parameter tables for `deploy.ps1` and `destroy.ps1` live in **[docs/reference.md](docs/reference.md#all-deployps1-parameters)**.
 
 ---
 
@@ -427,84 +253,9 @@ The destroy script:
 
 ---
 
-## Custom profiles
+## Custom profiles
 
-Copy any built-in profile and modify it. The profile schema is documented in `config/schema.json`.
-
-```powershell
-# Copy minimal as a starting point
-Copy-Item config/profiles/minimal.json config/profiles/my-profile.json
-```
-
-Minimal valid profile structure:
-
-```json
-{
-  "profileName": "my-profile",
-  "description": "My custom profile.",
-  "version": "2.0.0",
-  "modules": {
-    "monitoring": {
-      "enabled": true,
-      "features": {
-        "alertRules": false,
-        "alertEmail": ""
-      }
-    },
-    "networking": {
-      "enabled": true,
-      "features": {
-        "bastionSku": "Developer",
-        "enableAppGateway": false,
-        "enableFirewall": "None",
-        "enableVpnGateway": false,
-        "enableDdos": false,
-        "enableNatGateway": false,
-        "enablePrivateDnsZones": false
-      }
-    },
-    "security":    { "enabled": false },
-    "compute":     { "enabled": false },
-    "storage":     { "enabled": false },
-    "databases":   { "enabled": false },
-    "appservices": { "enabled": false },
-    "containers":  { "enabled": false },
-    "integration": { "enabled": false },
-    "ai":          { "enabled": false },
-    "data":        { "enabled": false },
-    "governance": {
-      "enabled": true,
-      "features": {
-        "automationAccount": false,
-        "budget": true,
-        "budgetAmount": 50,
-        "budgetAlertEmail": "",
-        "resourceLocks": false,
-        "policyAssignments": false
-      }
-    }
-  },
-  "seedDummyData": false
-}
-```
-
-Any module that does not need features (just on/off) can use `"enabled": true` with no `features` object. To add opt-in features on top of defaults, provide only the feature keys you want to override — all others take Bicep parameter defaults.
-
-To enable Cosmos DB and PostgreSQL in your custom profile's databases module:
-
-```json
-"databases": {
-  "enabled": true,
-  "features": {
-    "sqlDatabase": true,
-    "sqlVm": false,
-    "cosmosDb": true,
-    "postgresql": true,
-    "mysql": false,
-    "redis": false
-  }
-}
-```
+Copy any built-in profile from `config/profiles/`, adjust modules and features, and pass its path: `./scripts/deploy.ps1 -Profile ./my-profile.json`. Schema, validation rules, and worked examples: **[docs/reference.md](docs/reference.md#custom-profiles)**.
 
 ---
 
@@ -530,18 +281,9 @@ The following constraints are by design and cannot be changed via flags or param
 
 ---
 
-## Scripts reference
+## Scripts reference
 
-| Script | Purpose |
-| --- | --- |
-| `scripts/deploy.ps1` | Main deployment orchestrator. See [All deploy.ps1 parameters](#all-deployps1-parameters). |
-| `scripts/destroy.ps1` | Deletes all ADE resource groups and discovered module-owned managed resource groups for a given prefix. |
-| `scripts/seed-data.ps1` | Seeds 13 resource targets (Blob, Queue, Table, File Share, Cosmos DB, SQL, PostgreSQL, MySQL, Redis, Key Vault, Service Bus, Event Hub, Event Grid) after deployment. Called automatically by `deploy.ps1` when `seedDummyData: true` in the profile. See [Seed data](#seed-data). |
-| `scripts/helpers/common.ps1` | Shared logging, Azure CLI wrappers, and utility functions. Sourced by all other scripts. Not meant to be called directly. |
-| `scripts/helpers/validate.ps1` | Pre-deployment validation: checks Azure CLI login, subscription access, resource group name availability, and expensive-resource warnings. |
-| `scripts/runbooks/Start-AdeResources.ps1` | Automation Account runbook — starts all ADE-tagged VMs and scale sets. |
-| `scripts/runbooks/Stop-AdeResources.ps1` | Automation Account runbook — stops (deallocates) all ADE-tagged VMs, scale sets, and AKS clusters. |
-| `scripts/dashboard/Get-AdeCostDashboard.ps1` | Terminal dashboard for live cost and resource status. See [Cost dashboard](#cost-dashboard). |
+All entry-point scripts and helpers are catalogued in **[docs/reference.md](docs/reference.md#scripts-reference)**.
 
 ---
 
@@ -576,100 +318,21 @@ The deployment script warns you before deploying any expensive resources and sho
 
 ---
 
-## Seed data
+## Seed data
 
-When `seedDummyData: true` is set in a profile (or when the `seed_data` input is enabled in the GitHub Actions workflow), the deployment automatically runs `scripts/seed-data.ps1` after all modules are deployed.
-
-What gets seeded:
-
-| Target | Data | Notes |
-| --- | --- | --- |
-| Blob Storage | Sample JSON and CSV files (`data/blob/`) uploaded to `data`, `logs`, `public` containers | — |
-| Storage Queue | `demo-tasks` queue with sample task messages | — |
-| Storage Table | `demotable` with sample device and config entities | — |
-| Storage File Share | `welcome.txt` uploaded to the provisioned share | — |
-| Cosmos DB | Sample order documents from `data/cosmos/` | — |
-| Azure SQL | AdventureWorksLT sample database (built into the resource — no script needed) | Password fetched from Key Vault (`sql-admin-password`) or `-DatabaseAdminPassword` |
-| PostgreSQL | `demo_products` + `demo_orders` tables with sample rows | Password from Key Vault (`postgres-admin-password`) or `-DatabaseAdminPassword`; requires `psql` client — see note below |
-| MySQL | `demo_events` + `demo_devices` tables with sample rows | Password from Key Vault (`mysql-admin-password`) or `-DatabaseAdminPassword`; requires `mysql` client — see note below |
-| Redis Cache | Demo keys set via TLS RESP connection | — |
-| Key Vault | Demo secrets, RSA 2048 encryption key, and self-signed TLS certificate | Requires Key Vault Administrator role |
-| Service Bus | Test messages sent to the `orders` queue | — |
-| Event Hub | Telemetry events sent to the `telemetry` hub via REST | — |
-| Event Grid | Demo events published to the custom topic | — |
-
-> [!NOTE]
-> **Hardened-mode environments:** SQL, PostgreSQL, and MySQL are deployed behind private endpoints in `hardened` mode. Seeding requires running `seed-data.ps1` from within the VNet — for example, via Bastion or a jump VM. Seeding from a public workstation will result in connection timeouts for those three targets.
-
-> [!NOTE]
-> **PostgreSQL and MySQL seeding** requires the native client tools (`psql` for PostgreSQL, `mysql` for MySQL) to be installed on the machine running `seed-data.ps1`. If the tools are not found, seeding is skipped automatically with an informational message — no error is raised. These are **not** installed by this project.
->
-> **Recommended alternatives if you don't have the clients installed:**
-> - **Azure Cloud Shell** — both `psql` and `mysql` are pre-installed. Run `seed-data.ps1` from there.
-> - **Install locally** — [PostgreSQL client tools](https://www.postgresql.org/download/) (includes `psql`) or [MySQL Shell](https://dev.mysql.com/downloads/shell/).
-> - **Azure Portal** — use the built-in query editor for PostgreSQL or MySQL to run the seed SQL files manually from `data/postgres/seed.sql` / `data/mysql/seed.sql`.
->
-> PostgreSQL and MySQL are **opt-in** in all profiles (`postgresql: false`, `mysql: false` by default). Enable them explicitly in your profile's `databases.features` if needed.
-
-SQL, PostgreSQL, and MySQL passwords are fetched automatically from the environment Key Vault (written there by `deploy.ps1`); pass `-DatabaseAdminPassword` only to override. A service is skipped automatically when neither source is available. All other targets are seeded without credentials.
-
-You can run the seed script manually against an already-deployed environment:
-
-```powershell
-# Seed all targets — database passwords fetched from the environment Key Vault
-./scripts/seed-data.ps1 -Prefix ade
-
-# Override the database password explicitly (e.g. no Key Vault in the profile)
-./scripts/seed-data.ps1 -Prefix ade -DatabaseAdminPassword 'YourPassword123!'
-
-# Seed only specific targets
-./scripts/seed-data.ps1 -Prefix ade -Modules storage,redis,keyvault -Force
-```
-
-> [!NOTE]
-> Wrap the password in **single quotes** so PowerShell does not expand special characters such as `$`. The script exits with code **1** and prints a `[WARN]` summary if any SQL / PostgreSQL / MySQL seed step fails, so callers and CI pipelines can detect partial failures.
+After deployment, `./scripts/seed-data.ps1 -Prefix <prefix>` populates storage, databases, Key Vault, and messaging resources with realistic sample data. Database passwords are fetched from the environment Key Vault automatically. Details, per-target tables, and client prerequisites: **[docs/operations.md](docs/operations.md#seed-data)**.
 
 ---
 
-## Auto start/stop
+## Auto start/stop
 
-The `governance` module deploys an **Automation Account** with two runbooks and daily schedules:
-
-- **Stop-AdeResources** — runs every evening (19:00 UTC by default). Deallocates all ADE-tagged VMs, scale sets, and AKS clusters.
-- **Start-AdeResources** — runs every weekday morning (08:00 UTC). Starts them again if `autoStartEnabled` is `true` in the governance features.
-
-The runbooks use the Automation Account's **system-assigned managed identity** — no passwords or secrets stored anywhere.
-
-You can trigger them manually:
-
-```powershell
-# Stop all VMs immediately via the dashboard
-./scripts/dashboard/Get-AdeCostDashboard.ps1 -Prefix ade -StopAll
-
-# Start all VMs immediately
-./scripts/dashboard/Get-AdeCostDashboard.ps1 -Prefix ade -StartAll
-```
+The governance module schedules a daily VM stop (and optional start) via Automation runbooks. Configuration: **[docs/operations.md](docs/operations.md#auto-startstop)**.
 
 ---
 
-## Cost dashboard
+## Cost dashboard
 
-A terminal-based live dashboard shows real-time resource status and current-month costs:
-
-```powershell
-# Show dashboard once
-./scripts/dashboard/Get-AdeCostDashboard.ps1 -Prefix ade
-
-# Auto-refresh every 60 seconds
-./scripts/dashboard/Get-AdeCostDashboard.ps1 -Prefix ade -Watch
-```
-
-The dashboard shows:
-
-- Current month cost per resource group and estimated month-end projection
-- VM running/deallocated/stopped status
-- Database and AKS cluster status
-- Budget alert utilisation percentage
+`./scripts/dashboard/Get-AdeCostDashboard.ps1` summarizes running resources and month-to-date spend. Usage: **[docs/operations.md](docs/operations.md#cost-dashboard)**.
 
 ---
 
@@ -700,177 +363,15 @@ Test coverage includes:
 
 ---
 
-## GitHub Actions setup
+## GitHub Actions setup
 
-Four workflows are included:
-
-| Workflow | File | Trigger | What it does |
-| --- | --- | --- | --- |
-| ADE — Lint | `lint.yml` | Every push and PR | Bicep lint, PSScriptAnalyzer, JSON validation, Pester tests |
-| ADE — Deploy | `deploy.yml` | Manual (`workflow_dispatch`) | Deploys a chosen profile to Azure |
-| ADE — Destroy | `destroy.yml` | Manual (`workflow_dispatch`) | Destroys all resource groups for a given prefix |
-| ADE — Release | `release.yml` | Push of `v*.*.*` tag | Extracts the matching CHANGELOG.md section and creates a GitHub Release |
-
-All workflows use **OIDC federated identity** — no long-lived secrets or service principal passwords. You set this up once.
-
-### Step 1 — Create an App Registration
-
-```bash
-az ad app create --display-name "ade-github-actions"
-```
-
-Note the `appId` (client ID) and `id` (object ID) from the JSON output.
-
-### Step 2 — Create a service principal
-
-```bash
-az ad sp create --id <appId>
-```
-
-### Step 3 — Add a federated credential
-
-This configures Azure to trust tokens that GitHub Actions mints when running under a specific environment. The `subject` field must match exactly — including the environment name (`demo`).
-
-```bash
-az ad app federated-credential create \
-  --id <objectId> \
-  --parameters '{
-    "name": "ade-github-main",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:<your-github-org>/<your-repo-name>:environment:demo",
-    "audiences": ["api://AzureADTokenAudience"]
-  }'
-```
-
-**Why `environment:demo`?** The deploy and destroy workflows specify `environment: demo`, which scopes OIDC tokens to that environment. If you name the GitHub environment differently, update the `subject` to match.
-
-### Step 4 — Assign roles to the service principal
-
-```bash
-# Required for deploying all resources
-az role assignment create \
-  --assignee <appId> \
-  --role Contributor \
-  --scope /subscriptions/<subscription-id>
-
-# Required for governance module (policy assignments, resource locks)
-az role assignment create \
-  --assignee <appId> \
-  --role "User Access Administrator" \
-  --scope /subscriptions/<subscription-id>
-```
-
-### Step 5 — Create the GitHub environment
-
-In your repo: **Settings → Environments → New environment**
-
-- Name it exactly `demo`
-- Set **Deployment branches** to `main` only
-- Add yourself as a **required reviewer** (strongly recommended — prevents accidental deploys triggered by a misclick)
-
-### Step 6 — Add secrets to the `demo` environment
-
-In **Settings → Environments → demo → Environment secrets → Add secret**:
-
-| Secret name | Value |
-| --- | --- |
-| `AZURE_CLIENT_ID` | The `appId` from Step 1 |
-| `AZURE_TENANT_ID` | Run: `az account show --query tenantId -o tsv` |
-| `AZURE_SUBSCRIPTION_ID` | Run: `az account show --query id -o tsv` |
-| `ADE_ADMIN_PASSWORD` | Admin password used for all services in CI deploys (min 12 chars, must contain uppercase, lowercase, digit, and symbol). Stored per-service in the environment Key Vault by the deploy step; the seed step reads it from there. |
-
-Store these at **environment** scope, not repository scope. Environment-scoped secrets are only accessible to workflow jobs that have passed the environment's protection rules (your review gate).
-
-### Step 7 — (Optional) Set Actions variables
-
-In **Settings → Secrets and variables → Actions → Variables → New repository variable**:
-
-| Variable name | Example value |
-| --- | --- |
-| `ADE_DEFAULT_LOCATION` | `westeurope` |
-| `ADE_DEFAULT_PREFIX` | `ade` |
-
-These pre-fill the workflow dispatch inputs so you don't have to type them every time.
-
-### Step 8 — Verify OIDC setup
-
-```bash
-az ad app federated-credential list --id <objectId> --query "[].subject" -o tsv
-```
-
-Expected output:
-
-```text
-repo:<your-github-org>/<your-repo-name>:environment:demo
-```
-
-### Triggering a deploy from GitHub
-
-1. Go to **Actions → ADE — Deploy → Run workflow**
-2. Select profile, mode, region, prefix
-3. Approve the deployment in the `demo` environment review gate
-4. Watch the live log
+Deploy and destroy workflows run via OIDC (no stored cloud credentials). Full setup — app registration, federated credential, secrets, and variables — is in **[docs/operations.md](docs/operations.md#github-actions-setup)**.
 
 ---
 
-## Repository structure
+## Repository structure
 
-```text
-azure-demo-environment/
-├── bicep/
-│   ├── modules/                  Default (out-of-box) Bicep modules — one folder per module
-│   └── hardened/                 CIS/MCSB-hardened variants of each module
-├── config/
-│   ├── profiles/                 Built-in deployment profiles (JSON)
-│   │   ├── full.json
-│   │   ├── minimal.json
-│   │   ├── compute-only.json
-│   │   ├── databases-only.json
-│   │   ├── networking-only.json
-│   │   ├── security-focus.json
-│   │   └── hardened.json
-│   └── schema.json               JSON Schema for custom profile validation
-├── data/
-│   ├── blob/                     Sample blob files for storage seeding
-│   ├── cosmos/                   Sample Cosmos DB documents
-│   └── sql/                      SQL scripts (if any supplementary SQL is needed)
-├── docs/
-│   ├── architecture.md           Detailed architecture + module dependency diagram
-│   ├── benchmark-guide.md        CIS/MCSB benchmark testing methodology
-│   ├── commands.md               Common local command reference
-│   ├── network-topology.mmd      Mermaid network topology diagram
-│   └── usage.md                  Extended usage examples and advanced scenarios
-├── policies/
-│   ├── definitions/              Custom Azure Policy definition JSON files
-│   ├── initiatives/              Custom policy set (initiative) definitions
-│   └── Deploy-AdePolicies.ps1    Script to assign policies outside of a full deploy
-├── scripts/
-│   ├── deploy.ps1                Main deployment orchestrator
-│   ├── destroy.ps1               Environment teardown
-│   ├── seed-data.ps1             Post-deploy data seeding
-│   ├── helpers/
-│   │   ├── common.ps1            Shared logging + Azure CLI utility functions
-│   │   └── validate.ps1          Pre-deployment validation and confirmation
-│   ├── runbooks/
-│   │   ├── Start-AdeResources.ps1  Auto-start runbook (Automation Account)
-│   │   └── Stop-AdeResources.ps1   Auto-stop runbook (Automation Account)
-│   └── dashboard/
-│       └── Get-AdeCostDashboard.ps1  Live cost and status dashboard
-├── tests/
-│   ├── Invoke-PesterSuite.ps1    Test runner entry point
-│   ├── deploy.Tests.ps1          Tests for deploy.ps1 logic
-│   ├── destroy.Tests.ps1         Tests for destroy.ps1 logic
-│   └── helpers/                  Test helpers and mock setup
-├── .github/
-│   └── workflows/
-│       ├── lint.yml              Lint pipeline (Bicep + PS + JSON + Pester)
-│       ├── deploy.yml            Deploy pipeline (manual trigger)
-│       ├── destroy.yml           Destroy pipeline (manual trigger)
-│       └── release.yml           Release pipeline (tag trigger)
-├── .config/
-│   └── PSScriptAnalyzerSettings.psd1  PSScriptAnalyzer rule configuration
-└── README.md
-```
+The annotated directory tree lives in **[docs/reference.md](docs/reference.md#repository-structure)**.
 
 ---
 
