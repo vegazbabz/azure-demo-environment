@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Install Bicep CLI
         # Pinned so lint/deploy results are reproducible and not subject to
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Install PSScriptAnalyzer
         shell: pwsh
@@ -159,7 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Validate all JSON files
         run: |
@@ -167,6 +167,7 @@ jobs:
           # data/ may not exist in all checkout states
           SEARCH_DIRS="config"
           [ -d data ] && SEARCH_DIRS="$SEARCH_DIRS data"
+          [ -d policies ] && SEARCH_DIRS="$SEARCH_DIRS policies"
           while IFS= read -r f; do
             echo "→ Validating: $f"
             if python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
@@ -184,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Install Pester
         shell: pwsh
