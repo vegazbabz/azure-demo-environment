@@ -97,7 +97,9 @@ function Invoke-AzCmd {
         Throws a terminating error on non-zero exit code with the stderr message.
     .PARAMETER Arguments
         The az command arguments as a single string (everything after 'az').
-        Prefer ArgumentList when paths or values may contain spaces.
+        Split on whitespace with NO quote handling — a quoted value like
+        --name "my rg" becomes three tokens, not two. Values containing
+        quotes therefore throw: use ArgumentList for anything with spaces.
     .PARAMETER ArgumentList
         The az command arguments as a pre-split array. Eliminates whitespace-split
         bugs when template paths, resource group names, or parameter values contain spaces.
@@ -110,6 +112,14 @@ function Invoke-AzCmd {
         [switch]$Silent,
         [switch]$AllowFailure
     )
+
+    # The string form splits on whitespace and cannot honor quoting. Failing loudly
+    # here beats the silent alternative: a quoted value like --name "my rg" would
+    # otherwise be split into broken tokens and produce an opaque az error.
+    if (-not $ArgumentList -and $Arguments -match '["'']') {
+        throw ("Invoke-AzCmd -Arguments splits on whitespace and does not honor quotes " +
+               "(got: $Arguments). Use -ArgumentList to pass values containing spaces.")
+    }
 
     $cmdArgs    = if ($ArgumentList) { $ArgumentList } else { $Arguments -split '\s+' | Where-Object { $_ } }
     $displayCmd = if ($ArgumentList) { $ArgumentList -join ' ' } else { $Arguments }
@@ -401,7 +411,14 @@ function Invoke-AdeBicepDeployment {
     $maxPollSeconds = 5400  # 90 min — the deploy job timeout-minutes: 120 is the hard cap
 
     do {
-        Start-Sleep -Seconds $PollIntervalSeconds
+        # Back off as the deployment ages: 1x interval for the first 2 minutes,
+        # 3x until 10 minutes, then 6x (default 5s -> 15s -> 30s). Long-running
+        # modules (AKS, APIM, gateways) otherwise generate thousands of ARM
+        # reads over a full deploy and risk 429 throttling. An explicit 0
+        # (unit tests) always stays 0.
+        $pollElapsed = ([DateTime]::UtcNow - $pollStart).TotalSeconds
+        $pollBackoff = if ($pollElapsed -gt 600) { 6 } elseif ($pollElapsed -gt 120) { 3 } else { 1 }
+        Start-Sleep -Seconds ($PollIntervalSeconds * $pollBackoff)
         if (([DateTime]::UtcNow - $pollStart).TotalSeconds -gt $maxPollSeconds) {
             throw "Deployment '$DeploymentName' timed out after $([int]($maxPollSeconds / 60)) minutes of polling. The deployment may still be running in Azure — check the portal."
         }

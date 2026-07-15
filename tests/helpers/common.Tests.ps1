@@ -453,6 +453,19 @@ Describe 'Invoke-AzCmd' -Tag 'unit' {
         }
     }
 
+    Context 'Quoted values in the string form' {
+
+        It 'Throws when -Arguments contains a double quote (no quote handling)' {
+            { Invoke-AzCmd -Arguments 'group show --name "my rg"' -Silent } |
+                Should -Throw -ExpectedMessage '*does not honor quotes*'
+        }
+
+        It 'Throws when -Arguments contains a single quote' {
+            { Invoke-AzCmd -Arguments "group show --name 'my rg'" -Silent } |
+                Should -Throw -ExpectedMessage '*ArgumentList*'
+        }
+    }
+
     Context 'Command returning plain text' {
 
         BeforeAll {
