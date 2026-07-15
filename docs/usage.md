@@ -37,7 +37,7 @@ cd azure-demo-environment
     -Force
 ```
 
-You will be prompted for an admin password unless you supply `-AdminPassword`.
+Admin passwords are generated automatically per service (VM, SQL, PostgreSQL, MySQL, Synapse) and stored in the environment Key Vault; nothing is printed. Supply `-AdminPassword` to use one value for all services instead. See the README's parameter table for details.
 
 ---
 
