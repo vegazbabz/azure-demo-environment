@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- `README.md` halved (942 -> 443 lines): nine reference-heavy sections moved verbatim to `docs/reference.md` (feature flags, parameters, custom profiles, scripts, repository structure) and `docs/operations.md` (seed data, auto start/stop, cost dashboard, GitHub Actions setup). All README headings and anchors unchanged; each section keeps a summary plus a link
+
 ### Changed
 - `Invoke-AzCmd`: the string `-Arguments` form now throws when the value contains a quote character — it splits on whitespace with no quote handling, so `--name "my rg"` silently became broken tokens and an opaque az error. Use `-ArgumentList` for values with spaces
 - `Invoke-AdeBicepDeployment`: deployment polling now backs off with age (5s for the first 2 minutes, 15s until 10 minutes, then 30s) — long modules (AKS, APIM, gateways) previously generated thousands of ARM reads per deploy and risked 429 throttling
