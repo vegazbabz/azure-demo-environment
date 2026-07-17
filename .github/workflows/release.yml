@@ -6,6 +6,8 @@
 # Steps:
 #   1. Extract the matching section from CHANGELOG.md
 #   2. Create a GitHub Release with those notes
+#   3. Publish the AzureDemoEnvironment module to the PowerShell Gallery
+#      (skipped with a notice when the PSGALLERY_API_KEY secret is not set)
 #
 # Tagging convention (Semantic Versioning):
 #   MAJOR — breaking changes to the deploy/destroy interface or output contract
@@ -72,3 +74,34 @@ jobs:
               prerelease:       tag.includes('-'),
             });
             core.info(`Release ${tag} created.`);
+
+  # Publishes to the PowerShell Gallery when the PSGALLERY_API_KEY secret is
+  # configured; otherwise skips with a notice so tag pushes never fail on a
+  # missing key. The staged-folder build keeps tests/docs/workflows out of the
+  # package (Publish-PSResource ships the entire target folder).
+  publish-psgallery:
+    name: Publish to PowerShell Gallery
+    runs-on: ubuntu-latest
+    env:
+      PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Publish module
+        if: env.PSGALLERY_API_KEY != ''
+        shell: pwsh
+        run: |
+          $tagVer = '${{ github.ref_name }}'.TrimStart('v')
+          $m = Test-ModuleManifest ./AzureDemoEnvironment.psd1
+          if ($m.Version.ToString() -ne $tagVer) {
+            throw "Manifest version $($m.Version) does not match tag $tagVer — bump ModuleVersion in AzureDemoEnvironment.psd1 before tagging."
+          }
+          $staged = ./tools/Build-ModulePackage.ps1 -OutputPath $env:RUNNER_TEMP | Select-Object -Last 1
+          Publish-PSResource -Path $staged -Repository PSGallery -ApiKey $env:PSGALLERY_API_KEY
+          Write-Host "Published AzureDemoEnvironment v$tagVer to the PowerShell Gallery."
+
+      - name: Gallery publish skipped
+        if: env.PSGALLERY_API_KEY == ''
+        run: echo "PSGALLERY_API_KEY secret not configured — skipping PowerShell Gallery publish."

@@ -99,7 +99,10 @@ jobs:
         id: ps_lint
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Path scripts,policies,tests -Recurse -Filter '*.ps1' | Select-Object -ExpandProperty FullName
+          $files = @(
+            Get-ChildItem -Path scripts,policies,tests,tools -Recurse -Filter '*.ps1'
+            Get-Item -Path ./AzureDemoEnvironment.psm1
+          ) | Select-Object -ExpandProperty FullName
           $errors   = [System.Collections.Generic.List[string]]::new()
           $warnings = [System.Collections.Generic.List[string]]::new()
           $failed   = $false
