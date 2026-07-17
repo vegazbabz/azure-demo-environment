@@ -3,7 +3,9 @@
 [![PowerShell Gallery](https://img.shields.io/powershellgallery/v/AzureDemoEnvironment?label=PowerShell%20Gallery)](https://www.powershellgallery.com/packages/AzureDemoEnvironment)
 [![Gallery downloads](https://img.shields.io/powershellgallery/dt/AzureDemoEnvironment?label=downloads)](https://www.powershellgallery.com/packages/AzureDemoEnvironment)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CIS Benchmark](https://img.shields.io/badge/CIS%20Benchmark-v5.0.0-blue.svg)](https://www.cisecurity.org/benchmark/azure)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://learn.microsoft.com/en-us/powershell/)
+[![CI](https://github.com/vegazbabz/azure-demo-environment/actions/workflows/lint.yml/badge.svg)](https://github.com/vegazbabz/azure-demo-environment/actions/workflows/lint.yml)
 
 > **[⬇️ Get it from the PowerShell Gallery](https://www.powershellgallery.com/packages/AzureDemoEnvironment)** — `Install-PSResource AzureDemoEnvironment`
 
