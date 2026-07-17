@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-07-17
+
+### Added
+- PowerShell Gallery packaging: the repo now ships as the `AzureDemoEnvironment` module (`Install-PSResource AzureDemoEnvironment`). `AzureDemoEnvironment.psd1`/`.psm1` at the repo root export four wrapper commands — `Deploy-AdeEnvironment`, `Remove-AdeEnvironment`, `Initialize-AdeSeedData`, `Get-AdeCostDashboard` — that mirror the entry scripts' parameters exactly and forward only bound arguments, so script defaults stay single-sourced. The package bundles `scripts/`, `bicep/`, `config/` and `data/` unchanged (all path resolution is `$PSScriptRoot`-relative, so installed and cloned layouts behave identically)
+- `tools/Build-ModulePackage.ps1`: whitelist-stages the publishable module folder and validates it (manifest, standalone import, required assets), stripping compiled ARM JSON, `.gitkeep` placeholders and logs so local and CI builds produce identical packages
+- `release.yml`: new `publish-psgallery` job on version tags — verifies the manifest version matches the tag, builds the staged package and runs `Publish-PSResource`; skips with a notice when the `PSGALLERY_API_KEY` secret is not configured
+- `tests/module.Tests.ps1`: manifest metadata checks, wrapper↔script parameter parity (names and types), and staged-package layout assertions
+- `README.md`: PowerShell Gallery badges and install instructions alongside the existing clone-based workflow
+
+---
+
 ## [2.1.0] - 2026-07-15
 
 ### Changed

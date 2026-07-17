@@ -10,6 +10,9 @@ docs/project-knowledge.md
 # ── Test output ───────────────────────────────────────────────────────────────
 tests/results/
 
+# ── Staged module packages (tools/Build-ModulePackage.ps1) ───────────────────
+out/
+
 # ── CIS audit tool runtime outputs ───────────────────────────────────────────
 reports/
 cis_checkpoints/

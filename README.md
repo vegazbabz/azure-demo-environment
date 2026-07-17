@@ -1,5 +1,12 @@
 # Azure Demo Environment (ADE)
 
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/AzureDemoEnvironment?label=PowerShell%20Gallery)](https://www.powershellgallery.com/packages/AzureDemoEnvironment)
+[![Gallery downloads](https://img.shields.io/powershellgallery/dt/AzureDemoEnvironment?label=downloads)](https://www.powershellgallery.com/packages/AzureDemoEnvironment)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PowerShell](https://img.shields.io/badge/PowerShell-7.0%2B-blue.svg)](https://learn.microsoft.com/en-us/powershell/)
+
+> **[⬇️ Get it from the PowerShell Gallery](https://www.powershellgallery.com/packages/AzureDemoEnvironment)** — `Install-PSResource AzureDemoEnvironment`
+
 A fully automated, modular Azure infrastructure project for **security benchmark testing** and **environment provisioning**. Deploy a complete multi-tier Azure environment in minutes — either with out-of-the-box Azure defaults (to measure your baseline CIS/MCSB score) or with CIS/MCSB-hardened configuration (to measure remediations).
 
 > [!WARNING]
@@ -121,7 +128,21 @@ az account show --query "{name:name, id:id}" -o table
 
 ## Your first deployment
 
-### Step 1 — Clone the repository
+### Step 1 — Install the module (or clone the repository)
+
+**Option A — PowerShell Gallery** (recommended). The module exports four
+commands that wrap the repository scripts one-to-one: `Deploy-AdeEnvironment`
+(deploy.ps1), `Remove-AdeEnvironment` (destroy.ps1), `Initialize-AdeSeedData`
+(seed-data.ps1), and `Get-AdeCostDashboard`. All parameters are identical to
+the scripts.
+
+```powershell
+Install-PSResource AzureDemoEnvironment
+# or, on older PowerShellGet: Install-Module AzureDemoEnvironment -Scope CurrentUser
+```
+
+**Option B — clone the repository** and run the scripts directly (required if
+you want to edit profiles or Bicep templates in place):
 
 ```bash
 git clone https://github.com/vegazbabz/azure-demo-environment.git
@@ -133,7 +154,10 @@ cd azure-demo-environment
 The `minimal` profile is the lowest-cost starting point. It deploys: monitoring, networking, security (Key Vault + managed identity), one Windows VM, storage, and governance automation. Estimated cost: **~$15–30/month** with auto-shutdown enabled. Budget alerts are deployed only when an alert email is provided.
 
 ```powershell
-# PowerShell 7 — run from the repo root
+# Module install (Option A)
+Deploy-AdeEnvironment -Profile minimal -Location westeurope -Prefix ade
+
+# Repo clone (Option B) — PowerShell 7, run from the repo root
 ./scripts/deploy.ps1 -Profile minimal -Location westeurope -Prefix ade
 ```
 
@@ -150,6 +174,10 @@ The script will:
 ### Step 3 — Tear it down when done
 
 ```powershell
+# Module install (Option A)
+Remove-AdeEnvironment -Prefix ade -Force
+
+# Repo clone (Option B)
 ./scripts/destroy.ps1 -Prefix ade -Force
 ```
 
@@ -181,7 +209,7 @@ Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`)
 
 ---
 
-## Feature flags
+## Feature flags
 
 Every module exposes feature flags in its profile `features` block (e.g. `databases.features.postgresql`). The full per-module flag tables — defaults, costs, and caveats — live in **[docs/reference.md](docs/reference.md#feature-flags)**.
 
@@ -211,7 +239,7 @@ You can also deploy both side-by-side using different prefixes:
 
 ---
 
-## All deploy.ps1 parameters
+## All deploy.ps1 parameters
 
 The complete parameter tables for `deploy.ps1` and `destroy.ps1` live in **[docs/reference.md](docs/reference.md#all-deployps1-parameters)**.
 
@@ -253,7 +281,7 @@ The destroy script:
 
 ---
 
-## Custom profiles
+## Custom profiles
 
 Copy any built-in profile from `config/profiles/`, adjust modules and features, and pass its path: `./scripts/deploy.ps1 -Profile ./my-profile.json`. Schema, validation rules, and worked examples: **[docs/reference.md](docs/reference.md#custom-profiles)**.
 
@@ -281,7 +309,7 @@ The following constraints are by design and cannot be changed via flags or param
 
 ---
 
-## Scripts reference
+## Scripts reference
 
 All entry-point scripts and helpers are catalogued in **[docs/reference.md](docs/reference.md#scripts-reference)**.
 
@@ -318,19 +346,19 @@ The deployment script warns you before deploying any expensive resources and sho
 
 ---
 
-## Seed data
+## Seed data
 
 After deployment, `./scripts/seed-data.ps1 -Prefix <prefix>` populates storage, databases, Key Vault, and messaging resources with realistic sample data. Database passwords are fetched from the environment Key Vault automatically. Details, per-target tables, and client prerequisites: **[docs/operations.md](docs/operations.md#seed-data)**.
 
 ---
 
-## Auto start/stop
+## Auto start/stop
 
 The governance module schedules a daily VM stop (and optional start) via Automation runbooks. Configuration: **[docs/operations.md](docs/operations.md#auto-startstop)**.
 
 ---
 
-## Cost dashboard
+## Cost dashboard
 
 `./scripts/dashboard/Get-AdeCostDashboard.ps1` summarizes running resources and month-to-date spend. Usage: **[docs/operations.md](docs/operations.md#cost-dashboard)**.
 
@@ -363,13 +391,13 @@ Test coverage includes:
 
 ---
 
-## GitHub Actions setup
+## GitHub Actions setup
 
 Deploy and destroy workflows run via OIDC (no stored cloud credentials). Full setup — app registration, federated credential, secrets, and variables — is in **[docs/operations.md](docs/operations.md#github-actions-setup)**.
 
 ---
 
-## Repository structure
+## Repository structure
 
 The annotated directory tree lives in **[docs/reference.md](docs/reference.md#repository-structure)**.
 
