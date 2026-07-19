@@ -11,7 +11,7 @@ Thank you for your interest in contributing. Please follow these guidelines.
 
 ```bash
 # Install Pester
-Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser
+Install-PSResource Pester
 ```
 
 ## Development workflow

@@ -377,7 +377,7 @@ The test suite uses [Pester 5](https://pester.dev/) and runs entirely without Az
 
 ```powershell
 # Install Pester (one-time setup)
-Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+Install-PSResource Pester -Version 5.7.1
 
 # Run the full suite
 ./tests/Invoke-PesterSuite.ps1
@@ -473,7 +473,7 @@ az policy state list \
 > **Benchmark versions:** ADE's hardened templates were authored against CIS v5.0.0 (the version Defender for Cloud offers as a built-in standard); the companion module audits against v6.0.0. Section numbering differs between the two versions, so scores are not directly comparable across tools — pick one scanner and use it for both the before and the after run.
 
 ```powershell
-Install-Module CISAzureFoundationsBenchmark -Scope CurrentUser
+Install-PSResource CISAzureFoundationsBenchmark
 Connect-AzAccount
 Invoke-CISAzureAudit -TenantId (Get-AzContext).Tenant.Id
 ```
