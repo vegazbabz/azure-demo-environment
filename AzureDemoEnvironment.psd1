@@ -1,6 +1,6 @@
 @{
     RootModule        = 'AzureDemoEnvironment.psm1'
-    ModuleVersion     = '2.2.0'
+    ModuleVersion     = '2.2.1'
     GUID              = 'd43309aa-658b-4477-962f-e530096d3799'
     Author            = 'vegazbabz'
     Copyright         = '(c) vegazbabz. MIT License.'
