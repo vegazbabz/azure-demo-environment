@@ -4,9 +4,9 @@
 
 | Tool | Minimum version | Purpose |
 |---|---|---|
-| Azure CLI | 2.57+ | Deployment, policy, resource management |
+| Azure CLI | 2.60+ | Deployment, policy, resource management |
 | Bicep CLI | latest | Installed automatically by `az bicep install` |
-| PowerShell | 7.4+ | Orchestration scripts |
+| PowerShell | 7.0+ (7.4+ recommended) | Orchestration scripts |
 | Azure subscription | — | Contributor + Resource Policy Contributor |
 
 ```powershell
@@ -58,7 +58,7 @@ Admin passwords are generated automatically per service (VM, SQL, PostgreSQL, My
 
 ```powershell
 ./scripts/deploy.ps1 `
-    -Profile  full `
+    -Profile  hardened `
     -Mode     hardened `
     -Prefix   ade `
     -Location westeurope `
@@ -167,14 +167,10 @@ Feature flags within a module are passed directly as Bicep parameters.
 
 ## Estimating Costs
 
-A rough cost guide for `westeurope` with prefix `ade`:
-
-| Profile | Mode | Approximate monthly cost |
-|---|---|---|
-| `minimal` | default | ~$80–120 |
-| `full` | default | ~$600–900 |
-| `full` | hardened | ~$700–1,100 (Defender plans add ~$15–50/node) |
-| `security-focus` | hardened | ~$50–100 |
+Cost varies heavily by profile and feature flags. Per-profile estimates and the
+list of expensive opt-in resources live in the README's
+[Cost guidance](../README.md#cost-guidance) — that section is the single source
+of truth for cost figures.
 
 Use `./scripts/dashboard/Get-AdeCostDashboard.ps1` to view actual accrued costs.
 

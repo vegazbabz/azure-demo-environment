@@ -74,11 +74,12 @@ A fully automated, modular Azure infrastructure project for **security benchmark
 
 ## How it works
 
-```text
-deploy.ps1  ──reads──>  profile JSON  ──decides which──>  Bicep modules to deploy
-                                                                      │
-                                              each module ──deploys──> its own resource group
-                                              passes outputs ──downstream──> next module
+```mermaid
+flowchart LR
+    deploy["deploy.ps1"] -- "reads" --> profile["Profile JSON<br/>(modules + feature flags)"]
+    profile -- "selects" --> modules["Bicep modules<br/>(strict dependency order)"]
+    modules -- "one RG each" --> rgs["&lt;prefix&gt;-&lt;module&gt;-rg"]
+    modules -- "outputs feed" --> downstream["downstream modules<br/>(subnet IDs, Key Vault ID, ...)"]
 ```
 
 1. You run `deploy.ps1` with a **profile** (which modules to enable and which features to turn on) and a **mode** (`default` = baseline, `hardened` = CIS/MCSB-aligned).
@@ -96,7 +97,7 @@ The orchestration is **pure PowerShell 7 + Azure CLI**. No Azure PowerShell modu
 
 | Tool | Minimum version | Install |
 | --- | --- | --- |
-| PowerShell | 7.4 | [github.com/PowerShell/PowerShell](https://github.com/PowerShell/PowerShell/releases) |
+| PowerShell | 7.0 (7.4+ recommended) | [github.com/PowerShell/PowerShell](https://github.com/PowerShell/PowerShell/releases) |
 | Azure CLI | 2.60 | [learn.microsoft.com/cli/azure/install-azure-cli](https://learn.microsoft.com/cli/azure/install-azure-cli) |
 | Bicep CLI | latest | `az bicep install` (run once after installing Azure CLI) |
 
@@ -142,6 +143,10 @@ the scripts.
 Install-PSResource AzureDemoEnvironment
 # or, on older PowerShellGet: Install-Module AzureDemoEnvironment -Scope CurrentUser
 ```
+
+> The examples in the rest of this README use the `./scripts/...` form. If you
+> installed the module, substitute the matching command anywhere — the
+> parameters are identical: `./scripts/deploy.ps1 ...` → `Deploy-AdeEnvironment ...`
 
 **Option B — clone the repository** and run the scripts directly (required if
 you want to edit profiles or Bicep templates in place):
@@ -189,7 +194,7 @@ This deletes ADE-managed resource groups for the prefix and discovered Azure-man
 
 ## Deployment profiles
 
-Profiles live in `config/profiles/`. Pass the profile name (no path, no `.json`) or the path to a custom JSON file.
+Profiles live in `config/profiles/` (bundled inside the module when installed from the Gallery). Pass the profile name (no path, no `.json`) or the path to a custom JSON file.
 
 ### Built-in profiles
 
@@ -303,7 +308,7 @@ The following constraints are by design and cannot be changed via flags or param
 | **`data` module defaults** | All `data` module features (`dataFactory`, `synapse`, `databricks`, `purview`) default to `false` even when the module is enabled. You must explicitly set the features you want in your custom profile. Using `-EnableModules data` on the command line auto-enables **all** features including Synapse Analytics, Databricks, and Microsoft Purview — which carry significant cost. |
 | **Synapse managed resource group** | When `data.synapse` is enabled, Azure Synapse creates a platform-managed resource group named `synapseworkspace-managedrg-<guid>` outside the ADE `{prefix}-*-rg` naming convention. Do not treat it as manually created. `destroy.ps1` discovers it from the Synapse workspace, pre-deletes the workspace when needed, and waits for Azure to remove the managed RG. |
 | **Microsoft Purview — one free-tier account per tenant** | Azure allows only one free-tier Purview account per Entra ID tenant, and it cannot be re-created in a different region. If you already have a Purview account in your tenant at a different location, `deploy.ps1` will automatically skip Purview and log a warning. To deploy Purview, either use the same region as the existing account or set `purview: false` in your profile to opt out. |
-| **Windows PowerShell 5.1** | All scripts require PowerShell 7.4+. They will not run on Windows PowerShell 5.1. |
+| **Windows PowerShell 5.1** | All scripts require PowerShell 7.0+. They will not run on Windows PowerShell 5.1. |
 | **Azure CLI only** | No Az PowerShell module is used or supported. All Azure calls go through the Azure CLI (`az`). |
 | **Governance module and monitoring** | The `governance` module requires `monitoring` to also be enabled when deploying a full environment. Deploying `governance` alone (without monitoring) is supported but Automation Account runbooks will lack a Log Analytics workspace destination. |
 | **`ai` and `data` not in any built-in profile** | Neither `ai` nor `data` modules are enabled in any built-in profile. Use a custom profile to enable them. |
@@ -381,7 +386,7 @@ Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 ./tests/Invoke-PesterSuite.ps1 -CI
 ```
 
-Current state: **650 passing, 0 failing, 0 skipped**.
+Current state: **678 passing, 0 failing, 0 skipped**.
 
 Test coverage includes:
 
@@ -390,6 +395,7 @@ Test coverage includes:
 - Module deployment orchestration logic (module ordering, feature flag propagation)
 - `validate.ps1` pre-flight checks
 - JSON config correctness for all built-in profiles
+- Gallery module: manifest metadata, wrapper↔script parameter parity, staged package layout
 
 ---
 
@@ -464,6 +470,8 @@ az policy state list \
 
 [CISAzureFoundationsBenchmark](https://www.powershellgallery.com/packages/CISAzureFoundationsBenchmark) is a companion PowerShell module that audits the subscription against the CIS Microsoft Azure Foundations Benchmark v6.0.0 and produces a self-contained HTML compliance report. It is read-only and works well for scoring an ADE deployment — run it once against a default-mode environment for the baseline and again after deploying with `-Mode hardened` to measure the remediations.
 
+> **Benchmark versions:** ADE's hardened templates were authored against CIS v5.0.0 (the version Defender for Cloud offers as a built-in standard); the companion module audits against v6.0.0. Section numbering differs between the two versions, so scores are not directly comparable across tools — pick one scanner and use it for both the before and the after run.
+
 ```powershell
 Install-Module CISAzureFoundationsBenchmark -Scope CurrentUser
 Connect-AzAccount
@@ -474,7 +482,7 @@ Invoke-CISAzureAudit -TenantId (Get-AzContext).Tenant.Id
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ---
 
