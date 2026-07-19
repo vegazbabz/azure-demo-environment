@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-07-18
+
+### Documentation
+- `README.md`: corrected the Pester test count (650 -> 678) and the PowerShell minimum (7.0, matching `#Requires` and the module manifest; 7.4+ recommended); PowerShell Gallery badges and install instructions; a note that all `./scripts/...` examples map one-to-one to the exported module commands; mermaid architecture diagram in place of the ASCII flow; compliance-scan section now lists the companion `CISAzureFoundationsBenchmark` module with a benchmark-version clarification (ADE templates authored against CIS v5.0.0, the companion audits v6.0.0 — pick one scanner for both runs)
+- `docs/usage.md`: cost table had drifted from the README (`minimal` ~$80-120 vs ~$15-30) — replaced with a pointer to the README's cost guidance as the single source of truth; hardened example now uses the canonical `-Profile hardened -Mode hardened` pairing; prerequisites aligned (Azure CLI 2.60+, PowerShell 7.0+)
+- Documentation-only patch: refreshes the README bundled in the Gallery package; no script or template changes
+
+---
+
 ## [2.2.0] - 2026-07-17
 
 ### Added
