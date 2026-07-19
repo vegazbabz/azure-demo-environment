@@ -470,6 +470,8 @@ az policy state list \
 
 [CISAzureFoundationsBenchmark](https://www.powershellgallery.com/packages/CISAzureFoundationsBenchmark) is a companion PowerShell module that audits the subscription against the CIS Microsoft Azure Foundations Benchmark v6.0.0 and produces a self-contained HTML compliance report. It is read-only and works well for scoring an ADE deployment — run it once against a default-mode environment for the baseline and again after deploying with `-Mode hardened` to measure the remediations.
 
+> **Benchmark versions:** ADE's hardened templates were authored against CIS v5.0.0 (the version Defender for Cloud offers as a built-in standard); the companion module audits against v6.0.0. Section numbering differs between the two versions, so scores are not directly comparable across tools — pick one scanner and use it for both the before and the after run.
+
 ```powershell
 Install-Module CISAzureFoundationsBenchmark -Scope CurrentUser
 Connect-AzAccount
